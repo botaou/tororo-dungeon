@@ -13,13 +13,51 @@
 7. **ステージクリア**: 敵を全滅させるとクリア報酬を獲得し、次のステージが解放される。クリア済みステージにはいつでも戻って周回できる。
 8. **永続化**: キャラのステータス・アイテム・素材・ステージ進行は端末に保存（AsyncStorage）。スキル選択は毎回リセット。
 
-## セットアップ
+## セットアップ(PCで実機のiPhone確認)
 
-```bash
-npm install
-npm start        # Expo Dev Server (Expo Go / iOS Simulator)
-npm run ios      # iOS シミュレータで起動 (macOS + Xcode が必要)
-```
+Expo Go を使えば、Xcode も Apple Developer 登録も不要でiPhone実機に反映して試せます。
+
+### 事前準備(PC側、1回だけ)
+
+1. **Node.js** をインストール(LTS版。 https://nodejs.org/ )
+   - 確認: `node -v` でバージョンが表示されればOK
+2. **git** をインストール(https://git-scm.com/ )
+3. このリポジトリを clone
+
+   ```bash
+   git clone https://github.com/botaou/tororo-dungeon.git
+   cd tororo-dungeon
+   git checkout claude/idle-dungeon-game-prototype-pj9axt
+   ```
+
+4. 依存パッケージをインストール
+
+   ```bash
+   npm install
+   ```
+
+### 事前準備(iPhone側、1回だけ)
+
+- App Store から **Expo Go** アプリをインストール
+
+### 起動して確認するたび
+
+1. PCとiPhoneを**同じWi-Fi**に接続する
+2. PCでプロジェクトフォルダに入り、開発サーバーを起動
+
+   ```bash
+   npx expo start
+   ```
+
+3. ターミナルにQRコードが表示されるので、iPhoneの**カメラアプリ**でスキャン → 「Expo Goで開く」の通知をタップ
+4. Expo Goが起動し、アプリが実機で動きます
+
+コードを変更して保存すると、実機側は自動でリロードされます(Fast Refresh)。確認が終わったらターミナルで `Ctrl+C` して開発サーバーを止めればOKです。
+
+### うまくいかない時
+
+- QRコードが読み取れない/繋がらない → PCとiPhoneが同じWi-Fiか確認。会社・大学のWi-Fiなど端末間通信が制限されたネットワークでは失敗しやすいので、自宅Wi-Fiや共有したスマホのテザリングを試す
+- それでも繋がらない → `npx expo start --tunnel` (別ネットワークでも動くが、初回に `@expo/ngrok` の自動インストールを求められます)
 
 ## コード構成
 
