@@ -8,6 +8,7 @@ import { STAGES } from '../data/stages';
 import { ResourceBar } from '../components/ResourceBar';
 import { MaterialsRow } from '../components/MaterialsRow';
 import { StageDef } from '../types';
+import { theme } from '../theme';
 
 interface Props {
   onEnterStage: () => void;
@@ -37,19 +38,21 @@ export function HomeScreen({ onEnterStage }: Props) {
 
     return (
       <View style={[styles.stageCard, !unlocked && styles.stageCardLocked]}>
+        <View style={styles.stageAccent} />
         <View style={styles.stageInfo}>
           <Text style={styles.stageName}>
             {unlocked ? item.name : '？？？'} {cleared ? '✅' : ''}
           </Text>
           <Text style={styles.stageMeta}>
             スタミナ消費: {item.staminaCost}
-            {item.treasure && (treasureCollected ? '　お宝: 獲得済み' : '　お宝あり')}
+            {item.treasure ? (treasureCollected ? '　お宝: 獲得済み' : '　💰お宝あり') : ''}
           </Text>
         </View>
         <TouchableOpacity
           style={[styles.challengeButton, !canChallenge && styles.challengeButtonDisabled]}
           disabled={!canChallenge}
           onPress={() => handleChallenge(item)}
+          activeOpacity={0.7}
         >
           <Text style={styles.challengeButtonText}>
             {!unlocked ? 'ロック中' : cleared ? '周回する' : '挑戦する'}
@@ -61,9 +64,9 @@ export function HomeScreen({ onEnterStage }: Props) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.title}>トロロ・ダンジョン</Text>
+      <Text style={styles.title}>🏰 トロロ・ダンジョン</Text>
       <View style={styles.statusPanel}>
-        <ResourceBar label="スタミナ" current={stamina} max={staminaMax} color="#4caf7d" />
+        <ResourceBar label="スタミナ" current={stamina} max={staminaMax} color={theme.green} />
         <MaterialsRow materials={materials} />
       </View>
       <FlatList
@@ -77,35 +80,55 @@ export function HomeScreen({ onEnterStage }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f7f5ef', paddingHorizontal: 16 },
-  title: { fontSize: 22, fontWeight: '700', marginTop: 12, marginBottom: 8, color: '#2d2a26' },
+  container: { flex: 1, backgroundColor: theme.bgBottom, paddingHorizontal: 16 },
+  title: {
+    fontSize: 22,
+    fontWeight: '800',
+    marginTop: 12,
+    marginBottom: 10,
+    color: theme.gold,
+    letterSpacing: 0.5,
+  },
   statusPanel: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-    gap: 8,
+    backgroundColor: theme.card,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: theme.cardBorder,
   },
   list: { paddingBottom: 24, gap: 10 },
   stageCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
+    backgroundColor: theme.card,
+    borderRadius: 14,
     padding: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 10,
+    borderWidth: 1,
+    borderColor: theme.cardBorder,
+    overflow: 'hidden',
+  },
+  stageAccent: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    backgroundColor: theme.gold,
   },
   stageCardLocked: { opacity: 0.5 },
-  stageInfo: { flex: 1, marginRight: 12 },
-  stageName: { fontSize: 16, fontWeight: '700', color: '#2d2a26' },
-  stageMeta: { fontSize: 12, color: '#777', marginTop: 4 },
+  stageInfo: { flex: 1, marginRight: 12, marginLeft: 6 },
+  stageName: { fontSize: 16, fontWeight: '700', color: theme.textPrimary },
+  stageMeta: { fontSize: 12, color: theme.textSecondary, marginTop: 4 },
   challengeButton: {
-    backgroundColor: '#3f7fd1',
+    backgroundColor: theme.blue,
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 8,
   },
-  challengeButtonDisabled: { backgroundColor: '#c6c6c6' },
+  challengeButtonDisabled: { backgroundColor: theme.disabled },
   challengeButtonText: { color: '#fff', fontWeight: '700', fontSize: 13 },
 });

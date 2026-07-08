@@ -7,6 +7,7 @@ import { HomeScreen } from './src/screens/HomeScreen';
 import { StageScreen } from './src/screens/StageScreen';
 import { usePlayerStore } from './src/store/usePlayerStore';
 import { useGameClock } from './src/game/useGameClock';
+import { theme } from './src/theme';
 
 type Screen = 'home' | 'stage';
 
@@ -24,7 +25,7 @@ export default function App() {
   if (!hydrated) {
     return (
       <View style={styles.loading}>
-        <ActivityIndicator size="large" color="#3f7fd1" />
+        <ActivityIndicator size="large" color={theme.gold} />
       </View>
     );
   }
@@ -36,11 +37,11 @@ export default function App() {
       ) : (
         <StageScreen onExit={() => setScreen('home')} />
       )}
-      <StatusBar style="auto" />
+      <StatusBar style="light" />
     </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  loading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f7f5ef' },
+  loading: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.bgBottom },
 });

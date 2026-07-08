@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { MaterialId } from '../types';
+import { theme } from '../theme';
 
 const ICONS: Record<MaterialId, string> = { gold: '🪙', ore: '⛏️', gem: '💎' };
 
@@ -24,7 +25,17 @@ export function MaterialsRow({ materials }: Props) {
 
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 16 },
-  item: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  icon: { fontSize: 16 },
-  value: { fontSize: 14, fontWeight: '600', color: '#333' },
+  item: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: theme.bgBottom,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: theme.cardBorder,
+  },
+  icon: { fontSize: 15 },
+  value: { fontSize: 13, fontWeight: '700', color: theme.textPrimary },
 });
