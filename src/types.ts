@@ -10,12 +10,19 @@ export interface SkillDef {
   description: string;
 }
 
+export type CharacterRole = 'attacker' | 'healer';
+
 export interface CharacterDef {
   id: string;
   name: string;
-  baseAtk: number;
+  role: CharacterRole;
+  description: string;
+  color: string; // accent color for cards/UI
+  emoji: string; // placeholder visual until real art is added
+  baseAtk: number; // for healers, this is heal power instead of damage
   baseHp: number;
   summonCost: number; // energy cost to summon
+  materialBonusPercent?: number; // bonus % applied to material rewards while alive
 }
 
 export interface EnemyDef {
