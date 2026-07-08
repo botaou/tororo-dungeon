@@ -1,6 +1,6 @@
 # トロロ・ダンジョン (prototype)
 
-放置系・スタミナ制ダンジョンゲームのプロトタイプ。Expo (React Native) + TypeScript。
+放置系・スタミナ制ダンジョンゲームのプロトタイプ。Expo SDK 54 (React Native) + TypeScript。Expo Go(SDK 54対応版)でそのまま実機確認できます。
 
 ## ゲームループ
 
