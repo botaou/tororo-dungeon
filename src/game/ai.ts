@@ -3,10 +3,18 @@ import {
   CharacterDef,
   EnemyInstance,
   JobRequest,
+  LeisureSpotInstance,
   MiningNodeInstance,
   TreasureNodeInstance,
 } from '../types';
-import { ARRIVAL_THRESHOLD, ENCOUNTER_HOLD_TICKS, MOVE_SPEED } from './config';
+import {
+  ARRIVAL_THRESHOLD,
+  ENCOUNTER_HOLD_TICKS,
+  HOME_NEED_TICKS,
+  LEISURE_CHANCE,
+  LEISURE_DWELL_TICKS,
+  MOVE_SPEED,
+} from './config';
 import { TOWN_RADIUS, TOWN_X, TOWN_Y } from '../data/world';
 import { AttackAssignment } from './combat';
 
@@ -79,6 +87,7 @@ export interface AiWorld {
   enemies: EnemyInstance[];
   miningNodes: MiningNodeInstance[];
   treasures: TreasureNodeInstance[];
+  leisureSpots: LeisureSpotInstance[];
   requests: JobRequest[];
   vanguard: BirdState | null; // this tick's vanguard, already stepped
   allBirds: BirdState[]; // shared, mutated in place as each bird steps
@@ -102,9 +111,12 @@ function emptyOutcome(): AiStepOutcome {
   };
 }
 
+// Every bird always resolves to *some* concrete thing to do, in priority
+// order: recover if fainted, finish a job if it took one, satisfy hunger/
+// sleep at home, then fall back to its personality's own drive — which
+// itself always ends in either a leisure visit or a purposeful walk, never
+// an undefined "nothing to do" limbo.
 export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutcome {
-  // Fainted (hp hit 0): rest in place and slowly recover before doing
-  // anything else — no teleporting home, no instant revival.
   if (bird.hp <= 0) {
     bird.hp = Math.min(bird.maxHp, bird.hp + FAINT_RECOVERY_PER_TICK);
     bird.activity = 'resting';
@@ -117,8 +129,12 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
     return stepJob(bird, def, world);
   }
 
+  if (bird.mood === 'hungry') {
+    return stepHomeNeed(bird, 'eating');
+  }
+
   if (bird.mood === 'sleepy') {
-    return stepRest(bird);
+    return stepHomeNeed(bird, 'resting');
   }
 
   switch (def.personality) {
@@ -133,11 +149,25 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
   }
 }
 
-function stepRest(bird: BirdState): AiStepOutcome {
-  moveToward(bird, TOWN_X, TOWN_Y);
-  bird.activity = 'resting';
+// Hungry → go home and eat. Sleepy → go home and rest. Either way, once
+// satisfied for HOME_NEED_TICKS the mood clears back to normal instead of
+// waiting on the ambient mood-refresh timer.
+function stepHomeNeed(bird: BirdState, activity: 'eating' | 'resting'): AiStepOutcome {
+  if (bird.activity !== activity) {
+    bird.workProgress = 0;
+  }
+  const arrived = moveToward(bird, TOWN_X, TOWN_Y);
+  bird.activity = activity;
   bird.targetKind = null;
   bird.targetRefUid = null;
+  if (arrived) {
+    bird.workProgress += 1;
+    if (bird.workProgress >= HOME_NEED_TICKS) {
+      bird.mood = 'normal';
+      bird.moodChangedAt = Date.now();
+      bird.workProgress = 0;
+    }
+  }
   return emptyOutcome();
 }
 
@@ -155,14 +185,57 @@ function stepWander(bird: BirdState, bounds: 'field' | 'town'): AiStepOutcome {
   return emptyOutcome();
 }
 
+// The "I have nothing pressing to do" fallback: sometimes go bathe/fish at
+// a leisure spot, otherwise take a purposeful walk. Never just freezes.
+function stepLeisureOrWander(bird: BirdState, world: AiWorld, bounds: 'field' | 'town'): AiStepOutcome {
+  const outcome = emptyOutcome();
+
+  if (bird.targetKind === 'river' || bird.targetKind === 'pond') {
+    const spot = world.leisureSpots.find((s) => s.uid === bird.targetRefUid);
+    if (spot) {
+      const arrived = moveToward(bird, spot.x, spot.y);
+      bird.activity = spot.kind === 'river' ? 'bathing' : 'fishing';
+      if (arrived) {
+        bird.workProgress += 1;
+        if (bird.workProgress >= LEISURE_DWELL_TICKS) {
+          bird.targetKind = null;
+          bird.targetRefUid = null;
+          bird.workProgress = 0;
+        }
+      }
+      return outcome;
+    }
+    bird.targetKind = null;
+    bird.targetRefUid = null;
+  }
+
+  if (bird.targetKind === 'wander') {
+    return stepWander(bird, bounds);
+  }
+
+  if (world.leisureSpots.length > 0 && Math.random() < LEISURE_CHANCE) {
+    const spot = nearest(world.leisureSpots, bird.x, bird.y);
+    if (spot) {
+      bird.targetKind = spot.kind;
+      bird.targetRefUid = spot.uid;
+      bird.workProgress = 0;
+      bird.activity = spot.kind === 'river' ? 'bathing' : 'fishing';
+      return outcome;
+    }
+  }
+
+  return stepWander(bird, bounds);
+}
+
 // Tororo: seeks out the nearest enemy to fight; with nothing dangerous
-// around, he roams the whole field looking for something new.
+// around, he roams the whole field (or hangs near town if he's itching
+// for a paid job) looking for something new.
 function stepVanguard(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutcome {
   const outcome = emptyOutcome();
   const aliveEnemies = world.enemies.filter((e) => !e.defeated && e.hp > 0);
 
   if (aliveEnemies.length === 0) {
-    return stepWander(bird, 'field');
+    return stepLeisureOrWander(bird, world, bird.mood === 'wantsMoney' ? 'town' : 'field');
   }
 
   if (!bird.targetRefUid || !aliveEnemies.some((e) => e.uid === bird.targetRefUid)) {
@@ -170,7 +243,7 @@ function stepVanguard(bird: BirdState, def: CharacterDef, world: AiWorld): AiSte
     bird.targetKind = target ? 'enemy' : null;
     bird.targetRefUid = target?.uid ?? null;
   }
-  if (!bird.targetRefUid) return stepWander(bird, 'field');
+  if (!bird.targetRefUid) return stepLeisureOrWander(bird, world, 'field');
 
   const enemy = aliveEnemies.find((e) => e.uid === bird.targetRefUid)!;
   const arrived = moveToward(bird, enemy.x, enemy.y);
@@ -187,7 +260,7 @@ function stepVanguard(bird: BirdState, def: CharacterDef, world: AiWorld): AiSte
 }
 
 // Mone: prioritizes the nearest unclaimed rock/treasure; with nothing left
-// to gather, she just wanders the field looking for more.
+// to gather, she relaxes or wanders looking for more.
 function stepFreeSpirit(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutcome {
   const outcome = emptyOutcome();
   const uncollectedMining = world.miningNodes.filter((m) => !m.collected);
@@ -253,7 +326,7 @@ function stepFreeSpirit(bird: BirdState, def: CharacterDef, world: AiWorld): AiS
     }
   }
 
-  return stepWander(bird, 'field');
+  return stepLeisureOrWander(bird, world, bird.mood === 'wantsMoney' ? 'town' : 'field');
 }
 
 // The enemy the vanguard is close enough to for assist personalities to
@@ -273,7 +346,7 @@ function vanguardEngagedEnemy(world: AiWorld): EnemyInstance | null {
 function stepClingy(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutcome {
   const outcome = emptyOutcome();
   if (!world.vanguard || world.vanguard.hp <= 0) {
-    return stepWander(bird, 'town');
+    return stepLeisureOrWander(bird, world, 'town');
   }
   moveToward(bird, world.vanguard.x - 0.055, world.vanguard.y + 0.035);
   bird.targetKind = null;
@@ -312,7 +385,7 @@ function stepCautious(bird: BirdState, def: CharacterDef, world: AiWorld): AiSte
     return outcome;
   }
 
-  return stepWander(bird, 'town');
+  return stepLeisureOrWander(bird, world, 'town');
 }
 
 // Any bird with an accepted job heads for the nearest unclaimed node of the

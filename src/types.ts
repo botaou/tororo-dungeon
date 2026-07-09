@@ -71,6 +71,7 @@ export interface EnemyInstance {
   atk: number;
   goldReward: number;
   defeated: boolean;
+  respawnAt: number | null; // epoch ms; set when defeated, revives once passed
 }
 
 export interface MiningNodeInstance {
@@ -82,6 +83,7 @@ export interface MiningNodeInstance {
   resource: MaterialId;
   amount: number;
   collected: boolean;
+  respawnAt: number | null;
 }
 
 export interface TreasureNodeInstance {
@@ -92,15 +94,45 @@ export interface TreasureNodeInstance {
   y: number;
   goldReward: number;
   collected: boolean;
+  respawnAt: number | null;
+}
+
+// Leisure spots are always available (not consumable) — just somewhere an
+// otherwise-idle bird can go bathe or fish instead of aimlessly wandering.
+export type LeisureKind = 'river' | 'pond';
+
+export interface LeisureSpotDef {
+  id: string;
+  name: string;
+  emoji: string;
+  kind: LeisureKind;
+}
+
+export interface LeisureSpotInstance {
+  uid: string;
+  defId: string;
+  name: string;
+  emoji: string;
+  kind: LeisureKind;
+  x: number;
+  y: number;
 }
 
 // What a bird is visibly doing this tick, for animation purposes.
-export type ActivityKind = 'enemy' | 'mining' | 'treasure' | 'idle' | 'resting';
+export type ActivityKind =
+  | 'enemy'
+  | 'mining'
+  | 'treasure'
+  | 'idle'
+  | 'resting'
+  | 'eating'
+  | 'bathing'
+  | 'fishing';
 
 // A pursuit goal a bird's AI is actively working toward. A job is just a
 // mining/treasure pursuit restricted to a specific request's material and
 // tagged with which request it fulfills (see BirdState.currentJobId).
-export type TargetKind = 'enemy' | 'mining' | 'treasure' | 'wander';
+export type TargetKind = 'enemy' | 'mining' | 'treasure' | 'river' | 'pond' | 'wander';
 
 export interface BirdState {
   defId: string; // birds are fixed individuals, defId doubles as identity
@@ -141,6 +173,7 @@ export interface WorldState {
   enemies: EnemyInstance[];
   miningNodes: MiningNodeInstance[];
   treasures: TreasureNodeInstance[];
+  leisureSpots: LeisureSpotInstance[];
   birds: BirdState[];
   requests: JobRequest[];
 }

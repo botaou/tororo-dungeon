@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, Text, TouchableWithoutFeedback, View, useWindowDimensions } from 'react-native';
 
-import { BirdState, EnemyInstance, MiningNodeInstance, TreasureNodeInstance } from '../types';
+import { BirdState, EnemyInstance, LeisureSpotInstance, MiningNodeInstance, TreasureNodeInstance } from '../types';
 import { getCharacterDef } from '../data/characters';
 import { TOWN_X, TOWN_Y } from '../data/world';
 import { CharacterAvatar } from './CharacterAvatar';
@@ -14,11 +14,12 @@ interface Props {
   enemies: EnemyInstance[];
   miningNodes: MiningNodeInstance[];
   treasures: TreasureNodeInstance[];
+  leisureSpots: LeisureSpotInstance[];
   birds: BirdState[];
   onBirdPress: (defId: string) => void;
 }
 
-export function WorldMap({ enemies, miningNodes, treasures, birds, onBirdPress }: Props) {
+export function WorldMap({ enemies, miningNodes, treasures, leisureSpots, birds, onBirdPress }: Props) {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const fieldWidth = Math.max(240, windowWidth - HORIZONTAL_PADDING);
   const fieldHeight = Math.max(420, windowHeight * 0.72);
@@ -41,6 +42,10 @@ export function WorldMap({ enemies, miningNodes, treasures, birds, onBirdPress }
 
       {treasures.map((t) => (
         <TreasureSprite key={t.uid} treasure={t} x={t.x * fieldWidth} y={t.y * fieldHeight} />
+      ))}
+
+      {leisureSpots.map((s) => (
+        <LeisureSprite key={s.uid} spot={s} x={s.x * fieldWidth} y={s.y * fieldHeight} />
       ))}
 
       {birds.map((b) => (
@@ -116,6 +121,14 @@ function TreasureSprite({ treasure, x, y }: { treasure: TreasureNodeInstance; x:
       <Text style={styles.emojiLarge}>🎁</Text>
       <Text style={styles.tag}>+{treasure.goldReward}G</Text>
     </Animated.View>
+  );
+}
+
+function LeisureSprite({ spot, x, y }: { spot: LeisureSpotInstance; x: number; y: number }) {
+  return (
+    <View style={[styles.sprite, styles.leisureSprite, { left: x, top: y }]}>
+      <Text style={styles.emojiLarge}>{spot.emoji}</Text>
+    </View>
   );
 }
 
@@ -231,8 +244,15 @@ function BirdSprite({
     return () => loop.stop();
   }, [walk, fainted]);
 
+  const isPassiveActivity =
+    bird.activity === 'idle' ||
+    bird.activity === 'resting' ||
+    bird.activity === 'eating' ||
+    bird.activity === 'bathing' ||
+    bird.activity === 'fishing';
+
   useEffect(() => {
-    if (fainted || bird.activity === 'idle' || bird.activity === 'resting') return;
+    if (fainted || isPassiveActivity) return;
     const isQuick = def.role === 'attacker';
     const loop = Animated.loop(
       Animated.sequence([
@@ -312,6 +332,7 @@ const styles = StyleSheet.create({
   },
   townEmoji: { fontSize: 30 },
   sprite: { position: 'absolute', alignItems: 'center', width: 56 },
+  leisureSprite: { opacity: 0.85 },
   tapArea: { alignItems: 'center' },
   emojiLarge: { fontSize: 26 },
   pickaxe: { position: 'absolute', top: -8, right: 0, fontSize: 14 },

@@ -1,4 +1,4 @@
-import { EnemyDef, MiningNodeDef, TreasureNodeDef } from '../types';
+import { EnemyDef, LeisureSpotDef, MiningNodeDef, TreasureNodeDef } from '../types';
 
 // The town sits at the center of the world; everything else is scattered
 // across the surrounding field (forest/mine/lake/ruins flavor, but
@@ -25,4 +25,11 @@ export const MINING_NODE_DEFS: MiningNodeDef[] = [
 
 export const TREASURE_DEFS: TreasureNodeDef[] = [
   { id: 'treasure_1', name: '古い宝箱', goldReward: 150 },
+];
+
+// Always-available leisure spots — not consumable, just somewhere an
+// otherwise-idle bird can go relax instead of aimlessly wandering.
+export const LEISURE_SPOT_DEFS: LeisureSpotDef[] = [
+  { id: 'river_1', name: '川', emoji: '🌊', kind: 'river' },
+  { id: 'pond_1', name: '池', emoji: '🪷', kind: 'pond' },
 ];

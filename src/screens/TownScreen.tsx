@@ -44,6 +44,7 @@ export function TownScreen() {
           enemies={world.enemies}
           miningNodes={world.miningNodes}
           treasures={world.treasures}
+          leisureSpots={world.leisureSpots}
           birds={world.birds}
           onBirdPress={(defId) => setSelectedBirdId((prev) => (prev === defId ? null : defId))}
         />

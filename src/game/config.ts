@@ -12,12 +12,29 @@ export const ENCOUNTER_HOLD_TICKS = 2;
 export const MOVE_SPEED = 0.1;
 export const ARRIVAL_THRESHOLD = 0.035;
 
-// How often (ms) a bird's mood is free to change on its own.
+// How often (ms) a bird's mood is free to change on its own (moods that get
+// actively resolved — hungry/sleepy — clear sooner via their own need loop).
 export const MOOD_REFRESH_MS = 45_000;
 
 // Each tick, a free/idle bird has this base chance of re-evaluating the
 // request board (scaled by its personal acceptance score for each request).
 export const REQUEST_CHECK_CHANCE = 0.35;
+
+// How long a bird spends at home satisfying hunger/sleepiness before the
+// need is resolved and its mood returns to normal.
+export const HOME_NEED_TICKS = 4;
+
+// How long a bird lingers at a river/pond before moving on.
+export const LEISURE_DWELL_TICKS = 3;
+// Chance an otherwise-idle bird heads to a leisure spot instead of just
+// wandering, when one exists.
+export const LEISURE_CHANCE = 0.5;
+
+// Depleted enemies/resources come back after this long so the world never
+// runs permanently dry.
+export const ENEMY_RESPAWN_MS = 25_000;
+export const MINING_RESPAWN_MS = 30_000;
+export const TREASURE_RESPAWN_MS = 90_000;
 
 export const STARTING_GOLD = 300;
 export const STARTING_MATERIALS = { wood: 0, ore: 0, mushroom: 0 };

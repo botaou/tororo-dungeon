@@ -6,6 +6,10 @@ interface ThoughtLines {
   job?: string;
   enemy?: string;
   treasure?: string;
+  eating?: string;
+  bathing?: string;
+  fishing?: string;
+  resting?: string;
   sleepy?: string;
   happy?: string;
   hungry?: string;
@@ -19,25 +23,31 @@ const LINES: Record<string, ThoughtLines> = {
     idle: '今日は探検したい',
     enemy: 'あそこに敵がいるぞ！',
     treasure: '何か見つけたぞ！',
-    sleepy: '……ちょっとだけ休む',
+    eating: 'ごはんちゅう',
+    bathing: '水浴び気持ちいい！',
+    fishing: '釣れるかな…',
+    resting: '……ちょっとだけ休む',
     happy: '外の空気が気持ちいい！',
-    hungry: 'お腹すいたけど気にしない',
     wantsMoney: '稼げる依頼はないかな',
   },
   vivi: {
     idle: 'トロロと一緒なら行く',
     job: 'みんなと一緒がいいな',
-    sleepy: 'ねむい……',
+    eating: 'もぐもぐ',
+    bathing: 'ぱしゃぱしゃ',
+    fishing: 'のんびり釣り中',
+    resting: 'ねむい……',
     happy: 'たのしいね！',
-    hungry: 'なにか食べたいな',
     wantsMoney: '依頼、受けてみようかな',
   },
   haku: {
     idle: '今日は近場がいい',
     job: 'これくらいなら大丈夫かな',
-    sleepy: '少し休みたい',
+    eating: '先にごはんにしよう',
+    bathing: '静かでいいところ',
+    fishing: 'じっと待つのが好き',
+    resting: '少し休みたい',
     happy: 'みんな無事でよかった',
-    hungry: '先にごはんにしたい',
     wantsMoney: '依頼をこなそうかな',
   },
   mone: {
@@ -45,9 +55,11 @@ const LINES: Record<string, ThoughtLines> = {
     mining: '掘るの楽しい！',
     job: 'これは良い依頼！',
     treasure: 'お宝の匂いがする…',
-    sleepy: 'もうちょっとだけ掘ってから寝る',
+    eating: 'お腹いっぱいにする！',
+    bathing: 'キラキラした石ないかな',
+    fishing: '何か釣れそう！',
+    resting: 'もうちょっとだけ掘ってから寝る',
     happy: 'いいもの見つけた！',
-    hungry: 'お腹すいたなあ',
     wantsMoney: 'お金になるものを探そう',
   },
 };
@@ -56,9 +68,7 @@ export function getBirdThought(defId: string, mood: MoodId, activity: ActivityKi
   const lines = LINES[defId];
   if (!lines) return '…';
   if (hasJob && lines.job) return lines.job;
-  if (activity === 'mining' && lines.mining) return lines.mining;
-  if (activity === 'enemy' && lines.enemy) return lines.enemy;
-  if (activity === 'treasure' && lines.treasure) return lines.treasure;
+  if (activity !== 'idle' && lines[activity]) return lines[activity]!;
   if (mood !== 'normal' && lines[mood]) return lines[mood]!;
   return lines.idle ?? '…';
 }

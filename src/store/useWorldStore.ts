@@ -1,13 +1,37 @@
 import { create } from 'zustand';
 
-import { BirdState, EnemyInstance, JobRequest, MaterialId, MiningNodeInstance, Personality, TreasureNodeInstance, WorldState } from '../types';
+import {
+  BirdState,
+  EnemyInstance,
+  JobRequest,
+  LeisureSpotInstance,
+  MaterialId,
+  MiningNodeInstance,
+  Personality,
+  TreasureNodeInstance,
+  WorldState,
+} from '../types';
 import { CHARACTERS, getCharacterDef } from '../data/characters';
-import { ENEMY_DEFS, MINING_NODE_DEFS, TOWN_RADIUS, TOWN_X, TOWN_Y, TREASURE_DEFS } from '../data/world';
+import {
+  ENEMY_DEFS,
+  LEISURE_SPOT_DEFS,
+  MINING_NODE_DEFS,
+  TOWN_RADIUS,
+  TOWN_X,
+  TOWN_Y,
+  TREASURE_DEFS,
+} from '../data/world';
 import { rollRandomMood } from '../data/moods';
 import { AiWorld, stepBird } from '../game/ai';
 import { AttackAssignment, applyHealing, resolveAttacks } from '../game/combat';
 import { scoreRequestAcceptance, tryAcceptRequest } from '../game/requests';
-import { MOOD_REFRESH_MS, REQUEST_CHECK_CHANCE } from '../game/config';
+import {
+  ENEMY_RESPAWN_MS,
+  MINING_RESPAWN_MS,
+  MOOD_REFRESH_MS,
+  REQUEST_CHECK_CHANCE,
+  TREASURE_RESPAWN_MS,
+} from '../game/config';
 import { usePlayerStore } from './usePlayerStore';
 
 let uidCounter = 0;
@@ -56,7 +80,9 @@ const PERSONALITY_ORDER: Record<Personality, number> = {
 };
 
 function buildInitialWorld(): WorldState {
-  const positions = scatterPositions(ENEMY_DEFS.length + MINING_NODE_DEFS.length + TREASURE_DEFS.length);
+  const positions = scatterPositions(
+    ENEMY_DEFS.length + MINING_NODE_DEFS.length + TREASURE_DEFS.length + LEISURE_SPOT_DEFS.length
+  );
   let cursor = 0;
 
   const enemies: EnemyInstance[] = ENEMY_DEFS.map((e) => ({
@@ -70,6 +96,7 @@ function buildInitialWorld(): WorldState {
     atk: e.atk,
     goldReward: e.goldReward,
     defeated: false,
+    respawnAt: null,
   }));
   const miningNodes: MiningNodeInstance[] = MINING_NODE_DEFS.map((m) => ({
     uid: uid('mine'),
@@ -79,6 +106,7 @@ function buildInitialWorld(): WorldState {
     resource: m.resource,
     amount: m.amount,
     collected: false,
+    respawnAt: null,
   }));
   const treasures: TreasureNodeInstance[] = TREASURE_DEFS.map((t) => ({
     uid: uid('treasure'),
@@ -87,6 +115,15 @@ function buildInitialWorld(): WorldState {
     ...positions[cursor++],
     goldReward: t.goldReward,
     collected: false,
+    respawnAt: null,
+  }));
+  const leisureSpots: LeisureSpotInstance[] = LEISURE_SPOT_DEFS.map((s) => ({
+    uid: uid('leisure'),
+    defId: s.id,
+    name: s.name,
+    emoji: s.emoji,
+    kind: s.kind,
+    ...positions[cursor++],
   }));
 
   const birds: BirdState[] = CHARACTERS.map((c) => ({
@@ -108,7 +145,7 @@ function buildInitialWorld(): WorldState {
     wanderY: null,
   }));
 
-  return { enemies, miningNodes, treasures, birds, requests: [] };
+  return { enemies, miningNodes, treasures, leisureSpots, birds, requests: [] };
 }
 
 interface WorldActions {
@@ -122,7 +159,7 @@ interface WorldStore {
 }
 
 export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => ({
-  world: { enemies: [], miningNodes: [], treasures: [], birds: [], requests: [] },
+  world: { enemies: [], miningNodes: [], treasures: [], leisureSpots: [], birds: [], requests: [] },
 
   initWorld: () => set({ world: buildInitialWorld() }),
 
@@ -150,9 +187,24 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     if (world.birds.length === 0) return; // world not initialized yet
 
     const now = Date.now();
-    let enemies = world.enemies;
-    let miningNodes = world.miningNodes;
-    let treasures = world.treasures;
+
+    // Depleted enemies/resources come back once their respawn timer is up,
+    // so the world never runs permanently dry.
+    let enemies = world.enemies.map((e) =>
+      e.defeated && e.respawnAt !== null && now >= e.respawnAt
+        ? { ...e, defeated: false, hp: e.maxHp, respawnAt: null }
+        : e
+    );
+    let miningNodes = world.miningNodes.map((m) =>
+      m.collected && m.respawnAt !== null && now >= m.respawnAt
+        ? { ...m, collected: false, respawnAt: null }
+        : m
+    );
+    let treasures = world.treasures.map((t) =>
+      t.collected && t.respawnAt !== null && now >= t.respawnAt
+        ? { ...t, collected: false, respawnAt: null }
+        : t
+    );
     let requests = world.requests;
 
     // Refresh moods that have expired.
@@ -188,7 +240,15 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       (a, b) => PERSONALITY_ORDER[getCharacterDef(a.defId).personality] - PERSONALITY_ORDER[getCharacterDef(b.defId).personality]
     );
     const vanguard = nextBirds.find((b) => getCharacterDef(b.defId).personality === 'vanguard') ?? null;
-    const aiWorld: AiWorld = { enemies, miningNodes, treasures, requests, vanguard, allBirds: nextBirds };
+    const aiWorld: AiWorld = {
+      enemies,
+      miningNodes,
+      treasures,
+      leisureSpots: world.leisureSpots,
+      requests,
+      vanguard,
+      allBirds: nextBirds,
+    };
 
     const allAssignments: AttackAssignment[] = [];
     const materialsToAdd: Partial<Record<MaterialId, number>> = {};
@@ -203,13 +263,17 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         materialsToAdd[key] = (materialsToAdd[key] ?? 0) + (outcome.materialsCollected[key] ?? 0);
       }
       if (outcome.miningCollectedUid) {
-        miningNodes = miningNodes.map((m) => (m.uid === outcome.miningCollectedUid ? { ...m, collected: true } : m));
+        miningNodes = miningNodes.map((m) =>
+          m.uid === outcome.miningCollectedUid ? { ...m, collected: true, respawnAt: now + MINING_RESPAWN_MS } : m
+        );
         aiWorld.miningNodes = miningNodes;
       }
       if (outcome.treasureCollectedUid) {
         const treasure = treasures.find((t) => t.uid === outcome.treasureCollectedUid);
         if (treasure) goldToAdd += treasure.goldReward;
-        treasures = treasures.map((t) => (t.uid === outcome.treasureCollectedUid ? { ...t, collected: true } : t));
+        treasures = treasures.map((t) =>
+          t.uid === outcome.treasureCollectedUid ? { ...t, collected: true, respawnAt: now + TREASURE_RESPAWN_MS } : t
+        );
         aiWorld.treasures = treasures;
       }
       if (outcome.jobCompletedId) {
@@ -226,7 +290,9 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     }
 
     const combatResult = resolveAttacks(enemies, allAssignments);
-    enemies = combatResult.enemies;
+    enemies = combatResult.enemies.map((e) =>
+      e.defeated && e.respawnAt === null ? { ...e, respawnAt: now + ENEMY_RESPAWN_MS } : e
+    );
     goldToAdd += combatResult.goldReward;
 
     for (const { enemyUid, damage } of combatResult.retaliations) {
@@ -253,6 +319,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         enemies,
         miningNodes,
         treasures,
+        leisureSpots: world.leisureSpots,
         birds: healedBirds,
         requests,
       },
