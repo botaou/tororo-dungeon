@@ -28,6 +28,8 @@ export interface CharacterDef {
   materialBonusPercent?: number; // bonus % applied when this bird delivers materials
 }
 
+// Defs carry a hand-placed design-time position (0..1) so the world reads
+// as a deliberately laid-out diorama instead of randomly scattered items.
 export interface EnemyDef {
   id: string;
   name: string;
@@ -35,6 +37,8 @@ export interface EnemyDef {
   hp: number;
   atk: number;
   goldReward: number;
+  x: number;
+  y: number;
 }
 
 export interface MiningNodeDef {
@@ -42,12 +46,16 @@ export interface MiningNodeDef {
   name: string;
   resource: MaterialId;
   amount: number;
+  x: number;
+  y: number;
 }
 
 export interface TreasureNodeDef {
   id: string;
   name: string;
   goldReward: number;
+  x: number;
+  y: number;
 }
 
 // ---- Persisted player state ----
@@ -106,6 +114,8 @@ export interface LeisureSpotDef {
   name: string;
   emoji: string;
   kind: LeisureKind;
+  x: number;
+  y: number;
 }
 
 export interface LeisureSpotInstance {
@@ -132,7 +142,11 @@ export type ActivityKind =
 // A pursuit goal a bird's AI is actively working toward. A job is just a
 // mining/treasure pursuit restricted to a specific request's material and
 // tagged with which request it fulfills (see BirdState.currentJobId).
-export type TargetKind = 'enemy' | 'mining' | 'treasure' | 'river' | 'pond' | 'wander';
+export type TargetKind = 'enemy' | 'mining' | 'treasure' | 'river' | 'pond' | 'explore' | 'rest';
+
+// The four things every bird can choose to do — personality only weights
+// how likely each one is to be picked, it never rules one out entirely.
+export type ActivityCategory = 'combat' | 'mining' | 'explore' | 'rest';
 
 export interface BirdState {
   defId: string; // birds are fixed individuals, defId doubles as identity

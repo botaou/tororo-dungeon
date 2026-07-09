@@ -29,7 +29,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <TownScreen />
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
     </SafeAreaProvider>
   );
 }

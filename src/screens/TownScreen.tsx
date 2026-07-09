@@ -36,6 +36,7 @@ export function TownScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.topBar}>
+        <Text style={styles.title}>🏡 トロロの街</Text>
         <MaterialsRow gold={gold} materials={materials} />
       </View>
 
@@ -55,14 +56,14 @@ export function TownScreen() {
           <View style={styles.thoughtBubble}>
             <Text style={styles.thoughtName}>
               {selectedBird.name}
-              {getMoodDef(selectedBird.mood).label ? `(${getMoodDef(selectedBird.mood).label})` : ''}
+              {getMoodDef(selectedBird.mood).label ? `・${getMoodDef(selectedBird.mood).label}` : ''}
             </Text>
             <Text style={styles.thoughtText}>
               「{getBirdThought(selectedBird.defId, selectedBird.mood, selectedBird.activity, !!selectedBird.currentJobId)}」
             </Text>
           </View>
         ) : (
-          <Text style={styles.hintText}>鳥をタップすると今の気分がわかります</Text>
+          <Text style={styles.hintText}>🐣 鳥をタップすると今の気分がわかります</Text>
         )}
         <AnimatedPressable style={styles.boardButton} onPress={() => setBoardVisible(true)}>
           <Text style={styles.boardButtonText}>📋 依頼</Text>
@@ -81,26 +82,33 @@ export function TownScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.bgBottom },
-  topBar: { paddingHorizontal: 12, paddingTop: 6 },
+  topBar: { paddingHorizontal: 14, paddingTop: 6, gap: 6 },
+  title: { fontSize: 18, fontWeight: '800', color: theme.textPrimary },
   mapWrap: { flex: 1, paddingHorizontal: 12, marginTop: 8 },
   bottomBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     gap: 10,
   },
-  hintText: { flex: 1, fontSize: 11, color: theme.textMuted },
-  thoughtBubble: { flex: 1 },
+  hintText: { flex: 1, fontSize: 12, color: theme.textMuted },
+  thoughtBubble: {
+    flex: 1,
+    backgroundColor: theme.card,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: theme.cardBorder,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
   thoughtName: { fontSize: 11, fontWeight: '700', color: theme.textMuted },
   thoughtText: { fontSize: 13, fontWeight: '600', color: theme.textPrimary, marginTop: 1 },
   boardButton: {
-    backgroundColor: theme.card,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: theme.cardBorder,
+    backgroundColor: theme.gold,
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
   },
-  boardButtonText: { color: theme.textPrimary, fontWeight: '700', fontSize: 13 },
+  boardButtonText: { color: '#fff', fontWeight: '700', fontSize: 13 },
 });

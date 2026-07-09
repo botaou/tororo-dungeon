@@ -12,6 +12,10 @@ export const ENCOUNTER_HOLD_TICKS = 2;
 export const MOVE_SPEED = 0.1;
 export const ARRIVAL_THRESHOLD = 0.035;
 
+// Minimum distance kept between two birds — closer than this and they get
+// gently pushed apart so they never visually stack on top of each other.
+export const MIN_BIRD_DISTANCE = 0.05;
+
 // How often (ms) a bird's mood is free to change on its own (moods that get
 // actively resolved — hungry/sleepy — clear sooner via their own need loop).
 export const MOOD_REFRESH_MS = 45_000;

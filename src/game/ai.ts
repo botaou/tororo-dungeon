@@ -1,10 +1,12 @@
 import {
+  ActivityCategory,
   BirdState,
   CharacterDef,
   EnemyInstance,
   JobRequest,
   LeisureSpotInstance,
   MiningNodeInstance,
+  Personality,
   TreasureNodeInstance,
 } from '../types';
 import {
@@ -13,22 +15,39 @@ import {
   HOME_NEED_TICKS,
   LEISURE_CHANCE,
   LEISURE_DWELL_TICKS,
+  MIN_BIRD_DISTANCE,
   MOVE_SPEED,
 } from './config';
 import { TOWN_RADIUS, TOWN_X, TOWN_Y } from '../data/world';
 import { AttackAssignment } from './combat';
 
-// How close an enemy needs to get to the cautious personality before she
-// panics and fights back, and how much harder she hits while enraged.
-export const PANIC_RADIUS = 0.16;
-export const ENRAGED_MULTIPLIER = 2.5;
-// How close the vanguard must be to its target before assist personalities
-// (clingy) can land ranged hits on it — otherwise they'd be sniping enemies
-// the vanguard hasn't actually reached yet.
-const ASSIST_RADIUS = 0.2;
 // A fainted bird (hp hit 0) rests in place and slowly recovers before
 // resuming any activity, rather than vanishing or teleporting home.
 const FAINT_RECOVERY_PER_TICK = 5;
+
+// Personality doesn't gate any activity outright — it just weights how
+// likely each of the four is to be picked when a bird is free to choose.
+// Combat's weight is further scaled down by dangerAversion against however
+// threatening the nearest enemy looks, so "cautious" means "fights less
+// readily," not "never fights."
+interface PersonalityProfile {
+  combat: number;
+  mining: number;
+  explore: number;
+  rest: number;
+  dangerAversion: number; // 0 = fearless, 1 = avoids anything but the weakest foe
+}
+
+const PERSONALITY_PROFILES: Record<Personality, PersonalityProfile> = {
+  vanguard: { combat: 0.55, explore: 0.3, mining: 0.1, rest: 0.05, dangerAversion: 0 },
+  freeSpirit: { combat: 0.2, explore: 0.2, mining: 0.55, rest: 0.05, dangerAversion: 0.35 },
+  clingy: { combat: 0.25, explore: 0.2, mining: 0.15, rest: 0.4, dangerAversion: 0.5 },
+  cautious: { combat: 0.3, explore: 0.15, mining: 0.1, rest: 0.45, dangerAversion: 0.85 },
+};
+
+// Enemy atk value considered "as dangerous as it gets" for weighting
+// purposes; our roster tops out well under this.
+const DANGER_ATK_REFERENCE = 8;
 
 function moveToward(bird: BirdState, tx: number, ty: number): boolean {
   const dx = tx - bird.x;
@@ -52,17 +71,6 @@ function nearest<T extends { x: number; y: number }>(items: T[], x: number, y: n
     }
   }
   return best;
-}
-
-function nearestWithinRadius<T extends { x: number; y: number }>(
-  items: T[],
-  x: number,
-  y: number,
-  radius: number
-): T | null {
-  const found = nearest(items, x, y);
-  if (!found) return null;
-  return Math.hypot(found.x - x, found.y - y) <= radius ? found : null;
 }
 
 function randomPointInField(): { x: number; y: number } {
@@ -89,8 +97,6 @@ export interface AiWorld {
   treasures: TreasureNodeInstance[];
   leisureSpots: LeisureSpotInstance[];
   requests: JobRequest[];
-  vanguard: BirdState | null; // this tick's vanguard, already stepped
-  allBirds: BirdState[]; // shared, mutated in place as each bird steps
 }
 
 export interface AiStepOutcome {
@@ -111,11 +117,68 @@ function emptyOutcome(): AiStepOutcome {
   };
 }
 
-// Every bird always resolves to *some* concrete thing to do, in priority
-// order: recover if fainted, finish a job if it took one, satisfy hunger/
-// sleep at home, then fall back to its personality's own drive — which
-// itself always ends in either a leisure visit or a purposeful walk, never
-// an undefined "nothing to do" limbo.
+function categoryOf(targetKind: BirdState['targetKind']): ActivityCategory | null {
+  switch (targetKind) {
+    case 'enemy':
+      return 'combat';
+    case 'mining':
+    case 'treasure':
+      return 'mining';
+    case 'explore':
+      return 'explore';
+    case 'rest':
+    case 'river':
+    case 'pond':
+      return 'rest';
+    default:
+      return null;
+  }
+}
+
+// Weighted pick among whichever of the four activities are actually
+// available right now (an empty field means zero weight, not "impossible
+// to pick" — explore/rest always have some weight so there's always a
+// choice to make).
+function pickCategory(bird: BirdState, def: CharacterDef, world: AiWorld): ActivityCategory {
+  const profile = PERSONALITY_PROFILES[def.personality];
+  const aliveEnemies = world.enemies.filter((e) => !e.defeated && e.hp > 0);
+  const nearestEnemy = nearest(aliveEnemies, bird.x, bird.y);
+  const hasGatherable =
+    world.miningNodes.some((m) => !m.collected) || world.treasures.some((t) => !t.collected);
+
+  let combatWeight = 0;
+  if (nearestEnemy) {
+    const danger = Math.min(1, nearestEnemy.atk / DANGER_ATK_REFERENCE);
+    combatWeight = Math.max(0, profile.combat * (1 - profile.dangerAversion * danger));
+  }
+  const miningWeight = hasGatherable ? profile.mining : 0;
+  const exploreWeight = profile.explore;
+  const restWeight = profile.rest;
+
+  const total = combatWeight + miningWeight + exploreWeight + restWeight;
+  let roll = Math.random() * total;
+  if ((roll -= combatWeight) < 0) return 'combat';
+  if ((roll -= miningWeight) < 0) return 'mining';
+  if ((roll -= exploreWeight) < 0) return 'explore';
+  return 'rest';
+}
+
+function isStillPursuing(bird: BirdState, category: ActivityCategory, world: AiWorld): boolean {
+  switch (category) {
+    case 'combat':
+      return world.enemies.some((e) => e.uid === bird.targetRefUid && !e.defeated && e.hp > 0);
+    case 'mining':
+      if (bird.targetKind === 'mining') return world.miningNodes.some((m) => m.uid === bird.targetRefUid && !m.collected);
+      if (bird.targetKind === 'treasure') return world.treasures.some((t) => t.uid === bird.targetRefUid && !t.collected);
+      return false;
+    case 'explore':
+    case 'rest':
+      // These conclude a "leg" at a time (see executors) rather than being
+      // invalidated externally, so once set they stay valid until cleared.
+      return bird.targetKind !== null;
+  }
+}
+
 export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutcome {
   if (bird.hp <= 0) {
     bird.hp = Math.min(bird.maxHp, bird.hp + FAINT_RECOVERY_PER_TICK);
@@ -132,20 +195,27 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
   if (bird.mood === 'hungry') {
     return stepHomeNeed(bird, 'eating');
   }
-
   if (bird.mood === 'sleepy') {
     return stepHomeNeed(bird, 'resting');
   }
 
-  switch (def.personality) {
-    case 'vanguard':
-      return stepVanguard(bird, def, world);
-    case 'freeSpirit':
-      return stepFreeSpirit(bird, def, world);
-    case 'clingy':
-      return stepClingy(bird, def, world);
-    case 'cautious':
-      return stepCautious(bird, def, world);
+  let category = categoryOf(bird.targetKind);
+  if (!category || !isStillPursuing(bird, category, world)) {
+    category = pickCategory(bird, def, world);
+    bird.targetKind = null;
+    bird.targetRefUid = null;
+    bird.workProgress = 0;
+  }
+
+  switch (category) {
+    case 'combat':
+      return executeCombat(bird, def, world);
+    case 'mining':
+      return executeGather(bird, def, world);
+    case 'explore':
+      return executeExplore(bird);
+    case 'rest':
+      return executeRest(bird, world);
   }
 }
 
@@ -171,79 +241,20 @@ function stepHomeNeed(bird: BirdState, activity: 'eating' | 'resting'): AiStepOu
   return emptyOutcome();
 }
 
-function stepWander(bird: BirdState, bounds: 'field' | 'town'): AiStepOutcome {
-  const hasDest = bird.wanderX !== null && bird.wanderY !== null;
-  const arrived = hasDest ? moveToward(bird, bird.wanderX!, bird.wanderY!) : true;
-  if (!hasDest || arrived) {
-    const dest = bounds === 'town' ? randomPointNearTown(TOWN_RADIUS * 1.6) : randomPointInField();
-    bird.wanderX = dest.x;
-    bird.wanderY = dest.y;
-  }
-  bird.targetKind = 'wander';
-  bird.targetRefUid = null;
-  bird.activity = 'idle';
-  return emptyOutcome();
-}
-
-// The "I have nothing pressing to do" fallback: sometimes go bathe/fish at
-// a leisure spot, otherwise take a purposeful walk. Never just freezes.
-function stepLeisureOrWander(bird: BirdState, world: AiWorld, bounds: 'field' | 'town'): AiStepOutcome {
-  const outcome = emptyOutcome();
-
-  if (bird.targetKind === 'river' || bird.targetKind === 'pond') {
-    const spot = world.leisureSpots.find((s) => s.uid === bird.targetRefUid);
-    if (spot) {
-      const arrived = moveToward(bird, spot.x, spot.y);
-      bird.activity = spot.kind === 'river' ? 'bathing' : 'fishing';
-      if (arrived) {
-        bird.workProgress += 1;
-        if (bird.workProgress >= LEISURE_DWELL_TICKS) {
-          bird.targetKind = null;
-          bird.targetRefUid = null;
-          bird.workProgress = 0;
-        }
-      }
-      return outcome;
-    }
-    bird.targetKind = null;
-    bird.targetRefUid = null;
-  }
-
-  if (bird.targetKind === 'wander') {
-    return stepWander(bird, bounds);
-  }
-
-  if (world.leisureSpots.length > 0 && Math.random() < LEISURE_CHANCE) {
-    const spot = nearest(world.leisureSpots, bird.x, bird.y);
-    if (spot) {
-      bird.targetKind = spot.kind;
-      bird.targetRefUid = spot.uid;
-      bird.workProgress = 0;
-      bird.activity = spot.kind === 'river' ? 'bathing' : 'fishing';
-      return outcome;
-    }
-  }
-
-  return stepWander(bird, bounds);
-}
-
-// Tororo: seeks out the nearest enemy to fight; with nothing dangerous
-// around, he roams the whole field (or hangs near town if he's itching
-// for a paid job) looking for something new.
-function stepVanguard(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutcome {
+// Any bird that rolls combat fights whichever enemy is nearest to it.
+function executeCombat(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutcome {
   const outcome = emptyOutcome();
   const aliveEnemies = world.enemies.filter((e) => !e.defeated && e.hp > 0);
 
-  if (aliveEnemies.length === 0) {
-    return stepLeisureOrWander(bird, world, bird.mood === 'wantsMoney' ? 'town' : 'field');
-  }
-
   if (!bird.targetRefUid || !aliveEnemies.some((e) => e.uid === bird.targetRefUid)) {
     const target = nearest(aliveEnemies, bird.x, bird.y);
-    bird.targetKind = target ? 'enemy' : null;
-    bird.targetRefUid = target?.uid ?? null;
+    if (!target) {
+      bird.targetKind = null;
+      return outcome;
+    }
+    bird.targetKind = 'enemy';
+    bird.targetRefUid = target.uid;
   }
-  if (!bird.targetRefUid) return stepLeisureOrWander(bird, world, 'field');
 
   const enemy = aliveEnemies.find((e) => e.uid === bird.targetRefUid)!;
   const arrived = moveToward(bird, enemy.x, enemy.y);
@@ -259,9 +270,8 @@ function stepVanguard(bird: BirdState, def: CharacterDef, world: AiWorld): AiSte
   return outcome;
 }
 
-// Mone: prioritizes the nearest unclaimed rock/treasure; with nothing left
-// to gather, she relaxes or wanders looking for more.
-function stepFreeSpirit(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutcome {
+// Any bird that rolls mining gathers whichever rock/treasure is nearest.
+function executeGather(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutcome {
   const outcome = emptyOutcome();
   const uncollectedMining = world.miningNodes.filter((m) => !m.collected);
   const uncollectedTreasure = world.treasures.filter((t) => !t.collected);
@@ -278,7 +288,7 @@ function stepFreeSpirit(bird: BirdState, def: CharacterDef, world: AiWorld): AiS
 
     if (miningDist === Infinity && treasureDist === Infinity) {
       bird.targetKind = null;
-      bird.targetRefUid = null;
+      return outcome;
     } else if (miningDist <= treasureDist) {
       bird.targetKind = 'mining';
       bird.targetRefUid = nearestMining!.uid;
@@ -326,70 +336,88 @@ function stepFreeSpirit(bird: BirdState, def: CharacterDef, world: AiWorld): AiS
     }
   }
 
-  return stepLeisureOrWander(bird, world, bird.mood === 'wantsMoney' ? 'town' : 'field');
-}
-
-// The enemy the vanguard is close enough to for assist personalities to
-// meaningfully pitch in on — null if it hasn't picked one, or hasn't
-// gotten near it yet.
-function vanguardEngagedEnemy(world: AiWorld): EnemyInstance | null {
-  const vanguard = world.vanguard;
-  if (!vanguard || vanguard.hp <= 0 || vanguard.targetKind !== 'enemy' || !vanguard.targetRefUid) return null;
-  const enemy = world.enemies.find((e) => e.uid === vanguard.targetRefUid && !e.defeated && e.hp > 0);
-  if (!enemy) return null;
-  const dist = Math.hypot(enemy.x - vanguard.x, enemy.y - vanguard.y);
-  return dist <= ASSIST_RADIUS ? enemy : null;
-}
-
-// Vivi: sticks close to the vanguard wherever it goes, and pitches in
-// ranged damage once it's actually engaged with something nearby.
-function stepClingy(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutcome {
-  const outcome = emptyOutcome();
-  if (!world.vanguard || world.vanguard.hp <= 0) {
-    return stepLeisureOrWander(bird, world, 'town');
-  }
-  moveToward(bird, world.vanguard.x - 0.055, world.vanguard.y + 0.035);
-  bird.targetKind = null;
-  bird.targetRefUid = null;
-  const engaged = vanguardEngagedEnemy(world);
-  if (engaged) {
-    bird.activity = 'enemy';
-    outcome.assignments.push({
-      unitUid: bird.defId,
-      enemyUid: engaged.uid,
-      damage: bird.atk,
-      materialBonusPercent: def.materialBonusPercent ?? 0,
-    });
-  } else {
-    bird.activity = 'idle';
-  }
   return outcome;
 }
 
-// Haku: stays near town, healing from a distance — unless an enemy gets
-// within her panic radius, at which point she fights fiercely from where
-// she stands instead of retreating.
-function stepCautious(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutcome {
-  const outcome = emptyOutcome();
-  const aliveEnemies = world.enemies.filter((e) => !e.defeated && e.hp > 0);
-  const threat = nearestWithinRadius(aliveEnemies, bird.x, bird.y, PANIC_RADIUS);
+// Explore: head to a random spot out in the field. Each leg concludes on
+// arrival (clearing targetKind) so the bird reconsiders its next move
+// fresh, rather than wandering forever once picked.
+function executeExplore(bird: BirdState): AiStepOutcome {
+  const hasDest = bird.wanderX !== null && bird.wanderY !== null;
+  if (!hasDest) {
+    const dest = randomPointInField();
+    bird.wanderX = dest.x;
+    bird.wanderY = dest.y;
+    bird.targetKind = 'explore';
+    bird.activity = 'idle';
+    return emptyOutcome();
+  }
+  const arrived = moveToward(bird, bird.wanderX!, bird.wanderY!);
+  bird.activity = 'idle';
+  if (arrived) {
+    bird.targetKind = null;
+    bird.wanderX = null;
+    bird.wanderY = null;
+  }
+  return emptyOutcome();
+}
 
-  if (threat) {
-    bird.activity = 'enemy';
-    outcome.assignments.push({
-      unitUid: bird.defId,
-      enemyUid: threat.uid,
-      damage: Math.round(bird.atk * ENRAGED_MULTIPLIER),
-      materialBonusPercent: def.materialBonusPercent ?? 0,
-    });
-    return outcome;
+// Rest: either relax at a river/pond for a while, or just mill around near
+// town — either way it's a deliberate choice, not a fallback.
+function executeRest(bird: BirdState, world: AiWorld): AiStepOutcome {
+  if (bird.targetKind === 'river' || bird.targetKind === 'pond') {
+    const spot = world.leisureSpots.find((s) => s.uid === bird.targetRefUid);
+    if (!spot) {
+      bird.targetKind = null;
+      return emptyOutcome();
+    }
+    const arrived = moveToward(bird, spot.x, spot.y);
+    bird.activity = spot.kind === 'river' ? 'bathing' : 'fishing';
+    if (arrived) {
+      bird.workProgress += 1;
+      if (bird.workProgress >= LEISURE_DWELL_TICKS) {
+        bird.targetKind = null;
+        bird.targetRefUid = null;
+        bird.workProgress = 0;
+      }
+    }
+    return emptyOutcome();
   }
 
-  return stepLeisureOrWander(bird, world, 'town');
+  if (bird.targetKind === 'rest') {
+    const hasDest = bird.wanderX !== null && bird.wanderY !== null;
+    const arrived = hasDest ? moveToward(bird, bird.wanderX!, bird.wanderY!) : true;
+    bird.activity = 'idle';
+    if (!hasDest || arrived) {
+      bird.targetKind = null;
+      bird.wanderX = null;
+      bird.wanderY = null;
+    }
+    return emptyOutcome();
+  }
+
+  // Fresh decision: leisure spot or just a stroll near town.
+  if (world.leisureSpots.length > 0 && Math.random() < LEISURE_CHANCE) {
+    const spot = nearest(world.leisureSpots, bird.x, bird.y);
+    if (spot) {
+      bird.targetKind = spot.kind;
+      bird.targetRefUid = spot.uid;
+      bird.workProgress = 0;
+      bird.activity = spot.kind === 'river' ? 'bathing' : 'fishing';
+      return emptyOutcome();
+    }
+  }
+  const dest = randomPointNearTown(TOWN_RADIUS * 1.6);
+  bird.wanderX = dest.x;
+  bird.wanderY = dest.y;
+  bird.targetKind = 'rest';
+  bird.activity = 'idle';
+  return emptyOutcome();
 }
 
 // Any bird with an accepted job heads for the nearest unclaimed node of the
-// requested material, delivers it, and collects the bounty on completion.
+// requested material, delivers it, and collects the bounty on completion —
+// this overrides normal category selection until the job concludes.
 function stepJob(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutcome {
   const outcome = emptyOutcome();
   const request = world.requests.find((r) => r.id === bird.currentJobId);
@@ -406,7 +434,15 @@ function stepJob(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutc
     const node = nearest(matching, bird.x, bird.y);
     if (!node) {
       // Nothing available right now — hang around town and keep the job.
-      return stepWander(bird, 'town');
+      const hasDest = bird.wanderX !== null && bird.wanderY !== null;
+      const arrived = hasDest ? moveToward(bird, bird.wanderX!, bird.wanderY!) : true;
+      if (!hasDest || arrived) {
+        const dest = randomPointNearTown(TOWN_RADIUS * 1.6);
+        bird.wanderX = dest.x;
+        bird.wanderY = dest.y;
+      }
+      bird.activity = 'idle';
+      return outcome;
     }
     bird.targetKind = 'mining';
     bird.targetRefUid = node.uid;
@@ -431,4 +467,35 @@ function stepJob(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutc
     }
   }
   return outcome;
+}
+
+// Gently pushes any two birds that ended up too close apart, so several
+// independently-acting birds never visually stack on top of each other
+// (e.g. when more than one heads for the same enemy or resource).
+export function separateBirds(birds: BirdState[]): BirdState[] {
+  const next = birds.map((b) => ({ ...b }));
+  for (let i = 0; i < next.length; i++) {
+    for (let j = i + 1; j < next.length; j++) {
+      const a = next[i];
+      const b = next[j];
+      if (a.hp <= 0 || b.hp <= 0) continue; // fainted birds stay put
+
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist >= MIN_BIRD_DISTANCE) continue;
+
+      const angle = dist > 0.0001 ? Math.atan2(dy, dx) : Math.random() * Math.PI * 2;
+      const push = (MIN_BIRD_DISTANCE - dist) / 2;
+      a.x -= Math.cos(angle) * push;
+      a.y -= Math.sin(angle) * push;
+      b.x += Math.cos(angle) * push;
+      b.y += Math.sin(angle) * push;
+    }
+  }
+  for (const b of next) {
+    b.x = Math.min(0.95, Math.max(0.05, b.x));
+    b.y = Math.min(0.92, Math.max(0.08, b.y));
+  }
+  return next;
 }

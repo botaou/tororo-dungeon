@@ -7,7 +7,6 @@ import {
   LeisureSpotInstance,
   MaterialId,
   MiningNodeInstance,
-  Personality,
   TreasureNodeInstance,
   WorldState,
 } from '../types';
@@ -22,7 +21,7 @@ import {
   TREASURE_DEFS,
 } from '../data/world';
 import { rollRandomMood } from '../data/moods';
-import { AiWorld, stepBird } from '../game/ai';
+import { AiWorld, separateBirds, stepBird } from '../game/ai';
 import { AttackAssignment, applyHealing, resolveAttacks } from '../game/combat';
 import { scoreRequestAcceptance, tryAcceptRequest } from '../game/requests';
 import {
@@ -40,57 +39,21 @@ function uid(prefix: string): string {
   return `${prefix}_${uidCounter}_${Date.now()}`;
 }
 
-// Scatter `count` points across the world on a jittered grid so items don't
-// overlap, leaving a clear ring around the town for its own footprint.
-function scatterPositions(count: number): { x: number; y: number }[] {
-  if (count === 0) return [];
-  const cols = Math.ceil(Math.sqrt(count));
-  const rows = Math.ceil(count / cols);
-  const cells: { x: number; y: number }[] = [];
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      cells.push({ x: (c + 0.5) / cols, y: (r + 0.5) / rows });
-    }
-  }
-  for (let i = cells.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [cells[i], cells[j]] = [cells[j], cells[i]];
-  }
-  return cells.slice(0, count).map((cell) => {
-    const jitterX = (Math.random() - 0.5) * (0.7 / cols);
-    const jitterY = (Math.random() - 0.5) * (0.7 / rows);
-    let x = 0.1 + cell.x * 0.8 + jitterX;
-    let y = 0.15 + cell.y * 0.7 + jitterY;
-    const dx = x - TOWN_X;
-    const dy = y - TOWN_Y;
-    if (Math.hypot(dx, dy) < TOWN_RADIUS * 1.3) {
-      const angle = Math.atan2(dy, dx) || Math.random() * Math.PI * 2;
-      x = TOWN_X + Math.cos(angle) * TOWN_RADIUS * 1.4;
-      y = TOWN_Y + Math.sin(angle) * TOWN_RADIUS * 1.4;
-    }
-    return { x: Math.min(0.92, Math.max(0.08, x)), y: Math.min(0.88, Math.max(0.16, y)) };
-  });
+// A touch of organic variation around each def's hand-placed position, so
+// the layout still reads as designed rather than perfectly gridded.
+function jitterPosition(x: number, y: number): { x: number; y: number } {
+  const jx = x + (Math.random() - 0.5) * 0.03;
+  const jy = y + (Math.random() - 0.5) * 0.03;
+  return { x: Math.min(0.94, Math.max(0.06, jx)), y: Math.min(0.9, Math.max(0.1, jy)) };
 }
 
-const PERSONALITY_ORDER: Record<Personality, number> = {
-  vanguard: 0,
-  freeSpirit: 1,
-  clingy: 2,
-  cautious: 3,
-};
-
 function buildInitialWorld(): WorldState {
-  const positions = scatterPositions(
-    ENEMY_DEFS.length + MINING_NODE_DEFS.length + TREASURE_DEFS.length + LEISURE_SPOT_DEFS.length
-  );
-  let cursor = 0;
-
   const enemies: EnemyInstance[] = ENEMY_DEFS.map((e) => ({
     uid: uid('enemy'),
     defId: e.id,
     name: e.name,
     emoji: e.emoji,
-    ...positions[cursor++],
+    ...jitterPosition(e.x, e.y),
     hp: e.hp,
     maxHp: e.hp,
     atk: e.atk,
@@ -102,7 +65,7 @@ function buildInitialWorld(): WorldState {
     uid: uid('mine'),
     defId: m.id,
     name: m.name,
-    ...positions[cursor++],
+    ...jitterPosition(m.x, m.y),
     resource: m.resource,
     amount: m.amount,
     collected: false,
@@ -112,7 +75,8 @@ function buildInitialWorld(): WorldState {
     uid: uid('treasure'),
     defId: t.id,
     name: t.name,
-    ...positions[cursor++],
+    x: t.x,
+    y: t.y,
     goldReward: t.goldReward,
     collected: false,
     respawnAt: null,
@@ -123,7 +87,8 @@ function buildInitialWorld(): WorldState {
     name: s.name,
     emoji: s.emoji,
     kind: s.kind,
-    ...positions[cursor++],
+    x: s.x,
+    y: s.y,
   }));
 
   const birds: BirdState[] = CHARACTERS.map((c) => ({
@@ -234,20 +199,15 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       }
     }
 
-    // Each bird acts independently; sort so the vanguard decides first, so
-    // assist personalities can read its decision this same tick.
-    const nextBirds = birdsWithMood.sort(
-      (a, b) => PERSONALITY_ORDER[getCharacterDef(a.defId).personality] - PERSONALITY_ORDER[getCharacterDef(b.defId).personality]
-    );
-    const vanguard = nextBirds.find((b) => getCharacterDef(b.defId).personality === 'vanguard') ?? null;
+    // Each bird now acts fully independently — no personality gets to see
+    // another's decision first, since none of them assist/follow anymore.
+    const nextBirds = birdsWithMood;
     const aiWorld: AiWorld = {
       enemies,
       miningNodes,
       treasures,
       leisureSpots: world.leisureSpots,
       requests,
-      vanguard,
-      allBirds: nextBirds,
     };
 
     const allAssignments: AttackAssignment[] = [];
@@ -306,6 +266,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
 
     const healer = nextBirds.find((b) => getCharacterDef(b.defId).role === 'healer' && b.hp > 0);
     const healedBirds = healer ? applyHealing(nextBirds, healer.defId, healer.atk) : nextBirds;
+    const finalBirds = separateBirds(healedBirds);
 
     if (Object.keys(materialsToAdd).length > 0) {
       usePlayerStore.getState().addMaterials(materialsToAdd);
@@ -320,7 +281,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         miningNodes,
         treasures,
         leisureSpots: world.leisureSpots,
-        birds: healedBirds,
+        birds: finalBirds,
         requests,
       },
     });

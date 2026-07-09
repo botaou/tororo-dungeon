@@ -3,7 +3,7 @@ import { Animated, Easing, StyleSheet, Text, TouchableWithoutFeedback, View, use
 
 import { BirdState, EnemyInstance, LeisureSpotInstance, MiningNodeInstance, TreasureNodeInstance } from '../types';
 import { getCharacterDef } from '../data/characters';
-import { TOWN_X, TOWN_Y } from '../data/world';
+import { TOWN_DECOR, TOWN_X, TOWN_Y } from '../data/world';
 import { CharacterAvatar } from './CharacterAvatar';
 import { TICK_MS } from '../game/config';
 import { theme } from '../theme';
@@ -26,6 +26,15 @@ export function WorldMap({ enemies, miningNodes, treasures, leisureSpots, birds,
 
   return (
     <View style={[styles.field, { height: fieldHeight }]}>
+      {TOWN_DECOR.map((d, i) => (
+        <Text
+          key={i}
+          style={[styles.decor, { left: d.x * fieldWidth - 12, top: d.y * fieldHeight - 12 }]}
+        >
+          {d.emoji}
+        </Text>
+      ))}
+
       <View
         style={[styles.town, { left: TOWN_X * fieldWidth - 34, top: TOWN_Y * fieldHeight - 34 }]}
       >
@@ -313,9 +322,9 @@ function BirdSprite({
 
 const styles = StyleSheet.create({
   field: {
-    backgroundColor: theme.cardAlt,
-    borderRadius: 14,
-    borderWidth: 1,
+    backgroundColor: theme.ground,
+    borderRadius: 20,
+    borderWidth: 3,
     borderColor: theme.cardBorder,
     overflow: 'hidden',
   },
@@ -331,6 +340,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   townEmoji: { fontSize: 30 },
+  decor: { position: 'absolute', fontSize: 20, opacity: 0.9 },
   sprite: { position: 'absolute', alignItems: 'center', width: 56 },
   leisureSprite: { opacity: 0.85 },
   tapArea: { alignItems: 'center' },
