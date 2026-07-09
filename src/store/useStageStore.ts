@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { LayoutAnimation } from 'react-native';
 
 import {
   EnemyInstance,
@@ -175,6 +176,7 @@ export const useStageStore = create<StageStore & StageActions>()((set, get) => (
         usePlayerStore.getState().addMaterials(result.rewards);
       }
       if (result.logs.length > 0) {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
         log = [...log, ...result.logs].slice(-MAX_LOG_LINES);
       }
     }
@@ -182,6 +184,7 @@ export const useStageStore = create<StageStore & StageActions>()((set, get) => (
     const allDefeated = enemies.every((e) => e.defeated || e.hp <= 0);
     if (allDefeated) {
       usePlayerStore.getState().clearStage(session.stageId);
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       set({
         session: {
           ...session,
@@ -206,6 +209,7 @@ export const useStageStore = create<StageStore & StageActions>()((set, get) => (
     if (!node || node.collected) return;
 
     usePlayerStore.getState().addMaterials({ [node.resource]: node.amount });
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     set({
       session: {
         ...session,
@@ -228,6 +232,7 @@ export const useStageStore = create<StageStore & StageActions>()((set, get) => (
       .getState()
       .collectTreasure(session.stageId, treasure.rewardMaterial, treasure.rewardAmount);
 
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     set({
       session: {
         ...session,

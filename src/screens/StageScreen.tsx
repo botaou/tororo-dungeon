@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { usePlayerStore } from '../store/usePlayerStore';
@@ -9,6 +9,7 @@ import { CHARACTERS, getCharacterDef } from '../data/characters';
 import { rollSkillOffer } from '../data/skills';
 import { ResourceBar } from '../components/ResourceBar';
 import { CharacterAvatar } from '../components/CharacterAvatar';
+import { AnimatedPressable } from '../components/AnimatedPressable';
 import { SkillDef } from '../types';
 import { theme } from '../theme';
 
@@ -38,9 +39,9 @@ export function StageScreen({ onExit }: Props) {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>{stage.name}</Text>
-        <TouchableOpacity onPress={handleExit} activeOpacity={0.6}>
+        <AnimatedPressable onPress={handleExit}>
           <Text style={styles.exitLink}>{session.status === 'cleared' ? '戻る' : '撤退する'}</Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
       </View>
 
       <View style={styles.statusPanel}>
@@ -82,18 +83,17 @@ export function StageScreen({ onExit }: Props) {
             {CHARACTERS.map((c) => {
               const disabled = session.energy < c.summonCost || session.status !== 'playing';
               return (
-                <TouchableOpacity
+                <AnimatedPressable
                   key={c.id}
                   style={[styles.summonButton, { borderColor: c.color }, disabled && styles.buttonDisabled]}
                   disabled={disabled}
                   onPress={() => summon(c.id)}
-                  activeOpacity={0.7}
                 >
                   <CharacterAvatar characterId={c.id} emoji={c.emoji} color={c.color} size={36} />
                   <Text style={styles.summonButtonText}>{c.name}</Text>
                   <Text style={styles.summonRoleText}>{c.description}</Text>
                   <Text style={styles.summonCostText}>消費 {c.summonCost}</Text>
-                </TouchableOpacity>
+                </AnimatedPressable>
               );
             })}
           </View>
@@ -102,29 +102,27 @@ export function StageScreen({ onExit }: Props) {
         <Section title="⛏️ 採掘オブジェクト">
           <View style={styles.nodeRow}>
             {session.miningNodes.map((m) => (
-              <TouchableOpacity
+              <AnimatedPressable
                 key={m.uid}
                 style={[styles.nodeButton, m.collected && styles.buttonDisabled]}
                 disabled={m.collected}
                 onPress={() => collectMiningNode(m.uid)}
-                activeOpacity={0.7}
               >
                 <Text style={styles.nodeButtonText}>{m.name}</Text>
                 <Text style={styles.nodeButtonSub}>
                   {m.collected ? '採取済み' : `+${m.amount} ${m.resource}`}
                 </Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
             ))}
           </View>
         </Section>
 
         {session.treasure && (
           <Section title="💰 お宝">
-            <TouchableOpacity
+            <AnimatedPressable
               style={[styles.treasureButton, session.treasure.collected && styles.buttonDisabled]}
               disabled={session.treasure.collected}
               onPress={collectTreasureNode}
-              activeOpacity={0.7}
             >
               <Text style={styles.treasureButtonText}>{session.treasure.name}</Text>
               <Text style={styles.nodeButtonSub}>
@@ -132,7 +130,7 @@ export function StageScreen({ onExit }: Props) {
                   ? '獲得済み'
                   : `+${session.treasure.rewardAmount} ${session.treasure.rewardMaterial}`}
               </Text>
-            </TouchableOpacity>
+            </AnimatedPressable>
           </Section>
         )}
 
@@ -153,9 +151,9 @@ export function StageScreen({ onExit }: Props) {
           <Text style={styles.clearBannerText}>
             🎉 ステージクリア！ +{stage.clearRewardAmount} {stage.clearRewardMaterial}
           </Text>
-          <TouchableOpacity style={styles.clearBannerButton} onPress={handleExit} activeOpacity={0.7}>
+          <AnimatedPressable style={styles.clearBannerButton} onPress={handleExit}>
             <Text style={styles.clearBannerButtonText}>ホームに戻る</Text>
-          </TouchableOpacity>
+          </AnimatedPressable>
         </View>
       )}
 
@@ -165,15 +163,14 @@ export function StageScreen({ onExit }: Props) {
             <Text style={styles.modalTitle}>スキルを選択</Text>
             <Text style={styles.modalSubtitle}>このステージ中だけ有効です</Text>
             {skillOffer.map((skill) => (
-              <TouchableOpacity
+              <AnimatedPressable
                 key={skill.id}
                 style={styles.skillOption}
                 onPress={() => chooseSkill(skill.id)}
-                activeOpacity={0.7}
               >
                 <Text style={styles.skillOptionName}>{skill.name}</Text>
                 <Text style={styles.skillOptionDesc}>{skill.description}</Text>
-              </TouchableOpacity>
+              </AnimatedPressable>
             ))}
           </View>
         </View>

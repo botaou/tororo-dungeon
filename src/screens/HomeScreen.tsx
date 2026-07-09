@@ -1,5 +1,5 @@
 import React from 'react';
-import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { usePlayerStore } from '../store/usePlayerStore';
@@ -7,6 +7,7 @@ import { useStageStore } from '../store/useStageStore';
 import { STAGES } from '../data/stages';
 import { ResourceBar } from '../components/ResourceBar';
 import { MaterialsRow } from '../components/MaterialsRow';
+import { AnimatedPressable } from '../components/AnimatedPressable';
 import { StageDef } from '../types';
 import { theme } from '../theme';
 
@@ -48,16 +49,15 @@ export function HomeScreen({ onEnterStage }: Props) {
             {item.treasure ? (treasureCollected ? '　お宝: 獲得済み' : '　💰お宝あり') : ''}
           </Text>
         </View>
-        <TouchableOpacity
+        <AnimatedPressable
           style={[styles.challengeButton, !canChallenge && styles.challengeButtonDisabled]}
           disabled={!canChallenge}
           onPress={() => handleChallenge(item)}
-          activeOpacity={0.7}
         >
           <Text style={styles.challengeButtonText}>
             {!unlocked ? 'ロック中' : cleared ? '周回する' : '挑戦する'}
           </Text>
-        </TouchableOpacity>
+        </AnimatedPressable>
       </View>
     );
   };
