@@ -96,6 +96,10 @@ export interface EnemyInstance {
   goldReward: number;
   defeated: boolean;
   respawnAt: number | null; // epoch ms; set when defeated, revives once passed
+  // Cumulative damage dealt by each attacking bird (keyed by defId) while
+  // this incarnation of the enemy is alive — used to split the kill reward
+  // proportionally. Reset to {} whenever the enemy respawns.
+  damageLog: Record<string, number>;
 }
 
 export interface MiningNodeInstance {
@@ -154,12 +158,13 @@ export type ActivityKind =
   | 'eating'
   | 'bathing'
   | 'fishing'
-  | 'carrying';
+  | 'carrying'
+  | 'selling';
 
 // A pursuit goal a bird's AI is actively working toward. A job is just a
 // mining/treasure pursuit restricted to a specific request's material and
 // tagged with which request it fulfills (see BirdState.currentJobId).
-export type TargetKind = 'enemy' | 'mining' | 'treasure' | 'river' | 'pond' | 'explore' | 'rest';
+export type TargetKind = 'enemy' | 'mining' | 'treasure' | 'river' | 'pond' | 'explore' | 'rest' | 'shop';
 
 // The four things every bird can choose to do — personality only weights
 // how likely each one is to be picked, it never rules one out entirely.
@@ -181,9 +186,15 @@ export interface BirdState {
   activity: ActivityKind;
   currentJobId: string | null;
   // Set the moment a free-roaming (non-job) bird finishes gathering a
-  // mining node; cleared once it carries the haul back to town and the
-  // material is credited to the shared stash.
+  // mining node; cleared once it carries the haul back to its own house
+  // and the material is credited to its personal inventory.
   carrying: { materialId: MaterialId; amount: number } | null;
+  // Each bird's own economy — materials it has personally gathered/earned,
+  // and gold from combat, treasure, job rewards, and sales at the shop.
+  // Only what the player actually buys from a bird moves into the town's
+  // shared stash (PlayerState.materials).
+  gold: number;
+  inventory: Record<MaterialId, number>;
   // Ambient wander destination, used when a bird has nothing more pressing
   // to do — persisted so it commits to a direction instead of jittering.
   wanderX: number | null;

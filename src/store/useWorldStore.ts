@@ -24,6 +24,7 @@ import { rollRandomMood } from '../data/moods';
 import { AiWorld, separateBirds, stepBird } from '../game/ai';
 import { AttackAssignment, applyHealing, resolveAttacks } from '../game/combat';
 import { scoreRequestAcceptance, tryAcceptRequest } from '../game/requests';
+import { MATERIAL_SELL_PRICE } from '../data/marketPrices';
 import {
   ENEMY_RESPAWN_MS,
   MINING_RESPAWN_MS,
@@ -32,6 +33,7 @@ import {
   TREASURE_RESPAWN_MS,
 } from '../game/config';
 import { usePlayerStore } from './usePlayerStore';
+import { BirdWallet, useBirdEconomyStore } from './useBirdEconomyStore';
 
 let uidCounter = 0;
 function uid(prefix: string): string {
@@ -60,6 +62,7 @@ function buildInitialWorld(): WorldState {
     goldReward: e.goldReward,
     defeated: false,
     respawnAt: null,
+    damageLog: {},
   }));
   const miningNodes: MiningNodeInstance[] = MINING_NODE_DEFS.map((m) => ({
     uid: uid('mine'),
@@ -91,25 +94,30 @@ function buildInitialWorld(): WorldState {
     y: s.y,
   }));
 
-  const birds: BirdState[] = CHARACTERS.map((c) => ({
-    defId: c.id,
-    name: c.name,
-    x: TOWN_X + (Math.random() - 0.5) * 0.05,
-    y: TOWN_Y + (Math.random() - 0.5) * 0.05,
-    hp: c.baseHp,
-    maxHp: c.baseHp,
-    atk: c.baseAtk,
-    mood: rollRandomMood(),
-    moodChangedAt: Date.now(),
-    targetKind: null,
-    targetRefUid: null,
-    workProgress: 0,
-    activity: 'idle',
-    currentJobId: null,
-    carrying: null,
-    wanderX: null,
-    wanderY: null,
-  }));
+  const birds: BirdState[] = CHARACTERS.map((c) => {
+    const wallet = useBirdEconomyStore.getState().getWallet(c.id);
+    return {
+      defId: c.id,
+      name: c.name,
+      x: TOWN_X + (Math.random() - 0.5) * 0.05,
+      y: TOWN_Y + (Math.random() - 0.5) * 0.05,
+      hp: c.baseHp,
+      maxHp: c.baseHp,
+      atk: c.baseAtk,
+      mood: rollRandomMood(),
+      moodChangedAt: Date.now(),
+      targetKind: null,
+      targetRefUid: null,
+      workProgress: 0,
+      activity: 'idle',
+      currentJobId: null,
+      carrying: null,
+      gold: wallet.gold,
+      inventory: { ...wallet.inventory },
+      wanderX: null,
+      wanderY: null,
+    };
+  });
 
   return { enemies, miningNodes, treasures, leisureSpots, birds, requests: [] };
 }
@@ -158,7 +166,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     // so the world never runs permanently dry.
     let enemies = world.enemies.map((e) =>
       e.defeated && e.respawnAt !== null && now >= e.respawnAt
-        ? { ...e, defeated: false, hp: e.maxHp, respawnAt: null }
+        ? { ...e, defeated: false, hp: e.maxHp, respawnAt: null, damageLog: {} }
         : e
     );
     let miningNodes = world.miningNodes.map((m) =>
@@ -230,8 +238,8 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         aiWorld.miningNodes = miningNodes;
       }
       if (outcome.treasureCollectedUid) {
-        const treasure = treasures.find((t) => t.uid === outcome.treasureCollectedUid);
-        if (treasure) goldToAdd += treasure.goldReward;
+        // Treasure gold goes straight to the finding bird (handled in ai.ts)
+        // rather than the player, so no player-side credit here anymore.
         treasures = treasures.map((t) =>
           t.uid === outcome.treasureCollectedUid ? { ...t, collected: true, respawnAt: now + TREASURE_RESPAWN_MS } : t
         );
@@ -239,6 +247,24 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       }
       if (outcome.jobCompletedId) {
         completedJobIds.add(outcome.jobCompletedId);
+      }
+      if (outcome.sellAttempt) {
+        // A bird offers one material at a time (see pickSellOffer in ai.ts).
+        // If the player can't afford the full offer, buy as much of it as
+        // they can instead of failing the whole trip — otherwise a well-
+        // stocked bird's asking price can permanently outpace the player's
+        // slow trickle of income and trade just stalls.
+        const [materialId, offeredAmount] = Object.entries(outcome.sellAttempt)[0] as [MaterialId, number];
+        const unitPrice = MATERIAL_SELL_PRICE[materialId];
+        const affordableUnits = unitPrice > 0 ? Math.floor(usePlayerStore.getState().gold / unitPrice) : 0;
+        const soldAmount = Math.min(offeredAmount ?? 0, affordableUnits);
+        if (soldAmount > 0) {
+          const cost = soldAmount * unitPrice;
+          usePlayerStore.getState().trySpendGold(cost);
+          usePlayerStore.getState().addMaterials({ [materialId]: soldAmount });
+          bird.gold += cost;
+          bird.inventory[materialId] = Math.max(0, (bird.inventory[materialId] ?? 0) - soldAmount);
+        }
       }
     }
 
@@ -254,7 +280,13 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     enemies = combatResult.enemies.map((e) =>
       e.defeated && e.respawnAt === null ? { ...e, respawnAt: now + ENEMY_RESPAWN_MS } : e
     );
-    goldToAdd += combatResult.goldReward;
+    // Only the town's security-fee cut goes to the player now — the rest of
+    // each kill's bounty is split among the birds that damaged it.
+    goldToAdd += combatResult.securityFeeGold;
+    for (const { unitUid, gold } of combatResult.rewards) {
+      const bird = nextBirds.find((b) => b.defId === unitUid);
+      if (bird) bird.gold += gold;
+    }
 
     for (const { enemyUid, damage } of combatResult.retaliations) {
       const attackerUids = new Set(allAssignments.filter((a) => a.enemyUid === enemyUid).map((a) => a.unitUid));
@@ -275,6 +307,10 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     if (goldToAdd !== 0) {
       usePlayerStore.getState().addGold(goldToAdd);
     }
+
+    const wallets: Record<string, BirdWallet> = {};
+    for (const b of finalBirds) wallets[b.defId] = { gold: b.gold, inventory: b.inventory };
+    useBirdEconomyStore.getState().syncAll(wallets);
 
     set({
       world: {

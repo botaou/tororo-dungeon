@@ -34,6 +34,24 @@ export const LEISURE_DWELL_TICKS = 3;
 // wandering, when one exists.
 export const LEISURE_CHANCE = 0.5;
 
+// Cut of every combat kill reward that goes to the player as "town security
+// cooperation money" instead of the attacking bird(s) — the player's main
+// guaranteed income source, since they otherwise only earn by buying low and
+// (eventually) selling high.
+export const SECURITY_FEE_RATE = 0.3;
+
+// How long a bird lingers at the shop while selling off its inventory.
+export const SELL_DWELL_TICKS = 2;
+// Each tick, a free bird with something to sell has this base chance of
+// deciding to make a trip to the shop; much more likely while "wantsMoney".
+export const SELL_CHECK_CHANCE_BASE = 0.05;
+export const SELL_CHECK_CHANCE_WANTS_MONEY = 0.4;
+// A bird sells only its single most-plentiful material per trip (capped at
+// this amount), not its whole stash at once — otherwise a well-stocked bird's
+// asking price quickly outgrows what the player can ever afford, and trade
+// freezes up entirely instead of trickling along a little at a time.
+export const SELL_MAX_PER_TRIP = 20;
+
 // Depleted enemies/resources come back after this long so the world never
 // runs permanently dry.
 export const ENEMY_RESPAWN_MS = 25_000;

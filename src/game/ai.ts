@@ -5,6 +5,7 @@ import {
   EnemyInstance,
   JobRequest,
   LeisureSpotInstance,
+  MaterialId,
   MiningNodeInstance,
   Personality,
   TreasureNodeInstance,
@@ -17,9 +18,14 @@ import {
   LEISURE_DWELL_TICKS,
   MIN_BIRD_DISTANCE,
   MOVE_SPEED,
+  SELL_CHECK_CHANCE_BASE,
+  SELL_CHECK_CHANCE_WANTS_MONEY,
+  SELL_DWELL_TICKS,
+  SELL_MAX_PER_TRIP,
 } from './config';
 import { TOWN_RADIUS, TOWN_X, TOWN_Y } from '../data/world';
 import { getHousePosition } from '../data/houses';
+import { getShopPosition } from '../data/townGrid';
 import { AttackAssignment } from './combat';
 
 // A fainted bird (hp hit 0) rests in place and slowly recovers before
@@ -102,10 +108,15 @@ export interface AiWorld {
 
 export interface AiStepOutcome {
   assignments: AttackAssignment[];
-  materialsCollected: Partial<Record<string, number>>;
+  // Only populated by job fulfillment now — free-roam gathering credits the
+  // bird's own inventory directly instead (see stepCarrying).
+  materialsCollected: Partial<Record<MaterialId, number>>;
   treasureCollectedUid: string | null;
   miningCollectedUid: string | null;
   jobCompletedId: string | null;
+  // Set when a bird finishes a shop-selling trip — the store checks whether
+  // the player can afford to buy this haul before crediting anyone.
+  sellAttempt: Partial<Record<MaterialId, number>> | null;
 }
 
 function emptyOutcome(): AiStepOutcome {
@@ -115,6 +126,7 @@ function emptyOutcome(): AiStepOutcome {
     treasureCollectedUid: null,
     miningCollectedUid: null,
     jobCompletedId: null,
+    sellAttempt: null,
   };
 }
 
@@ -131,6 +143,8 @@ function categoryOf(targetKind: BirdState['targetKind']): ActivityCategory | nul
     case 'river':
     case 'pond':
       return 'rest';
+    case 'shop':
+      return null;
     default:
       return null;
   }
@@ -198,10 +212,24 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
   }
 
   if (bird.mood === 'hungry') {
-    return stepHomeNeed(bird, 'eating');
+    return stepShopFood(bird);
   }
   if (bird.mood === 'sleepy') {
     return stepHomeNeed(bird, 'resting');
+  }
+
+  // Continue an already-committed selling trip, or roll to start a new one.
+  if (bird.targetKind === 'shop' && bird.activity === 'selling') {
+    return executeSellTrip(bird);
+  }
+  if (hasSellableInventory(bird)) {
+    const chance = bird.mood === 'wantsMoney' ? SELL_CHECK_CHANCE_WANTS_MONEY : SELL_CHECK_CHANCE_BASE;
+    if (Math.random() < chance) {
+      bird.targetKind = 'shop';
+      bird.activity = 'selling';
+      bird.workProgress = 0;
+      return executeSellTrip(bird);
+    }
   }
 
   let category = categoryOf(bird.targetKind);
@@ -224,10 +252,10 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
   }
 }
 
-// Hungry → go home and eat. Sleepy → go home and rest. Either way, once
-// satisfied for HOME_NEED_TICKS the mood clears back to normal instead of
-// waiting on the ambient mood-refresh timer. "Home" is the bird's own house.
-function stepHomeNeed(bird: BirdState, activity: 'eating' | 'resting'): AiStepOutcome {
+// Sleepy → go home and rest. Once satisfied for HOME_NEED_TICKS the mood
+// clears back to normal instead of waiting on the ambient refresh timer.
+// "Home" is the bird's own house.
+function stepHomeNeed(bird: BirdState, activity: 'resting'): AiStepOutcome {
   if (bird.activity !== activity) {
     bird.workProgress = 0;
   }
@@ -247,18 +275,84 @@ function stepHomeNeed(bird: BirdState, activity: 'eating' | 'resting'): AiStepOu
   return emptyOutcome();
 }
 
-// A free-roaming bird that just finished gathering carries its haul back
-// to town before the material is credited to the shared stash — so
+// Hungry → walk to the shop for a basic ration. This tier of food is always
+// free and never touches the player's funds or stock — it's the guaranteed
+// safety net so hunger always resolves no matter how poor a bird is.
+function stepShopFood(bird: BirdState): AiStepOutcome {
+  if (bird.activity !== 'eating') {
+    bird.workProgress = 0;
+  }
+  const shop = getShopPosition();
+  const arrived = moveToward(bird, shop.x, shop.y);
+  bird.activity = 'eating';
+  bird.targetKind = 'shop';
+  bird.targetRefUid = null;
+  if (arrived) {
+    bird.workProgress += 1;
+    if (bird.workProgress >= HOME_NEED_TICKS) {
+      bird.mood = 'normal';
+      bird.moodChangedAt = Date.now();
+      bird.workProgress = 0;
+      bird.targetKind = null;
+    }
+  }
+  return emptyOutcome();
+}
+
+// A free-roaming bird that just finished gathering carries its haul back to
+// its own house before the material becomes its personal property — so
 // "what is this bird carrying right now" is a real, visible thing rather
-// than resources teleporting into storage the instant they're picked up.
+// than resources teleporting into its stash the instant they're picked up.
 function stepCarrying(bird: BirdState): AiStepOutcome {
   const outcome = emptyOutcome();
-  const arrived = moveToward(bird, TOWN_X, TOWN_Y);
+  const house = getHousePosition(bird.defId);
+  const arrived = moveToward(bird, house.x, house.y);
   bird.activity = 'carrying';
   if (arrived && bird.carrying) {
     const { materialId, amount } = bird.carrying;
-    outcome.materialsCollected[materialId] = (outcome.materialsCollected[materialId] ?? 0) + amount;
+    bird.inventory[materialId] = (bird.inventory[materialId] ?? 0) + amount;
     bird.carrying = null;
+  }
+  return outcome;
+}
+
+function hasSellableInventory(bird: BirdState): boolean {
+  return Object.values(bird.inventory).some((amount) => (amount ?? 0) > 0);
+}
+
+// Picks the single most-plentiful material to offer this trip (capped), not
+// the whole stash at once — otherwise a well-stocked bird's asking price
+// quickly outgrows what the player can ever afford, and trade freezes up
+// entirely instead of trickling along a little at a time.
+function pickSellOffer(bird: BirdState): { materialId: MaterialId; amount: number } | null {
+  let bestId: MaterialId | null = null;
+  let bestAmount = 0;
+  for (const [key, amount] of Object.entries(bird.inventory) as [MaterialId, number][]) {
+    if ((amount ?? 0) > bestAmount) {
+      bestAmount = amount ?? 0;
+      bestId = key;
+    }
+  }
+  if (!bestId) return null;
+  return { materialId: bestId, amount: Math.min(bestAmount, SELL_MAX_PER_TRIP) };
+}
+
+// A bird with something to sell (more likely while "wantsMoney") walks to
+// the shop and offers its best-stocked material — the store decides whether
+// the player can actually afford to buy it.
+function executeSellTrip(bird: BirdState): AiStepOutcome {
+  const outcome = emptyOutcome();
+  const shop = getShopPosition();
+  const arrived = moveToward(bird, shop.x, shop.y);
+  bird.activity = 'selling';
+  if (arrived) {
+    bird.workProgress += 1;
+    if (bird.workProgress >= SELL_DWELL_TICKS) {
+      const offer = pickSellOffer(bird);
+      if (offer) outcome.sellAttempt = { [offer.materialId]: offer.amount };
+      bird.targetKind = null;
+      bird.workProgress = 0;
+    }
   }
   return outcome;
 }
@@ -348,6 +442,7 @@ function executeGather(bird: BirdState, def: CharacterDef, world: AiWorld): AiSt
       if (arrived) {
         bird.workProgress += 1;
         if (bird.workProgress >= ENCOUNTER_HOLD_TICKS) {
+          bird.gold += treasure.goldReward;
           outcome.treasureCollectedUid = treasure.uid;
           bird.targetKind = null;
           bird.targetRefUid = null;
@@ -482,6 +577,7 @@ function stepJob(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutc
       outcome.materialsCollected[node.resource] = (outcome.materialsCollected[node.resource] ?? 0) + node.amount;
       outcome.miningCollectedUid = node.uid;
       outcome.jobCompletedId = request.id;
+      bird.gold += request.reward; // the player pays this out in the store
       bird.currentJobId = null;
       bird.targetKind = null;
       bird.targetRefUid = null;

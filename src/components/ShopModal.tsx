@@ -9,8 +9,9 @@ interface Props {
   onClose: () => void;
 }
 
-// Placeholder for the shop's real buy/sell system — for now, tapping the
-// shop building just confirms it's there and gives a hint of what's coming.
+// Birds already trade here on their own (selling surplus, buying a free
+// basic ration when hungry) — this modal is just a placeholder for the
+// player's own crafting/direct-trade UI, which comes later.
 export function ShopModal({ visible, onClose }: Props) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -22,8 +23,8 @@ export function ShopModal({ visible, onClose }: Props) {
               <Text style={styles.closeButtonText}>閉じる</Text>
             </AnimatedPressable>
           </View>
-          <Text style={styles.bodyText}>ただいま準備中です。</Text>
-          <Text style={styles.bodySubText}>ここで素材を売ったり、道具や餌を買えるようになる予定です。</Text>
+          <Text style={styles.bodyText}>鳥たちが自分の判断で素材を売りに来ます。</Text>
+          <Text style={styles.bodySubText}>加工品の販売やクラフトの機能は準備中です。</Text>
         </View>
       </View>
     </Modal>

@@ -7,13 +7,13 @@ import { useWorldStore } from '../store/useWorldStore';
 import { useTownStore } from '../store/useTownStore';
 import { TOWN_PLOT_DEFS } from '../data/townGrid';
 import { getMoodDef } from '../data/moods';
+import { MATERIAL_ICON } from '../data/materials';
 import { getBirdThought } from '../game/thoughts';
 import { WorldMap } from '../components/WorldMap';
-import { MaterialsRow } from '../components/MaterialsRow';
-import { BirdStatusRow } from '../components/BirdStatusRow';
 import { AnimatedPressable } from '../components/AnimatedPressable';
 import { RequestBoard } from '../components/RequestBoard';
 import { ShopModal } from '../components/ShopModal';
+import { PlayerInventoryModal } from '../components/PlayerInventoryModal';
 import { MaterialId } from '../types';
 import { cuteShadow, theme } from '../theme';
 
@@ -30,6 +30,7 @@ export function TownScreen() {
   const [selectedBirdId, setSelectedBirdId] = useState<string | null>(null);
   const [boardVisible, setBoardVisible] = useState(false);
   const [shopVisible, setShopVisible] = useState(false);
+  const [inventoryVisible, setInventoryVisible] = useState(false);
 
   useEffect(() => {
     if (world.birds.length === 0) initWorld();
@@ -56,8 +57,15 @@ export function TownScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.topBar}>
         <Text style={styles.title}>🏡 トロロの街</Text>
-        <MaterialsRow gold={gold} materials={materials} />
-        <BirdStatusRow birds={world.birds} />
+        <View style={styles.topBarRight}>
+          <View style={styles.goldPill}>
+            <Text style={styles.goldIcon}>🪙</Text>
+            <Text style={styles.goldValue}>{gold}</Text>
+          </View>
+          <AnimatedPressable style={styles.inventoryButton} onPress={() => setInventoryVisible(true)}>
+            <Text style={styles.inventoryButtonText}>🎒</Text>
+          </AnimatedPressable>
+        </View>
       </View>
 
       <View style={styles.mapWrap}>
@@ -84,6 +92,16 @@ export function TownScreen() {
             <Text style={styles.thoughtText}>
               「{getBirdThought(selectedBird.defId, selectedBird.mood, selectedBird.activity, !!selectedBird.currentJobId)}」
             </Text>
+            <View style={styles.walletRow}>
+              <Text style={styles.walletGold}>🪙{selectedBird.gold}</Text>
+              {(Object.keys(selectedBird.inventory) as MaterialId[])
+                .filter((key) => selectedBird.inventory[key] > 0)
+                .map((key) => (
+                  <Text style={styles.walletItem} key={key}>
+                    {MATERIAL_ICON[key]}{selectedBird.inventory[key]}
+                  </Text>
+                ))}
+            </View>
           </View>
         ) : (
           <Text style={styles.hintText}>🐣 鳥をタップすると今の気分がわかります</Text>
@@ -101,14 +119,52 @@ export function TownScreen() {
       />
 
       <ShopModal visible={shopVisible} onClose={() => setShopVisible(false)} />
+
+      <PlayerInventoryModal
+        visible={inventoryVisible}
+        onClose={() => setInventoryVisible(false)}
+        gold={gold}
+        materials={materials}
+      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.bgBottom },
-  topBar: { paddingHorizontal: 14, paddingTop: 6, gap: 6 },
+  topBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingTop: 6,
+  },
   title: { fontSize: 20, fontWeight: '800', color: theme.textPrimary, letterSpacing: 0.3 },
+  topBarRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  goldPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: theme.cardAlt,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    borderColor: theme.gold,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  goldIcon: { fontSize: 14 },
+  goldValue: { fontSize: 13, fontWeight: '700', color: theme.textPrimary },
+  inventoryButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: theme.card,
+    borderWidth: 1.5,
+    borderColor: theme.cardBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inventoryButtonText: { fontSize: 16 },
   mapWrap: { flex: 1, paddingHorizontal: 12, marginTop: 8 },
   bottomBar: {
     flexDirection: 'row',
@@ -130,6 +186,9 @@ const styles = StyleSheet.create({
   },
   thoughtName: { fontSize: 11, fontWeight: '700', color: theme.textMuted },
   thoughtText: { fontSize: 13, fontWeight: '600', color: theme.textPrimary, marginTop: 1 },
+  walletRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 3 },
+  walletGold: { fontSize: 11, fontWeight: '700', color: theme.gold },
+  walletItem: { fontSize: 11, fontWeight: '700', color: theme.textSecondary },
   boardButton: {
     backgroundColor: theme.gold,
     borderRadius: 999,

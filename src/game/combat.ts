@@ -1,4 +1,5 @@
 import { BirdState, EnemyInstance } from '../types';
+import { SECURITY_FEE_RATE } from './config';
 
 export interface AttackAssignment {
   unitUid: string;
@@ -9,7 +10,11 @@ export interface AttackAssignment {
 
 export interface AttackResult {
   enemies: EnemyInstance[];
-  goldReward: number;
+  // Each kill's bounty (minus the town's security-fee cut) split among the
+  // birds that damaged it, proportional to their cumulative contribution.
+  rewards: { unitUid: string; gold: number }[];
+  // The town's cut of every kill this tick — the player's guaranteed income.
+  securityFeeGold: number;
   // Enemies that took damage this tick and are still alive hit back once,
   // against a random unit that attacked them.
   retaliations: { enemyUid: string; damage: number }[];
@@ -19,8 +24,9 @@ export interface AttackResult {
 // several distinct enemies can be engaged in the same tick. Group the
 // assignments by target enemy and resolve each independently.
 export function resolveAttacks(enemies: EnemyInstance[], assignments: AttackAssignment[]): AttackResult {
-  const nextEnemies = enemies.map((e) => ({ ...e }));
-  let goldReward = 0;
+  const nextEnemies = enemies.map((e) => ({ ...e, damageLog: { ...e.damageLog } }));
+  const rewards: { unitUid: string; gold: number }[] = [];
+  let securityFeeGold = 0;
   const retaliations: { enemyUid: string; damage: number }[] = [];
 
   const byEnemy = new Map<string, AttackAssignment[]>();
@@ -36,19 +42,33 @@ export function resolveAttacks(enemies: EnemyInstance[], assignments: AttackAssi
     let bonusPercent = 0;
     for (const hit of hits) {
       if (enemy.hp <= 0) break;
-      enemy.hp = Math.max(0, enemy.hp - hit.damage);
+      const applied = Math.min(hit.damage, enemy.hp);
+      enemy.hp -= applied;
+      enemy.damageLog[hit.unitUid] = (enemy.damageLog[hit.unitUid] ?? 0) + applied;
       bonusPercent = Math.max(bonusPercent, hit.materialBonusPercent);
     }
 
     if (enemy.hp <= 0) {
       enemy.defeated = true;
-      goldReward += Math.round(enemy.goldReward * (1 + bonusPercent / 100));
+      const totalGold = Math.round(enemy.goldReward * (1 + bonusPercent / 100));
+      const fee = Math.round(totalGold * SECURITY_FEE_RATE);
+      const birdsShare = totalGold - fee;
+      securityFeeGold += fee;
+
+      const totalDamage = Object.values(enemy.damageLog).reduce((sum, d) => sum + d, 0);
+      if (totalDamage > 0) {
+        for (const [unitUid, dealt] of Object.entries(enemy.damageLog)) {
+          const share = Math.round(birdsShare * (dealt / totalDamage));
+          if (share > 0) rewards.push({ unitUid, gold: share });
+        }
+      }
+      enemy.damageLog = {}; // reset for this enemy's next life
     } else {
       retaliations.push({ enemyUid, damage: enemy.atk });
     }
   }
 
-  return { enemies: nextEnemies, goldReward, retaliations };
+  return { enemies: nextEnemies, rewards, securityFeeGold, retaliations };
 }
 
 // Healer support: top off the lowest-HP ally (excluding herself) each tick,

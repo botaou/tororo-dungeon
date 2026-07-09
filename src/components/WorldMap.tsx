@@ -375,7 +375,8 @@ function BirdSprite({
     bird.activity === 'eating' ||
     bird.activity === 'bathing' ||
     bird.activity === 'fishing' ||
-    bird.activity === 'carrying';
+    bird.activity === 'carrying' ||
+    bird.activity === 'selling';
 
   useEffect(() => {
     if (fainted || isPassiveActivity) return;
@@ -428,6 +429,7 @@ function BirdSprite({
           </Animated.View>
           {showMineSwing && <Text style={styles.pickaxe}>⛏️</Text>}
           {bird.carrying && <Text style={styles.carryBadge}>{MATERIAL_ICON[bird.carrying.materialId]}</Text>}
+          {bird.activity === 'selling' && <Text style={styles.carryBadge}>💰</Text>}
           <Text style={styles.nameTag}>{bird.name}</Text>
           <View style={styles.miniBarTrack}>
             <View style={[styles.miniBarFill, { width: `${ratio * 100}%`, backgroundColor: def.color }]} />

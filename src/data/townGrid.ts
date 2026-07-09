@@ -47,6 +47,11 @@ export const TOWN_PLOT_DEFS: TownPlotDef[] = buildPlotDefs();
 // for now; the buy/sell system comes later.
 export const SHOP_PLOT_ID = 'plot_1_0';
 
+export function getShopPosition(): { x: number; y: number } {
+  const def = TOWN_PLOT_DEFS.find((d) => d.id === SHOP_PLOT_ID)!;
+  return { x: def.x, y: def.y };
+}
+
 export const BUILDING_ICON: Record<BuildingKind, string> = {
   workshop: '🛠️',
   shop: '🏪',
