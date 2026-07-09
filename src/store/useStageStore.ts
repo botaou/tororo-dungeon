@@ -12,7 +12,13 @@ import {
 import { getStageDef } from '../data/stages';
 import { getCharacterDef } from '../data/characters';
 import { resolveCombatRound } from '../game/combat';
-import { ENCOUNTER_HOLD_TICKS, ENERGY_MAX, ENERGY_REGEN_MS } from '../game/config';
+import {
+  ARRIVAL_THRESHOLD,
+  ENCOUNTER_HOLD_TICKS,
+  ENERGY_MAX,
+  ENERGY_REGEN_MS,
+  PARTY_MOVE_SPEED,
+} from '../game/config';
 import { usePlayerStore } from './usePlayerStore';
 
 let uidCounter = 0;
@@ -62,6 +68,19 @@ function scatterPositions(count: number): { x: number; y: number }[] {
     }
     return { x: Math.min(0.92, Math.max(0.08, x)), y: Math.min(0.88, Math.max(0.16, y)) };
   });
+}
+
+function getTargetPosition(
+  kind: TargetKind,
+  refUid: string,
+  enemies: EnemyInstance[],
+  miningNodes: MiningNodeInstance[],
+  treasure: TreasureNodeInstance | null
+): { x: number; y: number } | null {
+  if (kind === 'enemy') return enemies.find((e) => e.uid === refUid) ?? null;
+  if (kind === 'mining') return miningNodes.find((m) => m.uid === refUid) ?? null;
+  if (kind === 'treasure') return treasure && treasure.uid === refUid ? treasure : null;
+  return null;
 }
 
 interface StageActions {
@@ -262,6 +281,28 @@ export const useStageStore = create<StageStore & StageActions>()((set, get) => (
           workProgress,
         },
       });
+      return;
+    }
+
+    // Walk toward the target at a constant speed before engaging it — no
+    // teleporting straight to it.
+    const targetPos = getTargetPosition(targetKind, targetRefUid, enemies, miningNodes, treasure);
+    if (!targetPos) {
+      // Target vanished from under us (shouldn't normally happen); pick a new one next tick.
+      set({
+        session: { ...session, energy, energyLastUpdated, targetKind: null, targetRefUid: null, workProgress: 0 },
+      });
+      return;
+    }
+
+    const dx = targetPos.x - partyX;
+    const dy = targetPos.y - partyY;
+    const distance = Math.hypot(dx, dy);
+    if (distance > ARRIVAL_THRESHOLD) {
+      const step = Math.min(distance, PARTY_MOVE_SPEED);
+      partyX += (dx / distance) * step;
+      partyY += (dy / distance) * step;
+      set({ session: { ...session, energy, energyLastUpdated, partyX, partyY } });
       return;
     }
 

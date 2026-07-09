@@ -13,4 +13,10 @@ export const TICK_MS = 1_000;
 // before it auto-resolves and they walk on.
 export const ENCOUNTER_HOLD_TICKS = 2;
 
+// Constant walking speed: ratio-units of the arena crossed per second, and
+// how close counts as "arrived" so they stop and engage instead of
+// endlessly approaching.
+export const PARTY_MOVE_SPEED = 0.14;
+export const ARRIVAL_THRESHOLD = 0.035;
+
 export const STARTING_MATERIALS = { gold: 0, ore: 0, gem: 0 };

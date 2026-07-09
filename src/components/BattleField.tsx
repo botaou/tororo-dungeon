@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Animated, Easing, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import {
   EnemyInstance,
@@ -11,6 +11,7 @@ import {
 } from '../types';
 import { getCharacterDef } from '../data/characters';
 import { CharacterAvatar } from './CharacterAvatar';
+import { TICK_MS } from '../game/config';
 import { theme } from '../theme';
 
 const HORIZONTAL_PADDING = 24; // matches StageScreen's paddingHorizontal * 2
@@ -295,9 +296,24 @@ function CharacterSprite({
   const pos = useRef(new Animated.ValueXY({ x: targetX, y: targetY })).current;
   const walk = useRef(new Animated.Value(0)).current;
   const doing = useRef(new Animated.Value(0)).current;
+  const prevTargetXRef = useRef(targetX);
+  const [facingRight, setFacingRight] = useState(true);
 
+  // Constant-speed walk: each update is one tick's worth of travel, animated
+  // linearly over exactly one tick so consecutive steps chain into smooth,
+  // non-teleporting motion instead of an easing snap.
   useEffect(() => {
-    Animated.spring(pos, { toValue: { x: targetX, y: targetY }, speed: 6, bounciness: 5, useNativeDriver: true }).start();
+    const dx = targetX - prevTargetXRef.current;
+    if (dx > 1) setFacingRight(true);
+    else if (dx < -1) setFacingRight(false);
+    prevTargetXRef.current = targetX;
+
+    Animated.timing(pos, {
+      toValue: { x: targetX, y: targetY },
+      duration: TICK_MS,
+      easing: Easing.linear,
+      useNativeDriver: true,
+    }).start();
   }, [targetX, targetY, pos]);
 
   // Continuous walk bob/waddle — always running so the party never looks static.
@@ -350,7 +366,13 @@ function CharacterSprite({
       ]}
     >
       <Animated.View
-        style={{ transform: [{ scale: Animated.multiply(lungeScale, auraScale) }, { rotate: waddleRotate }] }}
+        style={{
+          transform: [
+            { scaleX: facingRight ? 1 : -1 },
+            { scale: Animated.multiply(lungeScale, auraScale) },
+            { rotate: waddleRotate },
+          ],
+        }}
       >
         <CharacterAvatar characterId={unit.defId} emoji={emoji} color={color} size={32} />
       </Animated.View>
