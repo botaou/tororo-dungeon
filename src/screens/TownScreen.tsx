@@ -4,6 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useWorldStore } from '../store/useWorldStore';
+import { useTownStore } from '../store/useTownStore';
+import { TOWN_PLOT_DEFS } from '../data/townGrid';
 import { getMoodDef } from '../data/moods';
 import { getBirdThought } from '../game/thoughts';
 import { WorldMap } from '../components/WorldMap';
@@ -19,6 +21,9 @@ export function TownScreen() {
   const world = useWorldStore((s) => s.world);
   const initWorld = useWorldStore((s) => s.initWorld);
   const postRequest = useWorldStore((s) => s.postRequest);
+  const plots = useTownStore((s) => s.plots);
+  const tryUnlockPlot = useTownStore((s) => s.tryUnlockPlot);
+  const cycleBuilding = useTownStore((s) => s.cycleBuilding);
 
   const [selectedBirdId, setSelectedBirdId] = useState<string | null>(null);
   const [boardVisible, setBoardVisible] = useState(false);
@@ -31,6 +36,17 @@ export function TownScreen() {
 
   const handlePost = (materialId: MaterialId, amount: number, reward: number) => {
     postRequest(materialId, amount, reward);
+  };
+
+  const handlePlotPress = (plotId: string) => {
+    const def = TOWN_PLOT_DEFS.find((p) => p.id === plotId);
+    if (!def) return;
+    const state = plots[plotId] ?? { id: plotId, unlocked: def.unlockedByDefault, building: null };
+    if (!state.unlocked) {
+      if (def.unlockCost) tryUnlockPlot(plotId, def.unlockCost);
+      return;
+    }
+    cycleBuilding(plotId);
   };
 
   return (
@@ -47,7 +63,9 @@ export function TownScreen() {
           treasures={world.treasures}
           leisureSpots={world.leisureSpots}
           birds={world.birds}
+          plotStates={plots}
           onBirdPress={(defId) => setSelectedBirdId((prev) => (prev === defId ? null : defId))}
+          onPlotPress={handlePlotPress}
         />
       </View>
 

@@ -2,17 +2,26 @@ import React from 'react';
 import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { JobRequest, MaterialId } from '../types';
+import { MATERIAL_ICON, MATERIAL_LABEL } from '../data/materials';
 import { AnimatedPressable } from './AnimatedPressable';
 import { theme } from '../theme';
-
-const MATERIAL_LABEL: Record<MaterialId, string> = { wood: '木材', ore: '鉱石', mushroom: 'キノコ' };
-const MATERIAL_ICON: Record<MaterialId, string> = { wood: '🪵', ore: '⛏️', mushroom: '🍄' };
 
 // Preset requests to post — keeps this a tap instead of a number-entry form.
 const PRESETS: { materialId: MaterialId; amount: number; reward: number }[] = [
   { materialId: 'wood', amount: 5, reward: 20 },
   { materialId: 'ore', amount: 5, reward: 30 },
   { materialId: 'mushroom', amount: 5, reward: 25 },
+  { materialId: 'berry', amount: 5, reward: 22 },
+  { materialId: 'herb', amount: 4, reward: 28 },
+  { materialId: 'feather', amount: 3, reward: 26 },
+  { materialId: 'gem', amount: 3, reward: 45 },
+  { materialId: 'coal', amount: 5, reward: 24 },
+  { materialId: 'fish', amount: 5, reward: 24 },
+  { materialId: 'pearl', amount: 2, reward: 50 },
+  { materialId: 'waterweed', amount: 4, reward: 20 },
+  { materialId: 'relic', amount: 2, reward: 55 },
+  { materialId: 'magicStone', amount: 2, reward: 60 },
+  { materialId: 'oldCoin', amount: 4, reward: 35 },
 ];
 
 interface Props {
@@ -37,21 +46,23 @@ export function RequestBoard({ visible, onClose, requests, onPost }: Props) {
           </View>
 
           <Text style={styles.sectionLabel}>依頼を出す</Text>
-          <View style={styles.presetRow}>
-            {PRESETS.map((p) => (
-              <AnimatedPressable
-                key={p.materialId}
-                style={styles.presetButton}
-                onPress={() => onPost(p.materialId, p.amount, p.reward)}
-              >
-                <Text style={styles.presetIcon}>{MATERIAL_ICON[p.materialId]}</Text>
-                <Text style={styles.presetText}>
-                  {MATERIAL_LABEL[p.materialId]} x{p.amount}
-                </Text>
-                <Text style={styles.presetReward}>報酬 {p.reward}G</Text>
-              </AnimatedPressable>
-            ))}
-          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.presetScroll}>
+            <View style={styles.presetRow}>
+              {PRESETS.map((p) => (
+                <AnimatedPressable
+                  key={p.materialId}
+                  style={styles.presetButton}
+                  onPress={() => onPost(p.materialId, p.amount, p.reward)}
+                >
+                  <Text style={styles.presetIcon}>{MATERIAL_ICON[p.materialId]}</Text>
+                  <Text style={styles.presetText}>
+                    {MATERIAL_LABEL[p.materialId]} x{p.amount}
+                  </Text>
+                  <Text style={styles.presetReward}>報酬 {p.reward}G</Text>
+                </AnimatedPressable>
+              ))}
+            </View>
+          </ScrollView>
 
           <Text style={styles.sectionLabel}>現在の依頼</Text>
           <ScrollView style={styles.list}>
@@ -92,9 +103,10 @@ const styles = StyleSheet.create({
   closeButton: { paddingHorizontal: 10, paddingVertical: 6 },
   closeButtonText: { color: theme.blue, fontWeight: '700', fontSize: 13 },
   sectionLabel: { fontSize: 12, fontWeight: '700', color: theme.textMuted, marginBottom: 8, marginTop: 4 },
-  presetRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  presetScroll: { marginBottom: 12 },
+  presetRow: { flexDirection: 'row', gap: 8 },
   presetButton: {
-    flex: 1,
+    width: 92,
     backgroundColor: theme.cardAlt,
     borderRadius: 10,
     paddingVertical: 10,

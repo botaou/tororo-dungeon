@@ -41,4 +41,19 @@ export const MINING_RESPAWN_MS = 30_000;
 export const TREASURE_RESPAWN_MS = 90_000;
 
 export const STARTING_GOLD = 300;
-export const STARTING_MATERIALS = { wood: 0, ore: 0, mushroom: 0 };
+export const STARTING_MATERIALS = {
+  wood: 0,
+  ore: 0,
+  mushroom: 0,
+  berry: 0,
+  herb: 0,
+  feather: 0,
+  gem: 0,
+  coal: 0,
+  fish: 0,
+  pearl: 0,
+  waterweed: 0,
+  relic: 0,
+  magicStone: 0,
+  oldCoin: 0,
+};

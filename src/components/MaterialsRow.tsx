@@ -1,35 +1,40 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { MaterialId } from '../types';
+import { MATERIAL_ICON } from '../data/materials';
 import { theme } from '../theme';
 
-const ICONS: Record<MaterialId, string> = { wood: '🪵', ore: '⛏️', mushroom: '🍄' };
-
+// Only show materials the player actually has (plus gold) — with 14
+// possible materials, a fixed full row would overwhelm the small top bar.
 interface Props {
   gold: number;
   materials: Record<MaterialId, number>;
 }
 
 export function MaterialsRow({ gold, materials }: Props) {
+  const owned = (Object.keys(MATERIAL_ICON) as MaterialId[]).filter((key) => (materials[key] ?? 0) > 0);
+
   return (
-    <View style={styles.row}>
-      <View style={styles.item}>
-        <Text style={styles.icon}>🪙</Text>
-        <Text style={styles.value}>{gold}</Text>
-      </View>
-      {(Object.keys(ICONS) as MaterialId[]).map((key) => (
-        <View style={styles.item} key={key}>
-          <Text style={styles.icon}>{ICONS[key]}</Text>
-          <Text style={styles.value}>{materials[key] ?? 0}</Text>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+      <View style={styles.row}>
+        <View style={styles.item}>
+          <Text style={styles.icon}>🪙</Text>
+          <Text style={styles.value}>{gold}</Text>
         </View>
-      ))}
-    </View>
+        {owned.map((key) => (
+          <View style={styles.item} key={key}>
+            <Text style={styles.icon}>{MATERIAL_ICON[key]}</Text>
+            <Text style={styles.value}>{materials[key] ?? 0}</Text>
+          </View>
+        ))}
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
+  row: { flexDirection: 'row', gap: 10 },
   item: {
     flexDirection: 'row',
     alignItems: 'center',

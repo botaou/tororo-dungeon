@@ -19,6 +19,7 @@ import {
   MOVE_SPEED,
 } from './config';
 import { TOWN_RADIUS, TOWN_X, TOWN_Y } from '../data/world';
+import { getHousePosition } from '../data/houses';
 import { AttackAssignment } from './combat';
 
 // A fainted bird (hp hit 0) rests in place and slowly recovers before
@@ -221,12 +222,13 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
 
 // Hungry → go home and eat. Sleepy → go home and rest. Either way, once
 // satisfied for HOME_NEED_TICKS the mood clears back to normal instead of
-// waiting on the ambient mood-refresh timer.
+// waiting on the ambient mood-refresh timer. "Home" is the bird's own house.
 function stepHomeNeed(bird: BirdState, activity: 'eating' | 'resting'): AiStepOutcome {
   if (bird.activity !== activity) {
     bird.workProgress = 0;
   }
-  const arrived = moveToward(bird, TOWN_X, TOWN_Y);
+  const house = getHousePosition(bird.defId);
+  const arrived = moveToward(bird, house.x, house.y);
   bird.activity = activity;
   bird.targetKind = null;
   bird.targetRefUid = null;

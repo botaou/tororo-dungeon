@@ -1,6 +1,22 @@
 // Core data model for the town-sim prototype.
 
-export type MaterialId = 'wood' | 'ore' | 'mushroom';
+// One material per zone the bird can gather in, so exploring different
+// areas of the field feels distinct (森/鉱山/湖/遺跡).
+export type MaterialId =
+  | 'wood'
+  | 'ore'
+  | 'mushroom'
+  | 'berry'
+  | 'herb'
+  | 'feather'
+  | 'gem'
+  | 'coal'
+  | 'fish'
+  | 'pearl'
+  | 'waterweed'
+  | 'relic'
+  | 'magicStone'
+  | 'oldCoin';
 
 export type CharacterRole = 'attacker' | 'healer';
 
@@ -190,4 +206,33 @@ export interface WorldState {
   leisureSpots: LeisureSpotInstance[];
   birds: BirdState[];
   requests: JobRequest[];
+}
+
+// ---- Town expansion (land grid) ----
+
+// Purely cosmetic placeholders until a crafting/shop economy exists —
+// placing one just makes the town look more developed.
+export type BuildingKind = 'workshop' | 'shop' | 'warehouse';
+
+export interface PlotUnlockCost {
+  gold: number;
+  materialId?: MaterialId;
+  materialAmount?: number;
+}
+
+// Design-time definition of one buildable cell in the town grid.
+export interface TownPlotDef {
+  id: string;
+  x: number;
+  y: number;
+  unlockedByDefault: boolean;
+  unlockCost: PlotUnlockCost | null; // null when unlockedByDefault
+}
+
+// Persisted per-plot progress: whether the player has claimed the land yet,
+// and what (if anything) they've put on it.
+export interface TownPlotState {
+  id: string;
+  unlocked: boolean;
+  building: BuildingKind | null;
 }

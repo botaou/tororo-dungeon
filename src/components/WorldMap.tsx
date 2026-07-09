@@ -1,10 +1,21 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, Text, TouchableWithoutFeedback, View, useWindowDimensions } from 'react-native';
 
-import { BirdState, EnemyInstance, LeisureSpotInstance, MiningNodeInstance, TreasureNodeInstance } from '../types';
-import { getCharacterDef } from '../data/characters';
+import {
+  BirdState,
+  EnemyInstance,
+  LeisureSpotInstance,
+  MiningNodeInstance,
+  TownPlotState,
+  TreasureNodeInstance,
+} from '../types';
+import { CHARACTERS, getCharacterDef } from '../data/characters';
 import { TOWN_DECOR, TOWN_X, TOWN_Y } from '../data/world';
+import { BUILDING_ICON, TOWN_PLOT_DEFS } from '../data/townGrid';
+import { HOUSE_POSITIONS } from '../data/houses';
+import { MATERIAL_ICON } from '../data/materials';
 import { CharacterAvatar } from './CharacterAvatar';
+import { AnimatedPressable } from './AnimatedPressable';
 import { TICK_MS } from '../game/config';
 import { theme } from '../theme';
 
@@ -16,10 +27,21 @@ interface Props {
   treasures: TreasureNodeInstance[];
   leisureSpots: LeisureSpotInstance[];
   birds: BirdState[];
+  plotStates: Record<string, TownPlotState>;
   onBirdPress: (defId: string) => void;
+  onPlotPress: (plotId: string) => void;
 }
 
-export function WorldMap({ enemies, miningNodes, treasures, leisureSpots, birds, onBirdPress }: Props) {
+export function WorldMap({
+  enemies,
+  miningNodes,
+  treasures,
+  leisureSpots,
+  birds,
+  plotStates,
+  onBirdPress,
+  onPlotPress,
+}: Props) {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const fieldWidth = Math.max(240, windowWidth - HORIZONTAL_PADDING);
   const fieldHeight = Math.max(420, windowHeight * 0.72);
@@ -35,11 +57,41 @@ export function WorldMap({ enemies, miningNodes, treasures, leisureSpots, birds,
         </Text>
       ))}
 
+      {TOWN_PLOT_DEFS.map((def) => {
+        const state = plotStates[def.id] ?? { id: def.id, unlocked: def.unlockedByDefault, building: null };
+        return (
+          <PlotSprite
+            key={def.id}
+            def={def}
+            state={state}
+            x={def.x * fieldWidth}
+            y={def.y * fieldHeight}
+            onPress={() => onPlotPress(def.id)}
+          />
+        );
+      })}
+
       <View
         style={[styles.town, { left: TOWN_X * fieldWidth - 34, top: TOWN_Y * fieldHeight - 34 }]}
       >
         <Text style={styles.townEmoji}>🏘️</Text>
       </View>
+
+      <ShopkeeperSprite x={TOWN_X * fieldWidth} y={TOWN_Y * fieldHeight + 44} />
+
+      {CHARACTERS.map((c) => {
+        const pos = HOUSE_POSITIONS[c.id];
+        if (!pos) return null;
+        return (
+          <View
+            key={c.id}
+            style={[styles.house, { left: pos.x * fieldWidth - 18, top: pos.y * fieldHeight - 18, borderColor: c.color }]}
+          >
+            <Text style={styles.houseEmoji}>🏠</Text>
+            <Text style={styles.houseTag}>{c.emoji}</Text>
+          </View>
+        );
+      })}
 
       {miningNodes.map((m) => (
         <RockSprite key={m.uid} node={m} x={m.x * fieldWidth} y={m.y * fieldHeight} />
@@ -67,6 +119,33 @@ export function WorldMap({ enemies, miningNodes, treasures, leisureSpots, birds,
         />
       ))}
     </View>
+  );
+}
+
+// The player's stand-in — the town's manager/shopkeeper. Not controllable,
+// just a friendly presence standing near the town hall with a gentle idle
+// bob, so the diorama reads as "someone lives here" rather than an empty lot.
+function ShopkeeperSprite({ x, y }: { x: number; y: number }) {
+  const bob = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(bob, { toValue: 1, duration: 900, useNativeDriver: true, easing: Easing.inOut(Easing.sin) }),
+        Animated.timing(bob, { toValue: 0, duration: 900, useNativeDriver: true, easing: Easing.inOut(Easing.sin) }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [bob]);
+
+  const bobY = bob.interpolate({ inputRange: [0, 1], outputRange: [0, -3] });
+
+  return (
+    <Animated.View style={[styles.sprite, { left: x, top: y, transform: [{ translateY: bobY }] }]}>
+      <Text style={styles.emojiLarge}>🧑‍🌾</Text>
+      <Text style={styles.nameTag}>店主</Text>
+    </Animated.View>
   );
 }
 
@@ -130,6 +209,40 @@ function TreasureSprite({ treasure, x, y }: { treasure: TreasureNodeInstance; x:
       <Text style={styles.emojiLarge}>🎁</Text>
       <Text style={styles.tag}>+{treasure.goldReward}G</Text>
     </Animated.View>
+  );
+}
+
+function PlotSprite({
+  def,
+  state,
+  x,
+  y,
+  onPress,
+}: {
+  def: (typeof TOWN_PLOT_DEFS)[number];
+  state: TownPlotState;
+  x: number;
+  y: number;
+  onPress: () => void;
+}) {
+  if (!state.unlocked) {
+    return (
+      <AnimatedPressable style={[styles.plot, styles.plotLocked, { left: x - 12, top: y - 12 }]} onPress={onPress}>
+        <Text style={styles.plotLockIcon}>🔒</Text>
+        {def.unlockCost && (
+          <Text style={styles.plotCostText}>
+            {def.unlockCost.gold}G
+            {def.unlockCost.materialId ? ` ${MATERIAL_ICON[def.unlockCost.materialId]}${def.unlockCost.materialAmount}` : ''}
+          </Text>
+        )}
+      </AnimatedPressable>
+    );
+  }
+
+  return (
+    <AnimatedPressable style={[styles.plot, styles.plotOpen, { left: x - 12, top: y - 12 }]} onPress={onPress}>
+      <Text style={styles.plotBuildingIcon}>{state.building ? BUILDING_ICON[state.building] : '·'}</Text>
+    </AnimatedPressable>
   );
 }
 
@@ -341,6 +454,41 @@ const styles = StyleSheet.create({
   },
   townEmoji: { fontSize: 30 },
   decor: { position: 'absolute', fontSize: 20, opacity: 0.9 },
+  house: {
+    position: 'absolute',
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: theme.card,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  houseEmoji: { fontSize: 16 },
+  houseTag: { position: 'absolute', bottom: -6, right: -6, fontSize: 12 },
+  plot: {
+    position: 'absolute',
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  plotLocked: {
+    backgroundColor: theme.disabled,
+    borderWidth: 1,
+    borderColor: theme.cardBorder,
+    opacity: 0.85,
+  },
+  plotOpen: {
+    backgroundColor: theme.cardAlt,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: theme.cardBorder,
+  },
+  plotLockIcon: { fontSize: 12 },
+  plotCostText: { fontSize: 7, fontWeight: '700', color: theme.textMuted, marginTop: 1 },
+  plotBuildingIcon: { fontSize: 16, color: theme.textMuted },
   sprite: { position: 'absolute', alignItems: 'center', width: 56 },
   leisureSprite: { opacity: 0.85 },
   tapArea: { alignItems: 'center' },
