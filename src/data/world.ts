@@ -11,11 +11,14 @@ export const TOWN_RADIUS = 0.12;
 // Forest (wood + a couple of wandering slimes/wolf), upper-left. Positions
 // here are nudged slightly further from town versus earlier revisions to
 // leave room for a bigger buildable land grid around the town hall.
+// expReward is a flat grant to every bird that damaged the enemy (not split
+// like gold) — tiered roughly with difficulty; a future boss tier would
+// just need a much larger value here, no structural changes.
 export const ENEMY_DEFS: EnemyDef[] = [
-  { id: 'slime_a', name: 'スライム', emoji: '🟢', hp: 30, atk: 3, goldReward: 8, x: 0.231, y: 0.292 },
-  { id: 'slime_b', name: 'スライム', emoji: '🟢', hp: 30, atk: 3, goldReward: 8, x: 0.16, y: 0.66 },
-  { id: 'bat_a', name: 'コウモリ', emoji: '🦇', hp: 25, atk: 4, goldReward: 10, x: 0.55, y: 0.16 },
-  { id: 'wolf_a', name: 'オオカミ', emoji: '🐺', hp: 45, atk: 6, goldReward: 16, x: 0.82, y: 0.34 },
+  { id: 'slime_a', name: 'スライム', emoji: '🟢', hp: 30, atk: 3, goldReward: 8, expReward: 5, x: 0.231, y: 0.292 },
+  { id: 'slime_b', name: 'スライム', emoji: '🟢', hp: 30, atk: 3, goldReward: 8, expReward: 5, x: 0.16, y: 0.66 },
+  { id: 'bat_a', name: 'コウモリ', emoji: '🦇', hp: 25, atk: 4, goldReward: 10, expReward: 7, x: 0.55, y: 0.16 },
+  { id: 'wolf_a', name: 'オオカミ', emoji: '🐺', hp: 45, atk: 6, goldReward: 16, expReward: 10, x: 0.82, y: 0.34 },
 ];
 
 export const MINING_NODE_DEFS: MiningNodeDef[] = [

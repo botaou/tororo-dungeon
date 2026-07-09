@@ -8,13 +8,22 @@ export interface AttackAssignment {
   materialBonusPercent: number;
 }
 
+// One defeated enemy's full outcome — gold split, town's cut, and exp for
+// every bird that contributed — so callers (useWorldStore) can apply all
+// of it, and build a log line, from a single source instead of re-deriving
+// "who fought this" separately for gold vs. exp.
+export interface EnemyKillSummary {
+  enemyName: string;
+  totalGold: number;
+  feeGold: number;
+  rewards: { unitUid: string; gold: number }[];
+  expReward: number; // flat amount every participant below receives (not split)
+  participants: string[]; // bird defIds that damaged this enemy at all
+}
+
 export interface AttackResult {
   enemies: EnemyInstance[];
-  // Each kill's bounty (minus the town's security-fee cut) split among the
-  // birds that damaged it, proportional to their cumulative contribution.
-  rewards: { unitUid: string; gold: number }[];
-  // The town's cut of every kill this tick — the player's guaranteed income.
-  securityFeeGold: number;
+  kills: EnemyKillSummary[];
   // Enemies that took damage this tick and are still alive hit back once,
   // against a random unit that attacked them.
   retaliations: { enemyUid: string; damage: number }[];
@@ -25,8 +34,7 @@ export interface AttackResult {
 // assignments by target enemy and resolve each independently.
 export function resolveAttacks(enemies: EnemyInstance[], assignments: AttackAssignment[]): AttackResult {
   const nextEnemies = enemies.map((e) => ({ ...e, damageLog: { ...e.damageLog } }));
-  const rewards: { unitUid: string; gold: number }[] = [];
-  let securityFeeGold = 0;
+  const kills: EnemyKillSummary[] = [];
   const retaliations: { enemyUid: string; damage: number }[] = [];
 
   const byEnemy = new Map<string, AttackAssignment[]>();
@@ -53,8 +61,8 @@ export function resolveAttacks(enemies: EnemyInstance[], assignments: AttackAssi
       const totalGold = Math.round(enemy.goldReward * (1 + bonusPercent / 100));
       const fee = Math.round(totalGold * SECURITY_FEE_RATE);
       const birdsShare = totalGold - fee;
-      securityFeeGold += fee;
 
+      const rewards: { unitUid: string; gold: number }[] = [];
       const totalDamage = Object.values(enemy.damageLog).reduce((sum, d) => sum + d, 0);
       if (totalDamage > 0) {
         for (const [unitUid, dealt] of Object.entries(enemy.damageLog)) {
@@ -62,13 +70,21 @@ export function resolveAttacks(enemies: EnemyInstance[], assignments: AttackAssi
           if (share > 0) rewards.push({ unitUid, gold: share });
         }
       }
+      kills.push({
+        enemyName: enemy.name,
+        totalGold,
+        feeGold: fee,
+        rewards,
+        expReward: enemy.expReward,
+        participants: Object.keys(enemy.damageLog),
+      });
       enemy.damageLog = {}; // reset for this enemy's next life
     } else {
       retaliations.push({ enemyUid, damage: enemy.atk });
     }
   }
 
-  return { enemies: nextEnemies, rewards, securityFeeGold, retaliations };
+  return { enemies: nextEnemies, kills, retaliations };
 }
 
 // Healer support: top off the lowest-HP ally (excluding herself) each tick,

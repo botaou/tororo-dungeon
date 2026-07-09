@@ -13,6 +13,7 @@ import {
 import {
   ARRIVAL_THRESHOLD,
   ENCOUNTER_HOLD_TICKS,
+  FOOD_PRICE,
   HOME_NEED_TICKS,
   LEISURE_CHANCE,
   LEISURE_DWELL_TICKS,
@@ -117,6 +118,12 @@ export interface AiStepOutcome {
   // Set when a bird finishes a shop-selling trip — the store checks whether
   // the player can afford to buy this haul before crediting anyone.
   sellAttempt: Partial<Record<MaterialId, number>> | null;
+  // Set the moment a carried haul is deposited into the bird's own house —
+  // purely for the activity log (the actual crediting already happened here).
+  deliveredMaterial: { materialId: MaterialId; amount: number } | null;
+  // Gold a bird paid for a shop meal this tick (0 if it ate for free because
+  // it couldn't afford FOOD_PRICE, or if nothing happened this tick).
+  foodPurchase: number;
 }
 
 function emptyOutcome(): AiStepOutcome {
@@ -127,6 +134,8 @@ function emptyOutcome(): AiStepOutcome {
     miningCollectedUid: null,
     jobCompletedId: null,
     sellAttempt: null,
+    deliveredMaterial: null,
+    foodPurchase: 0,
   };
 }
 
@@ -275,10 +284,12 @@ function stepHomeNeed(bird: BirdState, activity: 'resting'): AiStepOutcome {
   return emptyOutcome();
 }
 
-// Hungry → walk to the shop for a basic ration. This tier of food is always
-// free and never touches the player's funds or stock — it's the guaranteed
-// safety net so hunger always resolves no matter how poor a bird is.
+// Hungry → walk to the shop for a basic ration. Producing this tier of food
+// is always free (never touches the player's stock), but a bird that can
+// afford FOOD_PRICE pays for its meal — that becomes town income. A broke
+// bird still eats for free; hunger always resolves no matter how poor it is.
 function stepShopFood(bird: BirdState): AiStepOutcome {
+  const outcome = emptyOutcome();
   if (bird.activity !== 'eating') {
     bird.workProgress = 0;
   }
@@ -290,13 +301,17 @@ function stepShopFood(bird: BirdState): AiStepOutcome {
   if (arrived) {
     bird.workProgress += 1;
     if (bird.workProgress >= HOME_NEED_TICKS) {
+      if (bird.gold >= FOOD_PRICE) {
+        bird.gold -= FOOD_PRICE;
+        outcome.foodPurchase = FOOD_PRICE;
+      }
       bird.mood = 'normal';
       bird.moodChangedAt = Date.now();
       bird.workProgress = 0;
       bird.targetKind = null;
     }
   }
-  return emptyOutcome();
+  return outcome;
 }
 
 // A free-roaming bird that just finished gathering carries its haul back to
@@ -311,6 +326,7 @@ function stepCarrying(bird: BirdState): AiStepOutcome {
   if (arrived && bird.carrying) {
     const { materialId, amount } = bird.carrying;
     bird.inventory[materialId] = (bird.inventory[materialId] ?? 0) + amount;
+    outcome.deliveredMaterial = { materialId, amount };
     bird.carrying = null;
   }
   return outcome;

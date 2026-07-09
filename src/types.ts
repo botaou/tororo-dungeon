@@ -53,6 +53,7 @@ export interface EnemyDef {
   hp: number;
   atk: number;
   goldReward: number;
+  expReward: number; // flat exp granted to every bird that damaged it
   x: number;
   y: number;
 }
@@ -77,8 +78,14 @@ export interface TreasureNodeDef {
 // ---- Persisted player state ----
 
 export interface PlayerState {
-  gold: number;
+  gold: number; // the town treasury — spendable balance
   materials: Record<MaterialId, number>;
+  // Lifetime cumulative income counters by source, kept separate from the
+  // spendable `gold` balance above so a future ledger/stats screen can show
+  // where the town's money has come from. These only ever go up.
+  tollFromHunt: number;
+  tollFromFood: number;
+  tollFromTraveler: number;
 }
 
 // ---- World entities (persistent, ephemeral session state) ----
@@ -94,6 +101,7 @@ export interface EnemyInstance {
   maxHp: number;
   atk: number;
   goldReward: number;
+  expReward: number;
   defeated: boolean;
   respawnAt: number | null; // epoch ms; set when defeated, revives once passed
   // Cumulative damage dealt by each attacking bird (keyed by defId) while
@@ -195,6 +203,12 @@ export interface BirdState {
   // shared stash (PlayerState.materials).
   gold: number;
   inventory: Record<MaterialId, number>;
+  // Provisional growth system: exp comes only from combat contribution.
+  // `exp` resets toward 0 each time it crosses the current level's
+  // threshold (see expToNextLevel in game/config.ts) rather than
+  // accumulating as a lifetime total.
+  level: number;
+  exp: number;
   // Ambient wander destination, used when a bird has nothing more pressing
   // to do — persisted so it commits to a direction instead of jittering.
   wanderX: number | null;
@@ -215,6 +229,17 @@ export interface JobRequest {
   createdAt: number;
 }
 
+// A short, human-readable line for the on-screen activity log — "who did
+// what, and what happened" — capped to the most recent N entries (see
+// ACTIVITY_LOG_MAX in game/config.ts). Ephemeral like the rest of WorldState.
+export interface ActivityLogEntry {
+  id: string;
+  timestamp: number;
+  birdName: string | null; // null for town-level events with no specific bird (e.g. a traveler visit)
+  action: string; // short category tag: 'gather' | 'kill' | 'sell' | 'buyFood' | 'job' | 'traveler' | 'levelUp'
+  detail: string; // the actual displayed sentence
+}
+
 export interface WorldState {
   enemies: EnemyInstance[];
   miningNodes: MiningNodeInstance[];
@@ -222,6 +247,7 @@ export interface WorldState {
   leisureSpots: LeisureSpotInstance[];
   birds: BirdState[];
   requests: JobRequest[];
+  activityLog: ActivityLogEntry[];
 }
 
 // ---- Town expansion (land grid) ----

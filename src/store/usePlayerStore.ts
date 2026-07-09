@@ -9,6 +9,11 @@ interface PlayerActions {
   addGold: (amount: number) => void;
   trySpendGold: (amount: number) => boolean;
   addMaterials: (rewards: Partial<Record<MaterialId, number>>) => void;
+  // Each credits the treasury and its matching lifetime ledger counter in
+  // one call, so the two can never drift out of sync.
+  creditHuntToll: (amount: number) => void;
+  creditFoodToll: (amount: number) => void;
+  creditTravelerToll: (amount: number) => void;
 }
 
 type PlayerStore = PlayerState & PlayerActions;
@@ -16,6 +21,9 @@ type PlayerStore = PlayerState & PlayerActions;
 const initialState: PlayerState = {
   gold: STARTING_GOLD,
   materials: { ...STARTING_MATERIALS },
+  tollFromHunt: 0,
+  tollFromFood: 0,
+  tollFromTraveler: 0,
 };
 
 export const usePlayerStore = create<PlayerStore>()(
@@ -40,6 +48,11 @@ export const usePlayerStore = create<PlayerStore>()(
         });
         set({ materials: next });
       },
+
+      creditHuntToll: (amount) => set((s) => ({ gold: s.gold + amount, tollFromHunt: s.tollFromHunt + amount })),
+      creditFoodToll: (amount) => set((s) => ({ gold: s.gold + amount, tollFromFood: s.tollFromFood + amount })),
+      creditTravelerToll: (amount) =>
+        set((s) => ({ gold: s.gold + amount, tollFromTraveler: s.tollFromTraveler + amount })),
     }),
     {
       // Bumped from v1: the schema changed (stamina removed, gold is now a

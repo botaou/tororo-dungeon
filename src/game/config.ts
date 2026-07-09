@@ -35,10 +35,9 @@ export const LEISURE_DWELL_TICKS = 3;
 export const LEISURE_CHANCE = 0.5;
 
 // Cut of every combat kill reward that goes to the player as "town security
-// cooperation money" instead of the attacking bird(s) — the player's main
-// guaranteed income source, since they otherwise only earn by buying low and
-// (eventually) selling high.
-export const SECURITY_FEE_RATE = 0.3;
+// cooperation money" instead of the attacking bird(s) — one of the player's
+// few guaranteed income sources alongside food and traveler tolls.
+export const SECURITY_FEE_RATE = 0.15;
 
 // How long a bird lingers at the shop while selling off its inventory.
 export const SELL_DWELL_TICKS = 2;
@@ -51,6 +50,31 @@ export const SELL_CHECK_CHANCE_WANTS_MONEY = 0.4;
 // asking price quickly outgrows what the player can ever afford, and trade
 // freezes up entirely instead of trickling along a little at a time.
 export const SELL_MAX_PER_TRIP = 20;
+
+// A basic ration is always free to produce (never touches the player's
+// funds or stock) — but if the bird can afford it, it pays this much for
+// the meal, and that becomes town income. Broke birds still eat for free;
+// hunger always resolves regardless of wealth.
+export const FOOD_PRICE = 3;
+
+// A simple stand-in for a real traveler NPC: each tick there's a small
+// chance a traveler passes through and buys some of whatever the town has
+// in stock, straight out of the shared warehouse (no bird involved).
+export const TRAVELER_CHECK_CHANCE = 0.02;
+export const TRAVELER_MAX_PURCHASE = 6;
+
+// Provisional exp/level curve: a bird needs (level * EXP_PER_LEVEL_BASE) exp
+// to advance from its current level, then exp resets toward the remainder.
+export const EXP_PER_LEVEL_BASE = 20;
+export const LEVEL_UP_ATK_GAIN = 1;
+export const LEVEL_UP_HP_GAIN = 5;
+
+export function expToNextLevel(level: number): number {
+  return level * EXP_PER_LEVEL_BASE;
+}
+
+// How many recent events the on-screen activity log keeps.
+export const ACTIVITY_LOG_MAX = 10;
 
 // Depleted enemies/resources come back after this long so the world never
 // runs permanently dry.

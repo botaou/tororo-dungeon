@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 
 import {
+  ActivityLogEntry,
   BirdState,
   EnemyInstance,
   JobRequest,
@@ -24,12 +25,19 @@ import { rollRandomMood } from '../data/moods';
 import { AiWorld, separateBirds, stepBird } from '../game/ai';
 import { AttackAssignment, applyHealing, resolveAttacks } from '../game/combat';
 import { scoreRequestAcceptance, tryAcceptRequest } from '../game/requests';
+import { MATERIAL_LABEL } from '../data/materials';
 import { MATERIAL_SELL_PRICE } from '../data/marketPrices';
 import {
+  ACTIVITY_LOG_MAX,
   ENEMY_RESPAWN_MS,
+  expToNextLevel,
+  LEVEL_UP_ATK_GAIN,
+  LEVEL_UP_HP_GAIN,
   MINING_RESPAWN_MS,
   MOOD_REFRESH_MS,
   REQUEST_CHECK_CHANCE,
+  TRAVELER_CHECK_CHANCE,
+  TRAVELER_MAX_PURCHASE,
   TREASURE_RESPAWN_MS,
 } from '../game/config';
 import { usePlayerStore } from './usePlayerStore';
@@ -39,6 +47,12 @@ let uidCounter = 0;
 function uid(prefix: string): string {
   uidCounter += 1;
   return `${prefix}_${uidCounter}_${Date.now()}`;
+}
+
+let logIdCounter = 0;
+function makeLogEntry(birdName: string | null, action: string, detail: string): ActivityLogEntry {
+  logIdCounter += 1;
+  return { id: `log_${logIdCounter}_${Date.now()}`, timestamp: Date.now(), birdName, action, detail };
 }
 
 // A touch of organic variation around each def's hand-placed position, so
@@ -60,6 +74,7 @@ function buildInitialWorld(): WorldState {
     maxHp: e.hp,
     atk: e.atk,
     goldReward: e.goldReward,
+    expReward: e.expReward,
     defeated: false,
     respawnAt: null,
     damageLog: {},
@@ -114,12 +129,29 @@ function buildInitialWorld(): WorldState {
       carrying: null,
       gold: wallet.gold,
       inventory: { ...wallet.inventory },
+      level: wallet.level,
+      exp: wallet.exp,
       wanderX: null,
       wanderY: null,
     };
   });
 
-  return { enemies, miningNodes, treasures, leisureSpots, birds, requests: [] };
+  return { enemies, miningNodes, treasures, leisureSpots, birds, requests: [], activityLog: [] };
+}
+
+// Applies exp to a bird in place, looping through as many level-ups as the
+// gain covers, and logs each one — a flat amount per kill (not split like
+// gold), so fighting alongside others doesn't dilute anyone's growth.
+function grantExp(bird: BirdState, amount: number, log: ActivityLogEntry[]) {
+  bird.exp += amount;
+  while (bird.exp >= expToNextLevel(bird.level)) {
+    bird.exp -= expToNextLevel(bird.level);
+    bird.level += 1;
+    bird.atk += LEVEL_UP_ATK_GAIN;
+    bird.maxHp += LEVEL_UP_HP_GAIN;
+    bird.hp += LEVEL_UP_HP_GAIN;
+    log.push(makeLogEntry(bird.name, 'levelUp', `${bird.name}がLv${bird.level}になった!`));
+  }
 }
 
 interface WorldActions {
@@ -133,7 +165,7 @@ interface WorldStore {
 }
 
 export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => ({
-  world: { enemies: [], miningNodes: [], treasures: [], leisureSpots: [], birds: [], requests: [] },
+  world: { enemies: [], miningNodes: [], treasures: [], leisureSpots: [], birds: [], requests: [], activityLog: [] },
 
   initWorld: () => set({ world: buildInitialWorld() }),
 
@@ -161,6 +193,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     if (world.birds.length === 0) return; // world not initialized yet
 
     const now = Date.now();
+    const newLog: ActivityLogEntry[] = [];
 
     // Depleted enemies/resources come back once their respawn timer is up,
     // so the world never runs permanently dry.
@@ -240,13 +273,37 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       if (outcome.treasureCollectedUid) {
         // Treasure gold goes straight to the finding bird (handled in ai.ts)
         // rather than the player, so no player-side credit here anymore.
+        const treasure = treasures.find((t) => t.uid === outcome.treasureCollectedUid);
+        if (treasure) {
+          newLog.push(makeLogEntry(bird.name, 'treasure', `${bird.name}が宝箱を見つけた!(+${treasure.goldReward}G)`));
+        }
         treasures = treasures.map((t) =>
           t.uid === outcome.treasureCollectedUid ? { ...t, collected: true, respawnAt: now + TREASURE_RESPAWN_MS } : t
         );
         aiWorld.treasures = treasures;
       }
+      if (outcome.deliveredMaterial) {
+        const { materialId, amount } = outcome.deliveredMaterial;
+        newLog.push(
+          makeLogEntry(bird.name, 'gather', `${bird.name}が${MATERIAL_LABEL[materialId]}を${amount}個持ち帰った`)
+        );
+      }
       if (outcome.jobCompletedId) {
         completedJobIds.add(outcome.jobCompletedId);
+        const request = requests.find((r) => r.id === outcome.jobCompletedId);
+        if (request) {
+          newLog.push(
+            makeLogEntry(
+              bird.name,
+              'job',
+              `${bird.name}が依頼(${MATERIAL_LABEL[request.materialId]}${request.amount}個)を達成した!(報酬${request.reward}G)`
+            )
+          );
+        }
+      }
+      if (outcome.foodPurchase > 0) {
+        usePlayerStore.getState().creditFoodToll(outcome.foodPurchase);
+        newLog.push(makeLogEntry(bird.name, 'buyFood', `${bird.name}が餌を購入した(+${outcome.foodPurchase}G)`));
       }
       if (outcome.sellAttempt) {
         // A bird offers one material at a time (see pickSellOffer in ai.ts).
@@ -264,6 +321,9 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
           usePlayerStore.getState().addMaterials({ [materialId]: soldAmount });
           bird.gold += cost;
           bird.inventory[materialId] = Math.max(0, (bird.inventory[materialId] ?? 0) - soldAmount);
+          newLog.push(
+            makeLogEntry(bird.name, 'sell', `${bird.name}が${MATERIAL_LABEL[materialId]}を${soldAmount}個売った(+${cost}G)`)
+          );
         }
       }
     }
@@ -280,12 +340,28 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     enemies = combatResult.enemies.map((e) =>
       e.defeated && e.respawnAt === null ? { ...e, respawnAt: now + ENEMY_RESPAWN_MS } : e
     );
-    // Only the town's security-fee cut goes to the player now — the rest of
-    // each kill's bounty is split among the birds that damaged it.
-    goldToAdd += combatResult.securityFeeGold;
-    for (const { unitUid, gold } of combatResult.rewards) {
-      const bird = nextBirds.find((b) => b.defId === unitUid);
-      if (bird) bird.gold += gold;
+    for (const kill of combatResult.kills) {
+      usePlayerStore.getState().creditHuntToll(kill.feeGold);
+      for (const { unitUid, gold } of kill.rewards) {
+        const bird = nextBirds.find((b) => b.defId === unitUid);
+        if (bird) bird.gold += gold;
+      }
+      for (const unitUid of kill.participants) {
+        const bird = nextBirds.find((b) => b.defId === unitUid);
+        if (bird) grantExp(bird, kill.expReward, newLog);
+      }
+      const participantNames = kill.participants
+        .map((uid) => nextBirds.find((b) => b.defId === uid)?.name)
+        .filter((n): n is string => !!n);
+      if (participantNames.length > 0) {
+        newLog.push(
+          makeLogEntry(
+            null,
+            'kill',
+            `${participantNames.join('・')}が${kill.enemyName}を倒した!(報酬${kill.totalGold}G、街に${kill.feeGold}G)`
+          )
+        );
+      }
     }
 
     for (const { enemyUid, damage } of combatResult.retaliations) {
@@ -294,6 +370,24 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       if (candidates.length > 0) {
         const victim = candidates[Math.floor(Math.random() * candidates.length)];
         victim.hp = Math.max(0, victim.hp - damage);
+      }
+    }
+
+    // A simple stand-in for a real traveler NPC: occasionally buys a random
+    // material straight out of the shared warehouse, no bird involved.
+    if (Math.random() < TRAVELER_CHECK_CHANCE) {
+      const playerMaterials = usePlayerStore.getState().materials;
+      const owned = (Object.keys(MATERIAL_SELL_PRICE) as MaterialId[]).filter((k) => (playerMaterials[k] ?? 0) > 0);
+      if (owned.length > 0) {
+        const materialId = owned[Math.floor(Math.random() * owned.length)];
+        const stock = playerMaterials[materialId] ?? 0;
+        const amount = Math.min(stock, 1 + Math.floor(Math.random() * TRAVELER_MAX_PURCHASE));
+        const revenue = amount * MATERIAL_SELL_PRICE[materialId];
+        if (amount > 0 && revenue > 0) {
+          usePlayerStore.getState().addMaterials({ [materialId]: -amount });
+          usePlayerStore.getState().creditTravelerToll(revenue);
+          newLog.push(makeLogEntry(null, 'traveler', `旅人が${MATERIAL_LABEL[materialId]}を${amount}個買っていった(+${revenue}G)`));
+        }
       }
     }
 
@@ -309,8 +403,10 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     }
 
     const wallets: Record<string, BirdWallet> = {};
-    for (const b of finalBirds) wallets[b.defId] = { gold: b.gold, inventory: b.inventory };
+    for (const b of finalBirds) wallets[b.defId] = { gold: b.gold, inventory: b.inventory, level: b.level, exp: b.exp };
     useBirdEconomyStore.getState().syncAll(wallets);
+
+    const activityLog = [...newLog, ...world.activityLog].slice(0, ACTIVITY_LOG_MAX);
 
     set({
       world: {
@@ -320,6 +416,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         leisureSpots: world.leisureSpots,
         birds: finalBirds,
         requests,
+        activityLog,
       },
     });
   },
