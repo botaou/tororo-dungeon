@@ -126,6 +126,17 @@ export interface SummonedUnit {
 
 export type StageSessionStatus = 'selecting_skill' | 'playing' | 'cleared';
 
+// The path through the stage, left to right: mining rocks first, then
+// enemies, then the treasure. The party walks to each in order and auto-
+// resolves it (mine/fight/open) before moving on to the next.
+export type EncounterKind = 'enemy' | 'mining' | 'treasure';
+
+export interface Encounter {
+  kind: EncounterKind;
+  refUid: string; // uid into enemies/miningNodes/treasure
+  xRatio: number; // 0..1 position along the path
+}
+
 export interface StageSession {
   stageId: string;
   status: StageSessionStatus;
@@ -138,5 +149,8 @@ export interface StageSession {
   miningNodes: MiningNodeInstance[];
   treasure: TreasureNodeInstance | null;
   summonedUnits: SummonedUnit[];
+  encounters: Encounter[];
+  encounterIndex: number;
+  encounterProgress: number; // ticks spent working the current mining/treasure encounter
   log: string[];
 }

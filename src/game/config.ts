@@ -9,4 +9,8 @@ export const ENERGY_REGEN_MS = 3_000; // +1 energy per 3s
 
 export const TICK_MS = 1_000;
 
+// How many ticks the party spends animating a mining/treasure encounter
+// before it auto-resolves and they walk on.
+export const ENCOUNTER_HOLD_TICKS = 2;
+
 export const STARTING_MATERIALS = { gold: 0, ore: 0, gem: 0 };

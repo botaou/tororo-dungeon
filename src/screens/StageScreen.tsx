@@ -22,8 +22,6 @@ export function StageScreen({ onExit }: Props) {
   const session = useStageStore((s) => s.session);
   const chooseSkill = useStageStore((s) => s.chooseSkill);
   const summon = useStageStore((s) => s.summon);
-  const collectMiningNode = useStageStore((s) => s.collectMiningNode);
-  const collectTreasureNode = useStageStore((s) => s.collectTreasureNode);
   const exitStage = useStageStore((s) => s.exitStage);
 
   const [skillOffer] = useState<SkillDef[]>(() => rollSkillOffer());
@@ -50,7 +48,15 @@ export function StageScreen({ onExit }: Props) {
       </View>
 
       <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: 24 }}>
-        <BattleField enemies={session.enemies} summonedUnits={session.summonedUnits} status={session.status} />
+        <BattleField
+          enemies={session.enemies}
+          miningNodes={session.miningNodes}
+          treasure={session.treasure}
+          summonedUnits={session.summonedUnits}
+          encounters={session.encounters}
+          encounterIndex={session.encounterIndex}
+          status={session.status}
+        />
 
         <Section title="✨ 召喚">
           <View style={styles.summonRow}>
@@ -72,41 +78,6 @@ export function StageScreen({ onExit }: Props) {
             })}
           </View>
         </Section>
-
-        <Section title="⛏️ 採掘オブジェクト">
-          <View style={styles.nodeRow}>
-            {session.miningNodes.map((m) => (
-              <AnimatedPressable
-                key={m.uid}
-                style={[styles.nodeButton, m.collected && styles.buttonDisabled]}
-                disabled={m.collected}
-                onPress={() => collectMiningNode(m.uid)}
-              >
-                <Text style={styles.nodeButtonText}>{m.name}</Text>
-                <Text style={styles.nodeButtonSub}>
-                  {m.collected ? '採取済み' : `+${m.amount} ${m.resource}`}
-                </Text>
-              </AnimatedPressable>
-            ))}
-          </View>
-        </Section>
-
-        {session.treasure && (
-          <Section title="💰 お宝">
-            <AnimatedPressable
-              style={[styles.treasureButton, session.treasure.collected && styles.buttonDisabled]}
-              disabled={session.treasure.collected}
-              onPress={collectTreasureNode}
-            >
-              <Text style={styles.treasureButtonText}>{session.treasure.name}</Text>
-              <Text style={styles.nodeButtonSub}>
-                {session.treasure.collected
-                  ? '獲得済み'
-                  : `+${session.treasure.rewardAmount} ${session.treasure.rewardMaterial}`}
-              </Text>
-            </AnimatedPressable>
-          </Section>
-        )}
 
         <Section title="📜 ログ">
           {session.log
@@ -198,27 +169,6 @@ const styles = StyleSheet.create({
   summonButtonText: { color: theme.textPrimary, fontWeight: '700', marginTop: 4 },
   summonRoleText: { color: theme.textSecondary, fontSize: 10, textAlign: 'center' },
   summonCostText: { color: theme.gold, fontSize: 11, fontWeight: '700', marginTop: 2 },
-  nodeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  nodeButton: {
-    backgroundColor: theme.orange,
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    minWidth: 110,
-    alignItems: 'center',
-  },
-  nodeButtonText: { color: '#fff', fontWeight: '700' },
-  nodeButtonSub: { color: '#fff5e6', fontSize: 11, marginTop: 2 },
-  treasureButton: {
-    backgroundColor: '#8a6314',
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: theme.gold,
-  },
-  treasureButtonText: { color: theme.gold, fontWeight: '700', fontSize: 15 },
   buttonDisabled: { backgroundColor: theme.disabled, borderColor: theme.disabled },
   logLine: { fontSize: 12, color: theme.textSecondary, marginBottom: 4 },
   clearBanner: {

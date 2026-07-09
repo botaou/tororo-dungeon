@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { LayoutAnimation } from 'react-native';
 
 import {
+  Encounter,
   EnemyInstance,
   MiningNodeInstance,
   SkillId,
@@ -12,7 +13,7 @@ import {
 import { getStageDef } from '../data/stages';
 import { getCharacterDef } from '../data/characters';
 import { resolveCombatRound } from '../game/combat';
-import { ENERGY_MAX, ENERGY_REGEN_MS } from '../game/config';
+import { ENCOUNTER_HOLD_TICKS, ENERGY_MAX, ENERGY_REGEN_MS } from '../game/config';
 import { usePlayerStore } from './usePlayerStore';
 
 let uidCounter = 0;
@@ -31,6 +32,27 @@ function energyRegenMs(skill: SkillId | null): number {
   return skill === 'energy_regen_up' ? Math.round(ENERGY_REGEN_MS / 1.5) : ENERGY_REGEN_MS;
 }
 
+// The party walks the path left to right: rocks first, then enemies, then
+// the treasure at the end. Spread evenly across the middle of the field so
+// there's room to walk in from the left and off to the right on clear.
+function buildEncounters(
+  miningNodes: MiningNodeInstance[],
+  enemies: EnemyInstance[],
+  treasure: TreasureNodeInstance | null
+): Encounter[] {
+  const items: Omit<Encounter, 'xRatio'>[] = [
+    ...miningNodes.map((m) => ({ kind: 'mining' as const, refUid: m.uid })),
+    ...enemies.map((e) => ({ kind: 'enemy' as const, refUid: e.uid })),
+    ...(treasure ? [{ kind: 'treasure' as const, refUid: treasure.uid }] : []),
+  ];
+  const span = 0.76;
+  const start = 0.14;
+  return items.map((item, i) => ({
+    ...item,
+    xRatio: items.length > 1 ? start + (i / (items.length - 1)) * span : start + span / 2,
+  }));
+}
+
 const MAX_LOG_LINES = 30;
 
 interface StageActions {
@@ -38,8 +60,6 @@ interface StageActions {
   chooseSkill: (skillId: SkillId) => void;
   summon: (characterDefId: string) => void;
   tick: () => void;
-  collectMiningNode: (nodeUid: string) => void;
-  collectTreasureNode: () => void;
   exitStage: () => void;
 }
 
@@ -99,6 +119,9 @@ export const useStageStore = create<StageStore & StageActions>()((set, get) => (
         miningNodes,
         treasure,
         summonedUnits: [],
+        encounters: buildEncounters(miningNodes, enemies, treasure),
+        encounterIndex: 0,
+        encounterProgress: 0,
         log: [`${stage.name}に突入！`],
       },
     });
@@ -165,32 +188,23 @@ export const useStageStore = create<StageStore & StageActions>()((set, get) => (
       return;
     }
 
-    const hasAliveEnemy = session.enemies.some((e) => !e.defeated && e.hp > 0);
     const hasAliveUnit = session.summonedUnits.some((u) => u.hp > 0);
-
-    let { enemies, summonedUnits, log } = session;
-    if (hasAliveEnemy && hasAliveUnit) {
-      const result = resolveCombatRound(session.enemies, session.summonedUnits);
-      enemies = result.enemies;
-      summonedUnits = result.summonedUnits;
-      if (Object.keys(result.rewards).length > 0) {
-        usePlayerStore.getState().addMaterials(result.rewards);
-      }
-      if (result.logs.length > 0) {
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        log = [...log, ...result.logs].slice(-MAX_LOG_LINES);
-      }
+    if (!hasAliveUnit) {
+      set({ session: { ...session, energy, energyLastUpdated } });
+      return;
     }
 
-    const allDefeated = enemies.every((e) => e.defeated || e.hp <= 0);
-    if (allDefeated) {
+    let { enemies, summonedUnits, miningNodes, treasure, log, encounterIndex, encounterProgress } =
+      session;
+    const current = session.encounters[encounterIndex];
+
+    if (!current) {
+      // Walked the whole path — stage clear.
       usePlayerStore.getState().clearStage(session.stageId);
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       set({
         session: {
           ...session,
-          enemies,
-          summonedUnits,
           energy,
           energyLastUpdated,
           status: 'cleared',
@@ -200,48 +214,66 @@ export const useStageStore = create<StageStore & StageActions>()((set, get) => (
       return;
     }
 
-    set({ session: { ...session, enemies, summonedUnits, energy, energyLastUpdated, log } });
-  },
+    if (current.kind === 'enemy') {
+      const result = resolveCombatRound(enemies, summonedUnits);
+      enemies = result.enemies;
+      summonedUnits = result.summonedUnits;
+      if (Object.keys(result.rewards).length > 0) {
+        usePlayerStore.getState().addMaterials(result.rewards);
+      }
+      if (result.logs.length > 0) {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        log = [...log, ...result.logs].slice(-MAX_LOG_LINES);
+      }
+      const targetEnemy = enemies.find((e) => e.uid === current.refUid);
+      if (targetEnemy && (targetEnemy.defeated || targetEnemy.hp <= 0)) {
+        encounterIndex += 1;
+        encounterProgress = 0;
+      }
+    } else if (current.kind === 'mining') {
+      encounterProgress += 1;
+      if (encounterProgress >= ENCOUNTER_HOLD_TICKS) {
+        const node = miningNodes.find((m) => m.uid === current.refUid);
+        if (node && !node.collected) {
+          usePlayerStore.getState().addMaterials({ [node.resource]: node.amount });
+          miningNodes = miningNodes.map((m) => (m.uid === node.uid ? { ...m, collected: true } : m));
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+          log = [...log, `${node.name}から${node.resource}を${node.amount}獲得`].slice(-MAX_LOG_LINES);
+        }
+        encounterIndex += 1;
+        encounterProgress = 0;
+      }
+    } else if (current.kind === 'treasure') {
+      encounterProgress += 1;
+      if (encounterProgress >= ENCOUNTER_HOLD_TICKS) {
+        if (treasure && !treasure.collected) {
+          usePlayerStore
+            .getState()
+            .collectTreasure(session.stageId, treasure.rewardMaterial, treasure.rewardAmount);
+          treasure = { ...treasure, collected: true };
+          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+          log = [
+            ...log,
+            `${treasure.name}を開けた！ +${treasure.rewardAmount}${treasure.rewardMaterial}`,
+          ].slice(-MAX_LOG_LINES);
+        }
+        encounterIndex += 1;
+        encounterProgress = 0;
+      }
+    }
 
-  collectMiningNode: (nodeUid) => {
-    const { session } = get();
-    if (!session) return;
-    const node = session.miningNodes.find((m) => m.uid === nodeUid);
-    if (!node || node.collected) return;
-
-    usePlayerStore.getState().addMaterials({ [node.resource]: node.amount });
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     set({
       session: {
         ...session,
-        miningNodes: session.miningNodes.map((m) =>
-          m.uid === nodeUid ? { ...m, collected: true } : m
-        ),
-        log: [...session.log, `${node.name}から${node.resource}を${node.amount}獲得`].slice(
-          -MAX_LOG_LINES
-        ),
-      },
-    });
-  },
-
-  collectTreasureNode: () => {
-    const { session } = get();
-    if (!session || !session.treasure || session.treasure.collected) return;
-    const treasure = session.treasure;
-
-    usePlayerStore
-      .getState()
-      .collectTreasure(session.stageId, treasure.rewardMaterial, treasure.rewardAmount);
-
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    set({
-      session: {
-        ...session,
-        treasure: { ...treasure, collected: true },
-        log: [
-          ...session.log,
-          `${treasure.name}を開けた！ +${treasure.rewardAmount}${treasure.rewardMaterial}`,
-        ].slice(-MAX_LOG_LINES),
+        enemies,
+        summonedUnits,
+        miningNodes,
+        treasure,
+        energy,
+        energyLastUpdated,
+        log,
+        encounterIndex,
+        encounterProgress,
       },
     });
   },

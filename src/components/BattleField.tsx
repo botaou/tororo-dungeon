@@ -1,21 +1,28 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
-import { EnemyInstance, StageSessionStatus, SummonedUnit } from '../types';
+import {
+  Encounter,
+  EnemyInstance,
+  MiningNodeInstance,
+  StageSessionStatus,
+  SummonedUnit,
+  TreasureNodeInstance,
+} from '../types';
 import { getCharacterDef } from '../data/characters';
 import { CharacterAvatar } from './CharacterAvatar';
 import { theme } from '../theme';
 
 const SCREEN_PADDING = 32; // matches StageScreen's paddingHorizontal * 2
-const FIELD_HEIGHT = 220;
-const UNIT_ROW_GAP = 38;
-const HOME_X_RATIO = 0.08;
-const ENEMY_BASE_X_RATIO = 0.52;
-const ENEMY_SLOT_GAP = 66;
+const FIELD_HEIGHT = 230;
+const GROUND_Y = FIELD_HEIGHT - 78;
+const HOME_X_RATIO = 0.04;
+const PARTY_STAND_OFFSET = 46; // how far left of the target the party stops
+
+type ActionKind = 'enemy' | 'mining' | 'treasure' | 'idle';
 
 interface GhostUnit {
   uid: string;
-  name: string;
   emoji: string;
   color: string;
   x: number;
@@ -25,16 +32,32 @@ interface GhostUnit {
 
 interface Props {
   enemies: EnemyInstance[];
+  miningNodes: MiningNodeInstance[];
+  treasure: TreasureNodeInstance | null;
   summonedUnits: SummonedUnit[];
+  encounters: Encounter[];
+  encounterIndex: number;
   status: StageSessionStatus;
 }
 
-export function BattleField({ enemies, summonedUnits, status }: Props) {
+export function BattleField({
+  enemies,
+  miningNodes,
+  treasure,
+  summonedUnits,
+  encounters,
+  encounterIndex,
+  status,
+}: Props) {
   const { width: windowWidth } = useWindowDimensions();
   const fieldWidth = Math.max(240, windowWidth - SCREEN_PADDING);
 
-  const frontEnemy = enemies.find((e) => !e.defeated && e.hp > 0);
-  const battleActive = status === 'playing' && !!frontEnemy;
+  const current = encounters[encounterIndex];
+  const pathDone = !current;
+  const partyBaseX = pathDone
+    ? fieldWidth * 0.95
+    : Math.max(fieldWidth * HOME_X_RATIO, current.xRatio * fieldWidth - PARTY_STAND_OFFSET);
+  const actionKind: ActionKind = status === 'playing' && current ? current.kind : 'idle';
 
   const lastPosRef = useRef<Map<string, { x: number; y: number }>>(new Map());
   const prevUnitsRef = useRef<SummonedUnit[]>([]);
@@ -48,8 +71,8 @@ export function BattleField({ enemies, summonedUnits, status }: Props) {
     if (removed.length > 0) {
       const newGhosts: GhostUnit[] = removed.map((u) => {
         const def = getCharacterDef(u.defId);
-        const pos = lastPosRef.current.get(u.uid) ?? { x: fieldWidth * HOME_X_RATIO, y: 40 };
-        return { uid: u.uid, name: u.name, emoji: def.emoji, color: def.color, x: pos.x, y: pos.y, anim: new Animated.Value(1) };
+        const pos = lastPosRef.current.get(u.uid) ?? { x: fieldWidth * HOME_X_RATIO, y: GROUND_Y };
+        return { uid: u.uid, emoji: def.emoji, color: def.color, x: pos.x, y: pos.y, anim: new Animated.Value(1) };
       });
       setGhosts((prev) => [...prev, ...newGhosts]);
       newGhosts.forEach((g) => {
@@ -64,22 +87,34 @@ export function BattleField({ enemies, summonedUnits, status }: Props) {
 
   return (
     <View style={[styles.field, { height: FIELD_HEIGHT }]}>
+      <Decor fieldWidth={fieldWidth} />
       <View style={styles.ground} />
 
-      {enemies.map((e, i) => (
-        <EnemySprite
-          key={e.uid}
-          enemy={e}
-          x={Math.min(fieldWidth - 40, fieldWidth * ENEMY_BASE_X_RATIO + i * ENEMY_SLOT_GAP)}
+      {miningNodes.map((m) => {
+        const enc = encounters.find((x) => x.refUid === m.uid);
+        if (!enc) return null;
+        return <RockSprite key={m.uid} node={m} x={enc.xRatio * fieldWidth} />;
+      })}
+
+      {enemies.map((e) => {
+        const enc = encounters.find((x) => x.refUid === e.uid);
+        if (!enc) return null;
+        return <EnemySprite key={e.uid} enemy={e} x={enc.xRatio * fieldWidth} />;
+      })}
+
+      {treasure && (
+        <TreasureSprite
+          treasure={treasure}
+          x={(encounters.find((x) => x.refUid === treasure.uid)?.xRatio ?? 0.9) * fieldWidth}
         />
-      ))}
+      )}
 
       {summonedUnits.map((u, i) => {
         const def = getCharacterDef(u.defId);
-        const targetX = frontEnemy
-          ? Math.max(fieldWidth * HOME_X_RATIO, fieldWidth * ENEMY_BASE_X_RATIO - 74)
-          : fieldWidth * HOME_X_RATIO;
-        const targetY = 30 + i * UNIT_ROW_GAP;
+        const col = i % 2;
+        const row = Math.floor(i / 2);
+        const targetX = partyBaseX + col * 22;
+        const targetY = GROUND_Y - row * 30;
         lastPosRef.current.set(u.uid, { x: targetX, y: targetY });
         return (
           <CharacterSprite
@@ -90,7 +125,7 @@ export function BattleField({ enemies, summonedUnits, status }: Props) {
             emoji={def.emoji}
             targetX={targetX}
             targetY={targetY}
-            attacking={battleActive}
+            action={actionKind}
           />
         );
       })}
@@ -119,6 +154,88 @@ export function BattleField({ enemies, summonedUnits, status }: Props) {
         <Text style={styles.emptyHint}>下の「召喚」からキャラを呼び出そう</Text>
       )}
     </View>
+  );
+}
+
+function Decor({ fieldWidth }: { fieldWidth: number }) {
+  const bumps = [0.1, 0.3, 0.5, 0.7, 0.9];
+  return (
+    <>
+      {bumps.map((r, i) => (
+        <View
+          key={i}
+          style={[
+            styles.hill,
+            {
+              left: r * fieldWidth - 30,
+              width: 60 + (i % 2) * 20,
+              height: 24 + (i % 2) * 10,
+            },
+          ]}
+        />
+      ))}
+    </>
+  );
+}
+
+function RockSprite({ node, x }: { node: MiningNodeInstance; x: number }) {
+  const crumble = useRef(new Animated.Value(node.collected ? 1 : 0)).current;
+  const hasAnimatedRef = useRef(node.collected);
+
+  useEffect(() => {
+    if (node.collected && !hasAnimatedRef.current) {
+      hasAnimatedRef.current = true;
+      Animated.timing(crumble, { toValue: 1, duration: 350, useNativeDriver: true }).start();
+    }
+  }, [node.collected, crumble]);
+
+  return (
+    <Animated.View
+      style={[
+        styles.sprite,
+        {
+          left: x,
+          top: GROUND_Y - 6,
+          opacity: crumble.interpolate({ inputRange: [0, 1], outputRange: [1, 0.25] }),
+          transform: [{ scale: crumble.interpolate({ inputRange: [0, 1], outputRange: [1, 0.7] }) }],
+        },
+      ]}
+    >
+      <Text style={styles.emojiLarge}>🪨</Text>
+      {!node.collected && <Text style={styles.tag}>+{node.amount}</Text>}
+    </Animated.View>
+  );
+}
+
+function TreasureSprite({ treasure, x }: { treasure: TreasureNodeInstance; x: number }) {
+  const pop = useRef(new Animated.Value(treasure.collected ? 1 : 0)).current;
+  const hasAnimatedRef = useRef(treasure.collected);
+
+  useEffect(() => {
+    if (treasure.collected && !hasAnimatedRef.current) {
+      hasAnimatedRef.current = true;
+      Animated.timing(pop, { toValue: 1, duration: 250, useNativeDriver: true }).start();
+    }
+  }, [treasure.collected, pop]);
+
+  return (
+    <Animated.View
+      style={[
+        styles.sprite,
+        {
+          left: x,
+          top: GROUND_Y - 10,
+          transform: [{ scale: pop.interpolate({ inputRange: [0, 0.5, 1], outputRange: [1, 1.4, 1] }) }],
+        },
+      ]}
+    >
+      <Text style={styles.emojiLarge}>{treasure.collected ? '✨' : '🎁'}</Text>
+      {!treasure.collected && (
+        <Text style={styles.tag}>
+          +{treasure.rewardAmount} {treasure.rewardMaterial}
+        </Text>
+      )}
+    </Animated.View>
   );
 }
 
@@ -158,7 +275,7 @@ function EnemySprite({ enemy, x }: { enemy: EnemyInstance; x: number }) {
         styles.sprite,
         {
           left: x,
-          top: 26,
+          top: GROUND_Y - 20,
           transform: [
             { translateX: shake.interpolate({ inputRange: [-1, 1], outputRange: [-6, 6] }) },
             { scale: knockout.interpolate({ inputRange: [0, 1], outputRange: [1, 0.85] }) },
@@ -191,7 +308,7 @@ function CharacterSprite({
   emoji,
   targetX,
   targetY,
-  attacking,
+  action,
 }: {
   unit: SummonedUnit;
   role: 'attacker' | 'healer';
@@ -199,44 +316,61 @@ function CharacterSprite({
   emoji: string;
   targetX: number;
   targetY: number;
-  attacking: boolean;
+  action: ActionKind;
 }) {
   const pos = useRef(new Animated.ValueXY({ x: targetX, y: targetY })).current;
-  const bob = useRef(new Animated.Value(0)).current;
-  const action = useRef(new Animated.Value(0)).current;
+  const walk = useRef(new Animated.Value(0)).current;
+  const doing = useRef(new Animated.Value(0)).current;
+  const isMoving = useRef(false);
 
   useEffect(() => {
-    Animated.spring(pos, { toValue: { x: targetX, y: targetY }, speed: 8, bounciness: 6, useNativeDriver: true }).start();
+    isMoving.current = true;
+    Animated.spring(pos, { toValue: { x: targetX, y: targetY }, speed: 6, bounciness: 5, useNativeDriver: true }).start(
+      () => {
+        isMoving.current = false;
+      }
+    );
   }, [targetX, targetY, pos]);
 
+  // Continuous walk bob/waddle — always running so the party never looks static.
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(bob, { toValue: 1, duration: 420, useNativeDriver: true }),
-        Animated.timing(bob, { toValue: 0, duration: 420, useNativeDriver: true }),
+        Animated.timing(walk, { toValue: 1, duration: 260, useNativeDriver: true }),
+        Animated.timing(walk, { toValue: 0, duration: 260, useNativeDriver: true }),
       ])
     );
     loop.start();
     return () => loop.stop();
-  }, [bob]);
+  }, [walk]);
 
+  // Action animation: attack lunge, mining swing, treasure cheer, or nothing.
   useEffect(() => {
-    if (!attacking) return;
-    const isAttacker = role === 'attacker';
+    if (action === 'idle') return;
+    const isMiningOrTreasure = action === 'mining' || action === 'treasure';
+    const isAttacker = role === 'attacker' || isMiningOrTreasure;
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(action, { toValue: 1, duration: isAttacker ? 260 : 420, useNativeDriver: true }),
-        Animated.timing(action, { toValue: 0, duration: isAttacker ? 260 : 420, useNativeDriver: true }),
-        Animated.delay(isAttacker ? 220 : 120),
+        Animated.timing(doing, { toValue: 1, duration: isAttacker ? 220 : 420, useNativeDriver: true }),
+        Animated.timing(doing, { toValue: 0, duration: isAttacker ? 220 : 420, useNativeDriver: true }),
+        Animated.delay(isAttacker ? 180 : 100),
       ])
     );
     loop.start();
     return () => loop.stop();
-  }, [attacking, role, action]);
+  }, [action, role, doing]);
 
-  const bobY = bob.interpolate({ inputRange: [0, 1], outputRange: [0, -5] });
-  const lungeX = role === 'attacker' ? action.interpolate({ inputRange: [0, 1], outputRange: [0, 10] }) : 0;
-  const auraScale = role === 'healer' ? action.interpolate({ inputRange: [0, 1], outputRange: [1, 1.18] }) : 1;
+  const bobY = walk.interpolate({ inputRange: [0, 1], outputRange: [0, -4] });
+  const waddleRotate = walk.interpolate({ inputRange: [0, 1], outputRange: ['-6deg', '6deg'] });
+
+  const showLunge = action === 'enemy' && role === 'attacker';
+  const showMineSwing = action === 'mining';
+  const showTreasureHop = action === 'treasure';
+  const showHealAura = action === 'enemy' && role === 'healer';
+
+  const lungeX = showLunge || showMineSwing ? doing.interpolate({ inputRange: [0, 1], outputRange: [0, 9] }) : 0;
+  const hopY = showTreasureHop ? doing.interpolate({ inputRange: [0, 1], outputRange: [0, -10] }) : 0;
+  const auraScale = showHealAura ? doing.interpolate({ inputRange: [0, 1], outputRange: [1, 1.16] }) : 1;
 
   const ratio = unit.maxHp > 0 ? Math.max(0, Math.min(1, unit.hp / unit.maxHp)) : 0;
 
@@ -244,12 +378,13 @@ function CharacterSprite({
     <Animated.View
       style={[
         styles.sprite,
-        { transform: [{ translateX: pos.x }, { translateY: Animated.add(pos.y, bobY) }] },
+        { transform: [{ translateX: pos.x }, { translateY: Animated.add(pos.y, Animated.add(bobY, hopY)) }] },
       ]}
     >
-      <Animated.View style={{ transform: [{ translateX: lungeX }, { scale: auraScale }] }}>
+      <Animated.View style={{ transform: [{ translateX: lungeX }, { scale: auraScale }, { rotate: waddleRotate }] }}>
         <CharacterAvatar characterId={unit.defId} emoji={emoji} color={color} size={34} />
       </Animated.View>
+      {showMineSwing && <Text style={styles.pickaxe}>⛏️</Text>}
       <View style={styles.miniBarTrack}>
         <View style={[styles.miniBarFill, { width: `${ratio * 100}%`, backgroundColor: color }]} />
       </View>
@@ -266,18 +401,35 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: 12,
   },
+  hill: {
+    position: 'absolute',
+    bottom: '30%',
+    borderTopLeftRadius: 40,
+    borderTopRightRadius: 40,
+    backgroundColor: theme.bgTop,
+    opacity: 0.5,
+  },
   ground: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    height: '32%',
+    height: '30%',
     backgroundColor: theme.bgBottom,
-    opacity: 0.5,
+    opacity: 0.6,
+    borderTopWidth: 2,
+    borderTopColor: theme.cardBorder,
   },
   sprite: { position: 'absolute', alignItems: 'center', width: 60 },
   emoji: { fontSize: 26 },
-  emojiLarge: { fontSize: 32 },
+  emojiLarge: { fontSize: 30 },
+  pickaxe: { position: 'absolute', top: -6, right: 2, fontSize: 16 },
+  tag: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: theme.gold,
+    marginTop: 1,
+  },
   enemyFlash: {
     position: 'absolute',
     top: -6,
