@@ -89,6 +89,8 @@ export interface EnemyInstance {
   defId: string;
   name: string;
   emoji: string;
+  x: number; // 0..1 position in the arena
+  y: number;
   hp: number;
   maxHp: number;
   atk: number;
@@ -101,6 +103,8 @@ export interface MiningNodeInstance {
   uid: string;
   defId: string;
   name: string;
+  x: number;
+  y: number;
   resource: MaterialId;
   amount: number;
   collected: boolean;
@@ -110,6 +114,8 @@ export interface TreasureNodeInstance {
   uid: string;
   defId: string;
   name: string;
+  x: number;
+  y: number;
   rewardMaterial: MaterialId;
   rewardAmount: number;
   collected: boolean;
@@ -126,16 +132,10 @@ export interface SummonedUnit {
 
 export type StageSessionStatus = 'selecting_skill' | 'playing' | 'cleared';
 
-// The path through the stage, left to right: mining rocks first, then
-// enemies, then the treasure. The party walks to each in order and auto-
-// resolves it (mine/fight/open) before moving on to the next.
-export type EncounterKind = 'enemy' | 'mining' | 'treasure';
-
-export interface Encounter {
-  kind: EncounterKind;
-  refUid: string; // uid into enemies/miningNodes/treasure
-  xRatio: number; // 0..1 position along the path
-}
+// The party roams the arena freely: each time they're free, they head to
+// whichever unresolved thing (enemy/rock/treasure) is nearest, and auto
+// resolve it (fight/mine/open) on arrival before picking the next one.
+export type TargetKind = 'enemy' | 'mining' | 'treasure';
 
 export interface StageSession {
   stageId: string;
@@ -149,8 +149,9 @@ export interface StageSession {
   miningNodes: MiningNodeInstance[];
   treasure: TreasureNodeInstance | null;
   summonedUnits: SummonedUnit[];
-  encounters: Encounter[];
-  encounterIndex: number;
-  encounterProgress: number; // ticks spent working the current mining/treasure encounter
-  log: string[];
+  partyX: number; // 0..1, the party's current anchor position in the arena
+  partyY: number;
+  targetKind: TargetKind | null;
+  targetRefUid: string | null;
+  workProgress: number; // ticks spent working the current mining/treasure target
 }

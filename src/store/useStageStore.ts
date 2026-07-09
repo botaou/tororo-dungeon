@@ -1,13 +1,12 @@
 import { create } from 'zustand';
-import { LayoutAnimation } from 'react-native';
 
 import {
-  Encounter,
   EnemyInstance,
   MiningNodeInstance,
   SkillId,
   StageSession,
   SummonedUnit,
+  TargetKind,
   TreasureNodeInstance,
 } from '../types';
 import { getStageDef } from '../data/stages';
@@ -32,28 +31,38 @@ function energyRegenMs(skill: SkillId | null): number {
   return skill === 'energy_regen_up' ? Math.round(ENERGY_REGEN_MS / 1.5) : ENERGY_REGEN_MS;
 }
 
-// The party walks the path left to right: rocks first, then enemies, then
-// the treasure at the end. Spread evenly across the middle of the field so
-// there's room to walk in from the left and off to the right on clear.
-function buildEncounters(
-  miningNodes: MiningNodeInstance[],
-  enemies: EnemyInstance[],
-  treasure: TreasureNodeInstance | null
-): Encounter[] {
-  const items: Omit<Encounter, 'xRatio'>[] = [
-    ...miningNodes.map((m) => ({ kind: 'mining' as const, refUid: m.uid })),
-    ...enemies.map((e) => ({ kind: 'enemy' as const, refUid: e.uid })),
-    ...(treasure ? [{ kind: 'treasure' as const, refUid: treasure.uid }] : []),
-  ];
-  const span = 0.76;
-  const start = 0.14;
-  return items.map((item, i) => ({
-    ...item,
-    xRatio: items.length > 1 ? start + (i / (items.length - 1)) * span : start + span / 2,
-  }));
+// Scatter `count` points across the arena on a jittered grid so items don't
+// overlap, leaving a clear ring around the center for the home camp.
+function scatterPositions(count: number): { x: number; y: number }[] {
+  if (count === 0) return [];
+  const cols = Math.ceil(Math.sqrt(count));
+  const rows = Math.ceil(count / cols);
+  const cells: { x: number; y: number }[] = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      cells.push({ x: (c + 0.5) / cols, y: (r + 0.5) / rows });
+    }
+  }
+  for (let i = cells.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [cells[i], cells[j]] = [cells[j], cells[i]];
+  }
+  return cells.slice(0, count).map((cell) => {
+    const jitterX = (Math.random() - 0.5) * (0.7 / cols);
+    const jitterY = (Math.random() - 0.5) * (0.7 / rows);
+    let x = 0.1 + cell.x * 0.8 + jitterX;
+    let y = 0.15 + cell.y * 0.7 + jitterY;
+    // Keep clear of the central camp marker.
+    const dx = x - 0.5;
+    const dy = y - 0.5;
+    if (Math.hypot(dx, dy) < 0.14) {
+      const angle = Math.atan2(dy, dx) || Math.random() * Math.PI * 2;
+      x = 0.5 + Math.cos(angle) * 0.16;
+      y = 0.5 + Math.sin(angle) * 0.16;
+    }
+    return { x: Math.min(0.92, Math.max(0.08, x)), y: Math.min(0.88, Math.max(0.16, y)) };
+  });
 }
-
-const MAX_LOG_LINES = 30;
 
 interface StageActions {
   enterStage: (stageId: string) => void;
@@ -72,11 +81,15 @@ export const useStageStore = create<StageStore & StageActions>()((set, get) => (
 
   enterStage: (stageId) => {
     const stage = getStageDef(stageId);
+    const positions = scatterPositions(stage.enemies.length + stage.miningNodes.length + (stage.treasure ? 1 : 0));
+    let cursor = 0;
+
     const enemies: EnemyInstance[] = stage.enemies.map((e) => ({
       uid: uid('enemy'),
       defId: e.id,
       name: e.name,
       emoji: e.emoji,
+      ...positions[cursor++],
       hp: e.hp,
       maxHp: e.hp,
       atk: e.atk,
@@ -88,6 +101,7 @@ export const useStageStore = create<StageStore & StageActions>()((set, get) => (
       uid: uid('mine'),
       defId: m.id,
       name: m.name,
+      ...positions[cursor++],
       resource: m.resource,
       amount: m.amount,
       collected: false,
@@ -100,6 +114,7 @@ export const useStageStore = create<StageStore & StageActions>()((set, get) => (
             uid: uid('treasure'),
             defId: stage.treasure.id,
             name: stage.treasure.name,
+            ...positions[cursor++],
             rewardMaterial: stage.treasure.rewardMaterial,
             rewardAmount: stage.treasure.rewardAmount,
             collected: false,
@@ -119,10 +134,11 @@ export const useStageStore = create<StageStore & StageActions>()((set, get) => (
         miningNodes,
         treasure,
         summonedUnits: [],
-        encounters: buildEncounters(miningNodes, enemies, treasure),
-        encounterIndex: 0,
-        encounterProgress: 0,
-        log: [`${stage.name}に突入！`],
+        partyX: 0.5,
+        partyY: 0.5,
+        targetKind: null,
+        targetRefUid: null,
+        workProgress: 0,
       },
     });
   },
@@ -194,71 +210,104 @@ export const useStageStore = create<StageStore & StageActions>()((set, get) => (
       return;
     }
 
-    let { enemies, summonedUnits, miningNodes, treasure, log, encounterIndex, encounterProgress } =
-      session;
-    const current = session.encounters[encounterIndex];
+    let {
+      enemies,
+      summonedUnits,
+      miningNodes,
+      treasure,
+      partyX,
+      partyY,
+      targetKind,
+      targetRefUid,
+      workProgress,
+    } = session;
 
-    if (!current) {
-      // Walked the whole path — stage clear.
-      usePlayerStore.getState().clearStage(session.stageId);
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    // Pick a new nearest target if we don't have one.
+    if (!targetKind || !targetRefUid) {
+      type Candidate = { kind: TargetKind; refUid: string; x: number; y: number };
+      const candidates: Candidate[] = [
+        ...enemies.filter((e) => !e.defeated && e.hp > 0).map((e) => ({ kind: 'enemy' as const, refUid: e.uid, x: e.x, y: e.y })),
+        ...miningNodes.filter((m) => !m.collected).map((m) => ({ kind: 'mining' as const, refUid: m.uid, x: m.x, y: m.y })),
+        ...(treasure && !treasure.collected
+          ? [{ kind: 'treasure' as const, refUid: treasure.uid, x: treasure.x, y: treasure.y }]
+          : []),
+      ];
+
+      if (candidates.length === 0) {
+        // Nothing left — stage clear.
+        usePlayerStore.getState().clearStage(session.stageId);
+        set({ session: { ...session, energy, energyLastUpdated, status: 'cleared' } });
+        return;
+      }
+
+      let nearest = candidates[0];
+      let nearestDist = Infinity;
+      for (const c of candidates) {
+        const d = Math.hypot(c.x - partyX, c.y - partyY);
+        if (d < nearestDist) {
+          nearestDist = d;
+          nearest = c;
+        }
+      }
+      targetKind = nearest.kind;
+      targetRefUid = nearest.refUid;
+      workProgress = 0;
       set({
         session: {
           ...session,
           energy,
           energyLastUpdated,
-          status: 'cleared',
-          log: [...log, 'ステージクリア！'].slice(-MAX_LOG_LINES),
+          targetKind,
+          targetRefUid,
+          workProgress,
         },
       });
       return;
     }
 
-    if (current.kind === 'enemy') {
-      const result = resolveCombatRound(enemies, summonedUnits);
+    if (targetKind === 'enemy') {
+      const result = resolveCombatRound(enemies, summonedUnits, targetRefUid);
       enemies = result.enemies;
       summonedUnits = result.summonedUnits;
       if (Object.keys(result.rewards).length > 0) {
         usePlayerStore.getState().addMaterials(result.rewards);
       }
-      if (result.logs.length > 0) {
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        log = [...log, ...result.logs].slice(-MAX_LOG_LINES);
-      }
-      const targetEnemy = enemies.find((e) => e.uid === current.refUid);
+      const targetEnemy = enemies.find((e) => e.uid === targetRefUid);
       if (targetEnemy && (targetEnemy.defeated || targetEnemy.hp <= 0)) {
-        encounterIndex += 1;
-        encounterProgress = 0;
+        partyX = targetEnemy.x;
+        partyY = targetEnemy.y;
+        targetKind = null;
+        targetRefUid = null;
+        workProgress = 0;
       }
-    } else if (current.kind === 'mining') {
-      encounterProgress += 1;
-      if (encounterProgress >= ENCOUNTER_HOLD_TICKS) {
-        const node = miningNodes.find((m) => m.uid === current.refUid);
+    } else if (targetKind === 'mining') {
+      workProgress += 1;
+      if (workProgress >= ENCOUNTER_HOLD_TICKS) {
+        const node = miningNodes.find((m) => m.uid === targetRefUid);
         if (node && !node.collected) {
           usePlayerStore.getState().addMaterials({ [node.resource]: node.amount });
           miningNodes = miningNodes.map((m) => (m.uid === node.uid ? { ...m, collected: true } : m));
-          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-          log = [...log, `${node.name}から${node.resource}を${node.amount}獲得`].slice(-MAX_LOG_LINES);
+          partyX = node.x;
+          partyY = node.y;
         }
-        encounterIndex += 1;
-        encounterProgress = 0;
+        targetKind = null;
+        targetRefUid = null;
+        workProgress = 0;
       }
-    } else if (current.kind === 'treasure') {
-      encounterProgress += 1;
-      if (encounterProgress >= ENCOUNTER_HOLD_TICKS) {
+    } else if (targetKind === 'treasure') {
+      workProgress += 1;
+      if (workProgress >= ENCOUNTER_HOLD_TICKS) {
         if (treasure && !treasure.collected) {
           usePlayerStore
             .getState()
             .collectTreasure(session.stageId, treasure.rewardMaterial, treasure.rewardAmount);
           treasure = { ...treasure, collected: true };
-          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-          log = [
-            ...log,
-            `${treasure.name}を開けた！ +${treasure.rewardAmount}${treasure.rewardMaterial}`,
-          ].slice(-MAX_LOG_LINES);
+          partyX = treasure.x;
+          partyY = treasure.y;
         }
-        encounterIndex += 1;
-        encounterProgress = 0;
+        targetKind = null;
+        targetRefUid = null;
+        workProgress = 0;
       }
     }
 
@@ -271,9 +320,11 @@ export const useStageStore = create<StageStore & StageActions>()((set, get) => (
         treasure,
         energy,
         energyLastUpdated,
-        log,
-        encounterIndex,
-        encounterProgress,
+        partyX,
+        partyY,
+        targetKind,
+        targetRefUid,
+        workProgress,
       },
     });
   },
