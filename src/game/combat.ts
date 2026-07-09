@@ -1,4 +1,4 @@
-import { EnemyInstance, MaterialId, SummonedUnit } from '../types';
+import { BirdState, EnemyInstance } from '../types';
 
 export interface AttackAssignment {
   unitUid: string;
@@ -9,18 +9,18 @@ export interface AttackAssignment {
 
 export interface AttackResult {
   enemies: EnemyInstance[];
-  rewards: Partial<Record<MaterialId, number>>;
+  goldReward: number;
   // Enemies that took damage this tick and are still alive hit back once,
   // against a random unit that attacked them.
   retaliations: { enemyUid: string; damage: number }[];
 }
 
-// Each unit decides independently whether it's attacking (and what), so
+// Each bird decides independently whether it's attacking (and what), so
 // several distinct enemies can be engaged in the same tick. Group the
 // assignments by target enemy and resolve each independently.
 export function resolveAttacks(enemies: EnemyInstance[], assignments: AttackAssignment[]): AttackResult {
   const nextEnemies = enemies.map((e) => ({ ...e }));
-  const rewards: Partial<Record<MaterialId, number>> = {};
+  let goldReward = 0;
   const retaliations: { enemyUid: string; damage: number }[] = [];
 
   const byEnemy = new Map<string, AttackAssignment[]>();
@@ -42,25 +42,24 @@ export function resolveAttacks(enemies: EnemyInstance[], assignments: AttackAssi
 
     if (enemy.hp <= 0) {
       enemy.defeated = true;
-      const amount = Math.round(enemy.rewardAmount * (1 + bonusPercent / 100));
-      rewards[enemy.rewardMaterial] = (rewards[enemy.rewardMaterial] ?? 0) + amount;
+      goldReward += Math.round(enemy.goldReward * (1 + bonusPercent / 100));
     } else {
       retaliations.push({ enemyUid, damage: enemy.atk });
     }
   }
 
-  return { enemies: nextEnemies, rewards, retaliations };
+  return { enemies: nextEnemies, goldReward, retaliations };
 }
 
 // Healer support: top off the lowest-HP ally (excluding herself) each tick,
 // independent of positioning/targeting.
-export function applyHealing(units: SummonedUnit[], healerUid: string, healPower: number): SummonedUnit[] {
-  const next = units.map((u) => ({ ...u }));
-  const healer = next.find((u) => u.uid === healerUid);
+export function applyHealing(birds: BirdState[], healerUid: string, healPower: number): BirdState[] {
+  const next = birds.map((b) => ({ ...b }));
+  const healer = next.find((b) => b.defId === healerUid);
   if (!healer || healer.hp <= 0) return next;
 
   const injured = next
-    .filter((u) => u.uid !== healerUid && u.hp > 0 && u.hp < u.maxHp)
+    .filter((b) => b.defId !== healerUid && b.hp > 0 && b.hp < b.maxHp)
     .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
   if (injured) {
     injured.hp = Math.min(injured.maxHp, injured.hp + healPower);

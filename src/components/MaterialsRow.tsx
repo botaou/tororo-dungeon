@@ -4,15 +4,20 @@ import { StyleSheet, Text, View } from 'react-native';
 import { MaterialId } from '../types';
 import { theme } from '../theme';
 
-const ICONS: Record<MaterialId, string> = { gold: '🪙', ore: '⛏️', gem: '💎' };
+const ICONS: Record<MaterialId, string> = { wood: '🪵', ore: '⛏️', mushroom: '🍄' };
 
 interface Props {
+  gold: number;
   materials: Record<MaterialId, number>;
 }
 
-export function MaterialsRow({ materials }: Props) {
+export function MaterialsRow({ gold, materials }: Props) {
   return (
     <View style={styles.row}>
+      <View style={styles.item}>
+        <Text style={styles.icon}>🪙</Text>
+        <Text style={styles.value}>{gold}</Text>
+      </View>
       {(Object.keys(ICONS) as MaterialId[]).map((key) => (
         <View style={styles.item} key={key}>
           <Text style={styles.icon}>{ICONS[key]}</Text>
@@ -24,7 +29,7 @@ export function MaterialsRow({ materials }: Props) {
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', gap: 16 },
+  row: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
   item: {
     flexDirection: 'row',
     alignItems: 'center',

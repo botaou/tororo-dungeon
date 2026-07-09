@@ -1,22 +1,23 @@
-// Tunable pacing constants for the prototype. Kept short so the loop is
-// playable/testable in a few minutes rather than requiring real idle-game waits.
-
-export const STAMINA_MAX = 20;
-export const STAMINA_REGEN_MS = 20_000; // +1 stamina per 20s
-
-export const ENERGY_MAX = 100;
-export const ENERGY_REGEN_MS = 3_000; // +1 energy per 3s
+// Tunable pacing constants for the prototype.
 
 export const TICK_MS = 1_000;
 
-// How many ticks the party spends animating a mining/treasure encounter
-// before it auto-resolves and they walk on.
+// How many ticks a bird spends animating a mining/treasure/job encounter
+// before it auto-resolves and it moves on.
 export const ENCOUNTER_HOLD_TICKS = 2;
 
-// Constant walking speed: ratio-units of the arena crossed per second, and
-// how close counts as "arrived" so they stop and engage instead of
+// Constant walking speed: ratio-units of the world crossed per second, and
+// how close counts as "arrived" so a bird stops and engages instead of
 // endlessly approaching.
-export const PARTY_MOVE_SPEED = 0.14;
+export const MOVE_SPEED = 0.1;
 export const ARRIVAL_THRESHOLD = 0.035;
 
-export const STARTING_MATERIALS = { gold: 0, ore: 0, gem: 0 };
+// How often (ms) a bird's mood is free to change on its own.
+export const MOOD_REFRESH_MS = 45_000;
+
+// Each tick, a free/idle bird has this base chance of re-evaluating the
+// request board (scaled by its personal acceptance score for each request).
+export const REQUEST_CHECK_CHANCE = 0.35;
+
+export const STARTING_GOLD = 300;
+export const STARTING_MATERIALS = { wood: 0, ore: 0, mushroom: 0 };

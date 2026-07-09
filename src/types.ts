@@ -1,25 +1,19 @@
-// Core data model for the idle-dungeon prototype.
+// Core data model for the town-sim prototype.
 
-export type MaterialId = 'gold' | 'ore' | 'gem';
-
-export type SkillId = 'atk_up' | 'hp_up' | 'energy_regen_up';
-
-export interface SkillDef {
-  id: SkillId;
-  name: string;
-  description: string;
-}
+export type MaterialId = 'wood' | 'ore' | 'mushroom';
 
 export type CharacterRole = 'attacker' | 'healer';
 
-// Each character's independent AI personality:
-// - vanguard: beelines for the nearest enemy, melee.
-// - clingy: stays glued to the vanguard's side, assists whatever it fights.
-// - cautious: hangs back behind the group; only lunges if an enemy gets
-//   within her panic radius, otherwise just heals from a distance.
-// - freeSpirit: prioritizes the nearest unclaimed rock/treasure, and only
-//   joins the fight (assisting the vanguard) once nothing is left to gather.
+// Each character's independent AI personality — governs both free-roam
+// wandering biases and job-acceptance behavior.
 export type Personality = 'vanguard' | 'clingy' | 'cautious' | 'freeSpirit';
+
+export type MoodId = 'normal' | 'sleepy' | 'happy' | 'hungry' | 'wantsMoney';
+
+export interface MoodDef {
+  id: MoodId;
+  label: string; // short status label shown under the bird's name
+}
 
 export interface CharacterDef {
   id: string;
@@ -27,12 +21,11 @@ export interface CharacterDef {
   role: CharacterRole;
   personality: Personality;
   description: string;
-  color: string; // accent color for cards/UI
+  color: string; // accent color for UI
   emoji: string; // placeholder visual until real art is added
   baseAtk: number; // for healers, this is heal power instead of damage
   baseHp: number;
-  summonCost: number; // energy cost to summon
-  materialBonusPercent?: number; // bonus % applied to material rewards while alive
+  materialBonusPercent?: number; // bonus % applied when this bird delivers materials
 }
 
 export interface EnemyDef {
@@ -41,8 +34,7 @@ export interface EnemyDef {
   emoji: string;
   hp: number;
   atk: number;
-  rewardMaterial: MaterialId;
-  rewardAmount: number;
+  goldReward: number;
 }
 
 export interface MiningNodeDef {
@@ -55,57 +47,29 @@ export interface MiningNodeDef {
 export interface TreasureNodeDef {
   id: string;
   name: string;
-  rewardMaterial: MaterialId;
-  rewardAmount: number;
-}
-
-export interface StageDef {
-  id: string;
-  name: string;
-  staminaCost: number;
-  clearRewardMaterial: MaterialId;
-  clearRewardAmount: number;
-  enemies: EnemyDef[];
-  miningNodes: MiningNodeDef[];
-  treasure?: TreasureNodeDef;
+  goldReward: number;
 }
 
 // ---- Persisted player state ----
 
-export interface OwnedCharacter {
-  defId: string;
-  level: number;
-}
-
-export interface StageProgress {
-  cleared: boolean;
-  treasureCollected: boolean;
-}
-
 export interface PlayerState {
-  stamina: number;
-  staminaMax: number;
-  staminaLastUpdated: number; // epoch ms
+  gold: number;
   materials: Record<MaterialId, number>;
-  characters: OwnedCharacter[];
-  stageProgress: Record<string, StageProgress>;
-  unlockedStageIds: string[];
 }
 
-// ---- Ephemeral stage session state ----
+// ---- World entities (persistent, ephemeral session state) ----
 
 export interface EnemyInstance {
   uid: string;
   defId: string;
   name: string;
   emoji: string;
-  x: number; // 0..1 position in the arena
+  x: number; // 0..1 position in the world
   y: number;
   hp: number;
   maxHp: number;
   atk: number;
-  rewardMaterial: MaterialId;
-  rewardAmount: number;
+  goldReward: number;
   defeated: boolean;
 }
 
@@ -126,48 +90,57 @@ export interface TreasureNodeInstance {
   name: string;
   x: number;
   y: number;
-  rewardMaterial: MaterialId;
-  rewardAmount: number;
+  goldReward: number;
   collected: boolean;
 }
 
-// What a unit is visibly doing this tick, for animation purposes — distinct
-// from targetKind (its AI's pursuit goal), since e.g. the clingy/cautious
-// personalities can be "fighting" without ever setting a pursuit target.
-export type ActivityKind = 'enemy' | 'mining' | 'treasure' | 'idle';
+// What a bird is visibly doing this tick, for animation purposes.
+export type ActivityKind = 'enemy' | 'mining' | 'treasure' | 'idle' | 'resting';
 
-export interface SummonedUnit {
-  uid: string;
-  defId: string;
+// A pursuit goal a bird's AI is actively working toward. A job is just a
+// mining/treasure pursuit restricted to a specific request's material and
+// tagged with which request it fulfills (see BirdState.currentJobId).
+export type TargetKind = 'enemy' | 'mining' | 'treasure' | 'wander';
+
+export interface BirdState {
+  defId: string; // birds are fixed individuals, defId doubles as identity
   name: string;
-  x: number; // 0..1 position in the arena, moved independently per unit
+  x: number; // 0..1 position in the world
   y: number;
   hp: number;
   maxHp: number;
   atk: number;
-  targetKind: TargetKind | null; // pursuit goal (vanguard/freeSpirit only)
+  mood: MoodId;
+  moodChangedAt: number; // epoch ms, for periodic mood refresh
+  targetKind: TargetKind | null;
   targetRefUid: string | null;
-  workProgress: number; // ticks spent working the current mining/treasure target
+  workProgress: number;
   activity: ActivityKind;
+  currentJobId: string | null;
+  // Ambient wander destination, used when a bird has nothing more pressing
+  // to do — persisted so it commits to a direction instead of jittering.
+  wanderX: number | null;
+  wanderY: number | null;
 }
 
-export type StageSessionStatus = 'selecting_skill' | 'playing' | 'cleared';
+export type JobStatus = 'open' | 'inProgress' | 'done';
 
-// The party roams the arena freely: the vanguard beelines for the nearest
-// enemy, the free spirit beelines for the nearest rock/treasure, and the
-// other two follow/react rather than pursue independently.
-export type TargetKind = 'enemy' | 'mining' | 'treasure';
+// A request posted on the board: "I want N of material X, here's the
+// reward" — birds decide for themselves whether to take it.
+export interface JobRequest {
+  id: string;
+  materialId: MaterialId;
+  amount: number;
+  reward: number; // gold
+  status: JobStatus;
+  acceptedBy: string | null; // bird defId
+  createdAt: number;
+}
 
-export interface StageSession {
-  stageId: string;
-  status: StageSessionStatus;
-  energy: number;
-  energyMax: number;
-  energyLastUpdated: number;
-  energyRegenMs: number;
-  selectedSkill: SkillId | null;
+export interface WorldState {
   enemies: EnemyInstance[];
   miningNodes: MiningNodeInstance[];
-  treasure: TreasureNodeInstance | null;
-  summonedUnits: SummonedUnit[];
+  treasures: TreasureNodeInstance[];
+  birds: BirdState[];
+  requests: JobRequest[];
 }

@@ -1,74 +1,34 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Animated, Easing, StyleSheet, Text, TouchableWithoutFeedback, View, useWindowDimensions } from 'react-native';
 
-import {
-  ActivityKind,
-  EnemyInstance,
-  MiningNodeInstance,
-  StageSessionStatus,
-  SummonedUnit,
-  TreasureNodeInstance,
-} from '../types';
+import { BirdState, EnemyInstance, MiningNodeInstance, TreasureNodeInstance } from '../types';
 import { getCharacterDef } from '../data/characters';
+import { TOWN_X, TOWN_Y } from '../data/world';
 import { CharacterAvatar } from './CharacterAvatar';
 import { TICK_MS } from '../game/config';
 import { theme } from '../theme';
 
-const HORIZONTAL_PADDING = 24; // matches StageScreen's paddingHorizontal * 2
-
-interface GhostUnit {
-  uid: string;
-  emoji: string;
-  color: string;
-  x: number;
-  y: number;
-  anim: Animated.Value;
-}
+const HORIZONTAL_PADDING = 24; // matches TownScreen's paddingHorizontal * 2
 
 interface Props {
   enemies: EnemyInstance[];
   miningNodes: MiningNodeInstance[];
-  treasure: TreasureNodeInstance | null;
-  summonedUnits: SummonedUnit[];
-  status: StageSessionStatus;
+  treasures: TreasureNodeInstance[];
+  birds: BirdState[];
+  onBirdPress: (defId: string) => void;
 }
 
-export function BattleField({ enemies, miningNodes, treasure, summonedUnits, status }: Props) {
+export function WorldMap({ enemies, miningNodes, treasures, birds, onBirdPress }: Props) {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const fieldWidth = Math.max(240, windowWidth - HORIZONTAL_PADDING);
-  const fieldHeight = Math.max(360, windowHeight * 0.62);
-
-  const lastPosRef = useRef<Map<string, { x: number; y: number }>>(new Map());
-  const prevUnitsRef = useRef<SummonedUnit[]>([]);
-  const [ghosts, setGhosts] = useState<GhostUnit[]>([]);
-
-  useEffect(() => {
-    const prevUnits = prevUnitsRef.current;
-    const stillPresent = new Set(summonedUnits.map((u) => u.uid));
-    const removed = prevUnits.filter((u) => !stillPresent.has(u.uid));
-
-    if (removed.length > 0) {
-      const newGhosts: GhostUnit[] = removed.map((u) => {
-        const def = getCharacterDef(u.defId);
-        const pos = lastPosRef.current.get(u.uid) ?? { x: fieldWidth * 0.5, y: fieldHeight * 0.5 };
-        return { uid: u.uid, emoji: def.emoji, color: def.color, x: pos.x, y: pos.y, anim: new Animated.Value(1) };
-      });
-      setGhosts((prev) => [...prev, ...newGhosts]);
-      newGhosts.forEach((g) => {
-        Animated.timing(g.anim, { toValue: 0, duration: 550, useNativeDriver: true }).start(() => {
-          setGhosts((prev) => prev.filter((p) => p.uid !== g.uid));
-        });
-      });
-    }
-
-    prevUnitsRef.current = summonedUnits;
-  }, [summonedUnits, fieldWidth, fieldHeight]);
+  const fieldHeight = Math.max(420, windowHeight * 0.72);
 
   return (
     <View style={[styles.field, { height: fieldHeight }]}>
-      <CrossPath fieldWidth={fieldWidth} fieldHeight={fieldHeight} />
-      <View style={styles.camp}>
-        <Text style={styles.campEmoji}>⛺</Text>
+      <View
+        style={[styles.town, { left: TOWN_X * fieldWidth - 34, top: TOWN_Y * fieldHeight - 34 }]}
+      >
+        <Text style={styles.townEmoji}>🏘️</Text>
       </View>
 
       {miningNodes.map((m) => (
@@ -79,63 +39,20 @@ export function BattleField({ enemies, miningNodes, treasure, summonedUnits, sta
         <EnemySprite key={e.uid} enemy={e} x={e.x * fieldWidth} y={e.y * fieldHeight} />
       ))}
 
-      {treasure && (
-        <TreasureSprite treasure={treasure} x={treasure.x * fieldWidth} y={treasure.y * fieldHeight} />
-      )}
-
-      {summonedUnits.map((u) => {
-        const def = getCharacterDef(u.defId);
-        const targetX = u.x * fieldWidth;
-        const targetY = u.y * fieldHeight;
-        lastPosRef.current.set(u.uid, { x: targetX, y: targetY });
-        const action: ActivityKind = status === 'playing' ? u.activity : 'idle';
-        return (
-          <CharacterSprite
-            key={u.uid}
-            unit={u}
-            role={def.role}
-            color={def.color}
-            emoji={def.emoji}
-            targetX={targetX}
-            targetY={targetY}
-            action={action}
-          />
-        );
-      })}
-
-      {ghosts.map((g) => (
-        <Animated.View
-          key={g.uid}
-          style={[
-            styles.sprite,
-            {
-              left: g.x,
-              top: g.y,
-              opacity: g.anim,
-              transform: [
-                { translateY: g.anim.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }) },
-                { rotate: '90deg' },
-              ],
-            },
-          ]}
-        >
-          <Text style={styles.emoji}>{g.emoji}</Text>
-        </Animated.View>
+      {treasures.map((t) => (
+        <TreasureSprite key={t.uid} treasure={t} x={t.x * fieldWidth} y={t.y * fieldHeight} />
       ))}
 
-      {summonedUnits.length === 0 && (
-        <Text style={styles.emptyHint}>下のボタンからキャラを呼び出そう</Text>
-      )}
+      {birds.map((b) => (
+        <BirdSprite
+          key={b.defId}
+          bird={b}
+          targetX={b.x * fieldWidth}
+          targetY={b.y * fieldHeight}
+          onPress={() => onBirdPress(b.defId)}
+        />
+      ))}
     </View>
-  );
-}
-
-function CrossPath({ fieldWidth, fieldHeight }: { fieldWidth: number; fieldHeight: number }) {
-  return (
-    <>
-      <View style={[styles.pathH, { top: fieldHeight * 0.5 - 22, width: fieldWidth }]} />
-      <View style={[styles.pathV, { left: fieldWidth * 0.5 - 22, height: fieldHeight }]} />
-    </>
   );
 }
 
@@ -150,6 +67,10 @@ function RockSprite({ node, x, y }: { node: MiningNodeInstance; x: number; y: nu
     }
   }, [node.collected, crumble]);
 
+  if (node.collected) return null;
+
+  const icon = node.resource === 'wood' ? '🌳' : node.resource === 'ore' ? '🪨' : '🍄';
+
   return (
     <Animated.View
       style={[
@@ -162,8 +83,8 @@ function RockSprite({ node, x, y }: { node: MiningNodeInstance; x: number; y: nu
         },
       ]}
     >
-      <Text style={styles.emojiLarge}>🪨</Text>
-      {!node.collected && <Text style={styles.tag}>+{node.amount}</Text>}
+      <Text style={styles.emojiLarge}>{icon}</Text>
+      <Text style={styles.tag}>+{node.amount}</Text>
     </Animated.View>
   );
 }
@@ -179,6 +100,8 @@ function TreasureSprite({ treasure, x, y }: { treasure: TreasureNodeInstance; x:
     }
   }, [treasure.collected, pop]);
 
+  if (treasure.collected) return null;
+
   return (
     <Animated.View
       style={[
@@ -190,12 +113,8 @@ function TreasureSprite({ treasure, x, y }: { treasure: TreasureNodeInstance; x:
         },
       ]}
     >
-      <Text style={styles.emojiLarge}>{treasure.collected ? '✨' : '🎁'}</Text>
-      {!treasure.collected && (
-        <Text style={styles.tag}>
-          +{treasure.rewardAmount} {treasure.rewardMaterial}
-        </Text>
-      )}
+      <Text style={styles.emojiLarge}>🎁</Text>
+      <Text style={styles.tag}>+{treasure.goldReward}G</Text>
     </Animated.View>
   );
 }
@@ -228,6 +147,8 @@ function EnemySprite({ enemy, x, y }: { enemy: EnemyInstance; x: number; y: numb
     }
   }, [enemy.defeated, enemy.hp, knockout]);
 
+  if (enemy.defeated) return null;
+
   const ratio = enemy.maxHp > 0 ? Math.max(0, Math.min(1, enemy.hp / enemy.maxHp)) : 0;
 
   return (
@@ -240,9 +161,8 @@ function EnemySprite({ enemy, x, y }: { enemy: EnemyInstance; x: number; y: numb
           transform: [
             { translateX: shake.interpolate({ inputRange: [-1, 1], outputRange: [-6, 6] }) },
             { scale: knockout.interpolate({ inputRange: [0, 1], outputRange: [1, 0.85] }) },
-            { rotate: knockout.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '70deg'] }) },
           ],
-          opacity: knockout.interpolate({ inputRange: [0, 1], outputRange: [1, 0.35] }),
+          opacity: knockout.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
         },
       ]}
     >
@@ -253,7 +173,7 @@ function EnemySprite({ enemy, x, y }: { enemy: EnemyInstance; x: number; y: numb
         ]}
       />
       <Text style={styles.emojiLarge}>{enemy.emoji}</Text>
-      {enemy.hp > 0 && !enemy.defeated && (
+      {enemy.hp > 0 && (
         <View style={styles.miniBarTrack}>
           <View style={[styles.miniBarFill, { width: `${ratio * 100}%`, backgroundColor: theme.red }]} />
         </View>
@@ -262,28 +182,25 @@ function EnemySprite({ enemy, x, y }: { enemy: EnemyInstance; x: number; y: numb
   );
 }
 
-function CharacterSprite({
-  unit,
-  role,
-  color,
-  emoji,
+function BirdSprite({
+  bird,
   targetX,
   targetY,
-  action,
+  onPress,
 }: {
-  unit: SummonedUnit;
-  role: 'attacker' | 'healer';
-  color: string;
-  emoji: string;
+  bird: BirdState;
   targetX: number;
   targetY: number;
-  action: ActivityKind;
+  onPress: () => void;
 }) {
+  const def = getCharacterDef(bird.defId);
   const pos = useRef(new Animated.ValueXY({ x: targetX, y: targetY })).current;
   const walk = useRef(new Animated.Value(0)).current;
   const doing = useRef(new Animated.Value(0)).current;
   const prevTargetXRef = useRef(targetX);
   const [facingRight, setFacingRight] = useState(true);
+
+  const fainted = bird.hp <= 0;
 
   // Constant-speed walk: each update is one tick's worth of travel, animated
   // linearly over exactly one tick so consecutive steps chain into smooth,
@@ -302,8 +219,8 @@ function CharacterSprite({
     }).start();
   }, [targetX, targetY, pos]);
 
-  // Continuous walk bob/waddle — always running so the party never looks static.
   useEffect(() => {
+    if (fainted) return;
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(walk, { toValue: 1, duration: 260, useNativeDriver: true }),
@@ -312,13 +229,11 @@ function CharacterSprite({
     );
     loop.start();
     return () => loop.stop();
-  }, [walk]);
+  }, [walk, fainted]);
 
-  // Action animation: attack lunge, mining swing, treasure cheer, or nothing.
   useEffect(() => {
-    if (action === 'idle') return;
-    const isMiningOrTreasure = action === 'mining' || action === 'treasure';
-    const isQuick = role === 'attacker' || isMiningOrTreasure;
+    if (fainted || bird.activity === 'idle' || bird.activity === 'resting') return;
+    const isQuick = def.role === 'attacker';
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(doing, { toValue: 1, duration: isQuick ? 220 : 420, useNativeDriver: true }),
@@ -328,21 +243,21 @@ function CharacterSprite({
     );
     loop.start();
     return () => loop.stop();
-  }, [action, role, doing]);
+  }, [bird.activity, def.role, doing, fainted]);
 
-  const bobY = walk.interpolate({ inputRange: [0, 1], outputRange: [0, -4] });
-  const waddleRotate = walk.interpolate({ inputRange: [0, 1], outputRange: ['-6deg', '6deg'] });
+  const bobY = fainted ? 0 : walk.interpolate({ inputRange: [0, 1], outputRange: [0, -4] });
+  const waddleRotate = fainted ? '0deg' : walk.interpolate({ inputRange: [0, 1], outputRange: ['-6deg', '6deg'] });
 
-  const showLunge = action === 'enemy' && role === 'attacker';
-  const showMineSwing = action === 'mining';
-  const showTreasureHop = action === 'treasure';
-  const showHealAura = action === 'enemy' && role === 'healer';
+  const showLunge = bird.activity === 'enemy' && def.role === 'attacker';
+  const showMineSwing = bird.activity === 'mining';
+  const showTreasureHop = bird.activity === 'treasure';
+  const showHealAura = bird.activity === 'enemy' && def.role === 'healer';
 
   const lungeScale = showLunge || showMineSwing ? doing.interpolate({ inputRange: [0, 1], outputRange: [1, 1.15] }) : 1;
   const hopY = showTreasureHop ? doing.interpolate({ inputRange: [0, 1], outputRange: [0, -10] }) : 0;
   const auraScale = showHealAura ? doing.interpolate({ inputRange: [0, 1], outputRange: [1, 1.16] }) : 1;
 
-  const ratio = unit.maxHp > 0 ? Math.max(0, Math.min(1, unit.hp / unit.maxHp)) : 0;
+  const ratio = bird.maxHp > 0 ? Math.max(0, Math.min(1, bird.hp / bird.maxHp)) : 0;
 
   return (
     <Animated.View
@@ -351,21 +266,27 @@ function CharacterSprite({
         { transform: [{ translateX: pos.x }, { translateY: Animated.add(pos.y, Animated.add(bobY, hopY)) }] },
       ]}
     >
-      <Animated.View
-        style={{
-          transform: [
-            { scaleX: facingRight ? 1 : -1 },
-            { scale: Animated.multiply(lungeScale, auraScale) },
-            { rotate: waddleRotate },
-          ],
-        }}
-      >
-        <CharacterAvatar characterId={unit.defId} emoji={emoji} color={color} size={32} />
-      </Animated.View>
-      {showMineSwing && <Text style={styles.pickaxe}>⛏️</Text>}
-      <View style={styles.miniBarTrack}>
-        <View style={[styles.miniBarFill, { width: `${ratio * 100}%`, backgroundColor: color }]} />
-      </View>
+      <TouchableWithoutFeedback onPress={onPress}>
+        <View style={styles.tapArea}>
+          <Animated.View
+            style={{
+              transform: [
+                { scaleX: facingRight ? 1 : -1 },
+                { scale: Animated.multiply(lungeScale, auraScale) },
+                { rotate: fainted ? '90deg' : waddleRotate },
+              ],
+              opacity: fainted ? 0.5 : 1,
+            }}
+          >
+            <CharacterAvatar characterId={bird.defId} emoji={def.emoji} color={def.color} size={30} />
+          </Animated.View>
+          {showMineSwing && <Text style={styles.pickaxe}>⛏️</Text>}
+          <Text style={styles.nameTag}>{bird.name}</Text>
+          <View style={styles.miniBarTrack}>
+            <View style={[styles.miniBarFill, { width: `${ratio * 100}%`, backgroundColor: def.color }]} />
+          </View>
+        </View>
+      </TouchableWithoutFeedback>
     </Animated.View>
   );
 }
@@ -378,40 +299,24 @@ const styles = StyleSheet.create({
     borderColor: theme.cardBorder,
     overflow: 'hidden',
   },
-  pathH: {
+  town: {
     position: 'absolute',
-    height: 44,
-    backgroundColor: theme.bgTop,
-    opacity: 0.45,
-  },
-  pathV: {
-    position: 'absolute',
-    top: 0,
-    width: 44,
-    backgroundColor: theme.bgTop,
-    opacity: 0.45,
-  },
-  camp: {
-    position: 'absolute',
-    left: '50%',
-    top: '50%',
-    marginLeft: -22,
-    marginTop: -22,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 68,
+    height: 68,
+    borderRadius: 16,
     backgroundColor: theme.card,
     borderWidth: 2,
     borderColor: theme.gold,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  campEmoji: { fontSize: 20 },
+  townEmoji: { fontSize: 30 },
   sprite: { position: 'absolute', alignItems: 'center', width: 56 },
-  emoji: { fontSize: 24 },
-  emojiLarge: { fontSize: 28 },
+  tapArea: { alignItems: 'center' },
+  emojiLarge: { fontSize: 26 },
   pickaxe: { position: 'absolute', top: -8, right: 0, fontSize: 14 },
   tag: { fontSize: 9, fontWeight: '700', color: theme.gold, marginTop: 1 },
+  nameTag: { fontSize: 9, fontWeight: '700', color: theme.textPrimary, marginTop: 1 },
   enemyFlash: {
     position: 'absolute',
     top: -6,
@@ -422,23 +327,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
   },
   miniBarTrack: {
-    width: 40,
+    width: 38,
     height: 4,
     borderRadius: 2,
     backgroundColor: theme.bgBottom,
-    marginTop: 3,
+    marginTop: 2,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: theme.cardBorder,
   },
   miniBarFill: { height: '100%', borderRadius: 2 },
-  emptyHint: {
-    position: 'absolute',
-    bottom: 10,
-    left: 0,
-    right: 0,
-    textAlign: 'center',
-    color: theme.textMuted,
-    fontSize: 12,
-  },
 });

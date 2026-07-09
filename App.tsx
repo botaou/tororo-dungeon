@@ -3,17 +3,13 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { HomeScreen } from './src/screens/HomeScreen';
-import { StageScreen } from './src/screens/StageScreen';
+import { TownScreen } from './src/screens/TownScreen';
 import { usePlayerStore } from './src/store/usePlayerStore';
 import { useGameClock } from './src/game/useGameClock';
 import { theme } from './src/theme';
 
-type Screen = 'home' | 'stage';
-
 export default function App() {
   const [hydrated, setHydrated] = useState(usePlayerStore.persist.hasHydrated());
-  const [screen, setScreen] = useState<Screen>('home');
 
   useEffect(() => {
     const unsub = usePlayerStore.persist.onFinishHydration(() => setHydrated(true));
@@ -32,11 +28,7 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      {screen === 'home' ? (
-        <HomeScreen onEnterStage={() => setScreen('stage')} />
-      ) : (
-        <StageScreen onExit={() => setScreen('home')} />
-      )}
+      <TownScreen />
       <StatusBar style="light" />
     </SafeAreaProvider>
   );
