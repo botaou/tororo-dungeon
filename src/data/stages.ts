@@ -8,8 +8,8 @@ export const STAGES: StageDef[] = [
     clearRewardMaterial: 'gold',
     clearRewardAmount: 20,
     enemies: [
-      { id: 'slime_a', name: 'スライム', hp: 30, atk: 3, rewardMaterial: 'gold', rewardAmount: 5 },
-      { id: 'slime_b', name: 'スライム', hp: 30, atk: 3, rewardMaterial: 'gold', rewardAmount: 5 },
+      { id: 'slime_a', name: 'スライム', emoji: '🟢', hp: 30, atk: 3, rewardMaterial: 'gold', rewardAmount: 5 },
+      { id: 'slime_b', name: 'スライム', emoji: '🟢', hp: 30, atk: 3, rewardMaterial: 'gold', rewardAmount: 5 },
     ],
     miningNodes: [{ id: 'ore_node_1', name: '鉱石の岩', resource: 'ore', amount: 10 }],
   },
@@ -20,9 +20,9 @@ export const STAGES: StageDef[] = [
     clearRewardMaterial: 'gold',
     clearRewardAmount: 40,
     enemies: [
-      { id: 'bat_a', name: 'コウモリ', hp: 25, atk: 4, rewardMaterial: 'gold', rewardAmount: 8 },
-      { id: 'bat_b', name: 'コウモリ', hp: 25, atk: 4, rewardMaterial: 'gold', rewardAmount: 8 },
-      { id: 'bat_c', name: '大コウモリ', hp: 40, atk: 5, rewardMaterial: 'ore', rewardAmount: 6 },
+      { id: 'bat_a', name: 'コウモリ', emoji: '🦇', hp: 25, atk: 4, rewardMaterial: 'gold', rewardAmount: 8 },
+      { id: 'bat_b', name: 'コウモリ', emoji: '🦇', hp: 25, atk: 4, rewardMaterial: 'gold', rewardAmount: 8 },
+      { id: 'bat_c', name: '大コウモリ', emoji: '🦇', hp: 40, atk: 5, rewardMaterial: 'ore', rewardAmount: 6 },
     ],
     miningNodes: [
       { id: 'ore_node_2', name: '鉱石の岩', resource: 'ore', amount: 15 },
@@ -37,9 +37,9 @@ export const STAGES: StageDef[] = [
     clearRewardMaterial: 'gem',
     clearRewardAmount: 5,
     enemies: [
-      { id: 'skeleton_a', name: 'スケルトン', hp: 40, atk: 6, rewardMaterial: 'gold', rewardAmount: 12 },
-      { id: 'skeleton_b', name: 'スケルトン', hp: 40, atk: 6, rewardMaterial: 'gold', rewardAmount: 12 },
-      { id: 'golem', name: 'ゴーレム', hp: 80, atk: 8, rewardMaterial: 'ore', rewardAmount: 15 },
+      { id: 'skeleton_a', name: 'スケルトン', emoji: '💀', hp: 40, atk: 6, rewardMaterial: 'gold', rewardAmount: 12 },
+      { id: 'skeleton_b', name: 'スケルトン', emoji: '💀', hp: 40, atk: 6, rewardMaterial: 'gold', rewardAmount: 12 },
+      { id: 'golem', name: 'ゴーレム', emoji: '🗿', hp: 80, atk: 8, rewardMaterial: 'ore', rewardAmount: 15 },
     ],
     miningNodes: [
       { id: 'ore_node_3', name: '鉱石の岩', resource: 'ore', amount: 20 },
@@ -54,9 +54,9 @@ export const STAGES: StageDef[] = [
     clearRewardMaterial: 'gem',
     clearRewardAmount: 15,
     enemies: [
-      { id: 'wyvern_a', name: 'ワイバーン', hp: 100, atk: 10, rewardMaterial: 'gold', rewardAmount: 25 },
-      { id: 'wyvern_b', name: 'ワイバーン', hp: 100, atk: 10, rewardMaterial: 'gold', rewardAmount: 25 },
-      { id: 'dragon', name: 'ドラゴン', hp: 200, atk: 15, rewardMaterial: 'gem', rewardAmount: 20 },
+      { id: 'wyvern_a', name: 'ワイバーン', emoji: '🐲', hp: 100, atk: 10, rewardMaterial: 'gold', rewardAmount: 25 },
+      { id: 'wyvern_b', name: 'ワイバーン', emoji: '🐲', hp: 100, atk: 10, rewardMaterial: 'gold', rewardAmount: 25 },
+      { id: 'dragon', name: 'ドラゴン', emoji: '🐉', hp: 200, atk: 15, rewardMaterial: 'gem', rewardAmount: 20 },
     ],
     miningNodes: [
       { id: 'ore_node_4', name: '鉱石の岩', resource: 'ore', amount: 30 },

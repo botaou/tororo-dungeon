@@ -28,6 +28,7 @@ export interface CharacterDef {
 export interface EnemyDef {
   id: string;
   name: string;
+  emoji: string;
   hp: number;
   atk: number;
   rewardMaterial: MaterialId;
@@ -87,6 +88,7 @@ export interface EnemyInstance {
   uid: string;
   defId: string;
   name: string;
+  emoji: string;
   hp: number;
   maxHp: number;
   atk: number;

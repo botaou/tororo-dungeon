@@ -5,11 +5,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useStageStore } from '../store/useStageStore';
 import { getStageDef } from '../data/stages';
-import { CHARACTERS, getCharacterDef } from '../data/characters';
+import { CHARACTERS } from '../data/characters';
 import { rollSkillOffer } from '../data/skills';
 import { ResourceBar } from '../components/ResourceBar';
 import { CharacterAvatar } from '../components/CharacterAvatar';
 import { AnimatedPressable } from '../components/AnimatedPressable';
+import { BattleField } from '../components/BattleField';
 import { SkillDef } from '../types';
 import { theme } from '../theme';
 
@@ -49,34 +50,7 @@ export function StageScreen({ onExit }: Props) {
       </View>
 
       <ScrollView style={styles.body} contentContainerStyle={{ paddingBottom: 24 }}>
-        <Section title="👹 敵">
-          {session.enemies.map((e) => (
-            <View key={e.uid} style={styles.entityRow}>
-              <Text style={[styles.entityName, e.hp <= 0 && styles.entityDead]}>
-                {e.name} {e.hp <= 0 ? '(撃破)' : ''}
-              </Text>
-              {e.hp > 0 && <ResourceBar label="" current={e.hp} max={e.maxHp} color={theme.red} />}
-            </View>
-          ))}
-        </Section>
-
-        <Section title="🦜 召喚中のキャラ">
-          {session.summonedUnits.length === 0 && (
-            <Text style={styles.emptyText}>召喚中のキャラはいません</Text>
-          )}
-          {session.summonedUnits.map((u) => {
-            const def = getCharacterDef(u.defId);
-            return (
-              <View key={u.uid} style={styles.unitRow}>
-                <CharacterAvatar characterId={def.id} emoji={def.emoji} color={def.color} size={32} />
-                <View style={styles.unitBarWrap}>
-                  <Text style={styles.entityName}>{u.name}</Text>
-                  <ResourceBar label="" current={u.hp} max={u.maxHp} color={def.color} />
-                </View>
-              </View>
-            );
-          })}
-        </Section>
+        <BattleField enemies={session.enemies} summonedUnits={session.summonedUnits} status={session.status} />
 
         <Section title="✨ 召喚">
           <View style={styles.summonRow}>
@@ -210,12 +184,6 @@ const styles = StyleSheet.create({
     borderColor: theme.cardBorder,
   },
   sectionTitle: { fontSize: 13, fontWeight: '700', color: theme.textMuted, marginBottom: 8 },
-  entityRow: { marginBottom: 8 },
-  entityName: { fontSize: 14, fontWeight: '600', color: theme.textPrimary, marginBottom: 2 },
-  entityDead: { color: theme.textMuted, textDecorationLine: 'line-through' },
-  emptyText: { fontSize: 13, color: theme.textMuted },
-  unitRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
-  unitBarWrap: { flex: 1 },
   summonRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   summonButton: {
     backgroundColor: theme.cardAlt,

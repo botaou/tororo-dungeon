@@ -56,6 +56,7 @@ export const useStageStore = create<StageStore & StageActions>()((set, get) => (
       uid: uid('enemy'),
       defId: e.id,
       name: e.name,
+      emoji: e.emoji,
       hp: e.hp,
       maxHp: e.hp,
       atk: e.atk,
