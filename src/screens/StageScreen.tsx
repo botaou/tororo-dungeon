@@ -55,9 +55,6 @@ export function StageScreen({ onExit }: Props) {
           miningNodes={session.miningNodes}
           treasure={session.treasure}
           summonedUnits={session.summonedUnits}
-          partyX={session.partyX}
-          partyY={session.partyY}
-          targetKind={session.targetKind}
           status={session.status}
         />
       </View>

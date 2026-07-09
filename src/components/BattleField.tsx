@@ -2,11 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import {
+  ActivityKind,
   EnemyInstance,
   MiningNodeInstance,
   StageSessionStatus,
   SummonedUnit,
-  TargetKind,
   TreasureNodeInstance,
 } from '../types';
 import { getCharacterDef } from '../data/characters';
@@ -30,27 +30,13 @@ interface Props {
   miningNodes: MiningNodeInstance[];
   treasure: TreasureNodeInstance | null;
   summonedUnits: SummonedUnit[];
-  partyX: number;
-  partyY: number;
-  targetKind: TargetKind | null;
   status: StageSessionStatus;
 }
 
-export function BattleField({
-  enemies,
-  miningNodes,
-  treasure,
-  summonedUnits,
-  partyX,
-  partyY,
-  targetKind,
-  status,
-}: Props) {
+export function BattleField({ enemies, miningNodes, treasure, summonedUnits, status }: Props) {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const fieldWidth = Math.max(240, windowWidth - HORIZONTAL_PADDING);
   const fieldHeight = Math.max(360, windowHeight * 0.62);
-
-  const actionKind: TargetKind | 'idle' = status === 'playing' && targetKind ? targetKind : 'idle';
 
   const lastPosRef = useRef<Map<string, { x: number; y: number }>>(new Map());
   const prevUnitsRef = useRef<SummonedUnit[]>([]);
@@ -97,12 +83,12 @@ export function BattleField({
         <TreasureSprite treasure={treasure} x={treasure.x * fieldWidth} y={treasure.y * fieldHeight} />
       )}
 
-      {summonedUnits.map((u, i) => {
+      {summonedUnits.map((u) => {
         const def = getCharacterDef(u.defId);
-        const angle = (i / Math.max(1, summonedUnits.length)) * Math.PI * 2;
-        const targetX = partyX * fieldWidth + Math.cos(angle) * 16;
-        const targetY = partyY * fieldHeight + Math.sin(angle) * 16;
+        const targetX = u.x * fieldWidth;
+        const targetY = u.y * fieldHeight;
         lastPosRef.current.set(u.uid, { x: targetX, y: targetY });
+        const action: ActivityKind = status === 'playing' ? u.activity : 'idle';
         return (
           <CharacterSprite
             key={u.uid}
@@ -112,7 +98,7 @@ export function BattleField({
             emoji={def.emoji}
             targetX={targetX}
             targetY={targetY}
-            action={actionKind}
+            action={action}
           />
         );
       })}
@@ -291,7 +277,7 @@ function CharacterSprite({
   emoji: string;
   targetX: number;
   targetY: number;
-  action: TargetKind | 'idle';
+  action: ActivityKind;
 }) {
   const pos = useRef(new Animated.ValueXY({ x: targetX, y: targetY })).current;
   const walk = useRef(new Animated.Value(0)).current;

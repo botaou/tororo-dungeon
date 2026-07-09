@@ -1,24 +1,11 @@
 import { create } from 'zustand';
 
-import {
-  EnemyInstance,
-  MiningNodeInstance,
-  SkillId,
-  StageSession,
-  SummonedUnit,
-  TargetKind,
-  TreasureNodeInstance,
-} from '../types';
+import { EnemyInstance, MaterialId, MiningNodeInstance, Personality, SkillId, StageSession, SummonedUnit, TreasureNodeInstance } from '../types';
 import { getStageDef } from '../data/stages';
 import { getCharacterDef } from '../data/characters';
-import { resolveCombatRound } from '../game/combat';
-import {
-  ARRIVAL_THRESHOLD,
-  ENCOUNTER_HOLD_TICKS,
-  ENERGY_MAX,
-  ENERGY_REGEN_MS,
-  PARTY_MOVE_SPEED,
-} from '../game/config';
+import { AttackAssignment, applyHealing, resolveAttacks } from '../game/combat';
+import { AiWorld, stepUnit } from '../game/ai';
+import { ENERGY_MAX, ENERGY_REGEN_MS } from '../game/config';
 import { usePlayerStore } from './usePlayerStore';
 
 let uidCounter = 0;
@@ -70,18 +57,14 @@ function scatterPositions(count: number): { x: number; y: number }[] {
   });
 }
 
-function getTargetPosition(
-  kind: TargetKind,
-  refUid: string,
-  enemies: EnemyInstance[],
-  miningNodes: MiningNodeInstance[],
-  treasure: TreasureNodeInstance | null
-): { x: number; y: number } | null {
-  if (kind === 'enemy') return enemies.find((e) => e.uid === refUid) ?? null;
-  if (kind === 'mining') return miningNodes.find((m) => m.uid === refUid) ?? null;
-  if (kind === 'treasure') return treasure && treasure.uid === refUid ? treasure : null;
-  return null;
-}
+// Vanguard picks its target first so clingy/free-spirit units can assist
+// whatever it's fighting this same tick.
+const PERSONALITY_ORDER: Record<Personality, number> = {
+  vanguard: 0,
+  freeSpirit: 1,
+  clingy: 2,
+  cautious: 3,
+};
 
 interface StageActions {
   enterStage: (stageId: string) => void;
@@ -153,11 +136,6 @@ export const useStageStore = create<StageStore & StageActions>()((set, get) => (
         miningNodes,
         treasure,
         summonedUnits: [],
-        partyX: 0.5,
-        partyY: 0.5,
-        targetKind: null,
-        targetRefUid: null,
-        workProgress: 0,
       },
     });
   },
@@ -186,9 +164,15 @@ export const useStageStore = create<StageStore & StageActions>()((set, get) => (
       uid: uid('unit'),
       defId: def.id,
       name: def.name,
+      x: 0.5 + (Math.random() - 0.5) * 0.05,
+      y: 0.5 + (Math.random() - 0.5) * 0.05,
       atk: Math.round(def.baseAtk * atkMultiplier(session.selectedSkill)),
       maxHp: Math.round(def.baseHp * hpMultiplier(session.selectedSkill)),
       hp: Math.round(def.baseHp * hpMultiplier(session.selectedSkill)),
+      targetKind: null,
+      targetRefUid: null,
+      workProgress: 0,
+      activity: 'idle',
     };
 
     set({
@@ -223,149 +207,110 @@ export const useStageStore = create<StageStore & StageActions>()((set, get) => (
       return;
     }
 
-    const hasAliveUnit = session.summonedUnits.some((u) => u.hp > 0);
-    if (!hasAliveUnit) {
+    const aliveUnits = session.summonedUnits.filter((u) => u.hp > 0);
+    if (aliveUnits.length === 0) {
       set({ session: { ...session, energy, energyLastUpdated } });
       return;
     }
 
-    let {
-      enemies,
-      summonedUnits,
-      miningNodes,
-      treasure,
-      partyX,
-      partyY,
-      targetKind,
-      targetRefUid,
-      workProgress,
-    } = session;
+    let enemies = session.enemies;
+    let miningNodes = session.miningNodes;
+    let treasure = session.treasure;
 
-    // Pick a new nearest target if we don't have one.
-    if (!targetKind || !targetRefUid) {
-      type Candidate = { kind: TargetKind; refUid: string; x: number; y: number };
-      const candidates: Candidate[] = [
-        ...enemies.filter((e) => !e.defeated && e.hp > 0).map((e) => ({ kind: 'enemy' as const, refUid: e.uid, x: e.x, y: e.y })),
-        ...miningNodes.filter((m) => !m.collected).map((m) => ({ kind: 'mining' as const, refUid: m.uid, x: m.x, y: m.y })),
-        ...(treasure && !treasure.collected
-          ? [{ kind: 'treasure' as const, refUid: treasure.uid, x: treasure.x, y: treasure.y }]
-          : []),
-      ];
+    // Each unit acts independently; sort so the vanguard decides its target
+    // before the units that assist/follow it read that decision.
+    const nextUnits = aliveUnits
+      .map((u) => ({ ...u }))
+      .sort(
+        (a, b) =>
+          PERSONALITY_ORDER[getCharacterDef(a.defId).personality] -
+          PERSONALITY_ORDER[getCharacterDef(b.defId).personality]
+      );
 
-      if (candidates.length === 0) {
-        // Nothing left — stage clear.
-        usePlayerStore.getState().clearStage(session.stageId);
-        set({ session: { ...session, energy, energyLastUpdated, status: 'cleared' } });
-        return;
+    const vanguardUnit = nextUnits.find((u) => getCharacterDef(u.defId).personality === 'vanguard') ?? null;
+    const world: AiWorld = { enemies, miningNodes, treasure, vanguard: vanguardUnit, allUnits: nextUnits };
+
+    const allAssignments: AttackAssignment[] = [];
+    const materialsToAdd: Partial<Record<MaterialId, number>> = {};
+    let treasureJustCollected = false;
+
+    for (const unit of nextUnits) {
+      const def = getCharacterDef(unit.defId);
+      const outcome = stepUnit(unit, def, world);
+      allAssignments.push(...outcome.assignments);
+      for (const key of Object.keys(outcome.materialsCollected) as MaterialId[]) {
+        materialsToAdd[key] = (materialsToAdd[key] ?? 0) + (outcome.materialsCollected[key] ?? 0);
       }
-
-      let nearest = candidates[0];
-      let nearestDist = Infinity;
-      for (const c of candidates) {
-        const d = Math.hypot(c.x - partyX, c.y - partyY);
-        if (d < nearestDist) {
-          nearestDist = d;
-          nearest = c;
-        }
+      if (outcome.miningCollectedUid) {
+        miningNodes = miningNodes.map((m) => (m.uid === outcome.miningCollectedUid ? { ...m, collected: true } : m));
+        world.miningNodes = miningNodes;
       }
-      targetKind = nearest.kind;
-      targetRefUid = nearest.refUid;
-      workProgress = 0;
+      if (outcome.treasureCollectedUid && treasure) {
+        treasure = { ...treasure, collected: true };
+        world.treasure = treasure;
+        treasureJustCollected = true;
+      }
+    }
+
+    const combatResult = resolveAttacks(enemies, allAssignments);
+    enemies = combatResult.enemies;
+    for (const key of Object.keys(combatResult.rewards) as MaterialId[]) {
+      materialsToAdd[key] = (materialsToAdd[key] ?? 0) + (combatResult.rewards[key] ?? 0);
+    }
+
+    // Retaliation: each engaged enemy that's still alive hits back once,
+    // against a random unit that attacked it this tick.
+    for (const { enemyUid, damage } of combatResult.retaliations) {
+      const attackerUids = new Set(allAssignments.filter((a) => a.enemyUid === enemyUid).map((a) => a.unitUid));
+      const candidates = nextUnits.filter((u) => attackerUids.has(u.uid) && u.hp > 0);
+      if (candidates.length > 0) {
+        const victim = candidates[Math.floor(Math.random() * candidates.length)];
+        victim.hp = Math.max(0, victim.hp - damage);
+      }
+    }
+
+    // Healing runs independent of positioning/targeting.
+    const healer = nextUnits.find((u) => getCharacterDef(u.defId).role === 'healer' && u.hp > 0);
+    const healedUnits = healer ? applyHealing(nextUnits, healer.uid, healer.atk) : nextUnits;
+    const survivingUnits = healedUnits.filter((u) => u.hp > 0);
+
+    if (Object.keys(materialsToAdd).length > 0) {
+      usePlayerStore.getState().addMaterials(materialsToAdd);
+    }
+    if (treasureJustCollected && treasure) {
+      usePlayerStore.getState().collectTreasure(session.stageId, treasure.rewardMaterial, treasure.rewardAmount);
+    }
+
+    const allEnemiesDown = enemies.every((e) => e.defeated || e.hp <= 0);
+    const allMiningDone = miningNodes.every((m) => m.collected);
+    const treasureDone = !treasure || treasure.collected;
+
+    if (allEnemiesDown && allMiningDone && treasureDone) {
+      usePlayerStore.getState().clearStage(session.stageId);
       set({
         session: {
           ...session,
+          enemies,
+          miningNodes,
+          treasure,
+          summonedUnits: survivingUnits,
           energy,
           energyLastUpdated,
-          targetKind,
-          targetRefUid,
-          workProgress,
+          status: 'cleared',
         },
       });
       return;
-    }
-
-    // Walk toward the target at a constant speed before engaging it — no
-    // teleporting straight to it.
-    const targetPos = getTargetPosition(targetKind, targetRefUid, enemies, miningNodes, treasure);
-    if (!targetPos) {
-      // Target vanished from under us (shouldn't normally happen); pick a new one next tick.
-      set({
-        session: { ...session, energy, energyLastUpdated, targetKind: null, targetRefUid: null, workProgress: 0 },
-      });
-      return;
-    }
-
-    const dx = targetPos.x - partyX;
-    const dy = targetPos.y - partyY;
-    const distance = Math.hypot(dx, dy);
-    if (distance > ARRIVAL_THRESHOLD) {
-      const step = Math.min(distance, PARTY_MOVE_SPEED);
-      partyX += (dx / distance) * step;
-      partyY += (dy / distance) * step;
-      set({ session: { ...session, energy, energyLastUpdated, partyX, partyY } });
-      return;
-    }
-
-    if (targetKind === 'enemy') {
-      const result = resolveCombatRound(enemies, summonedUnits, targetRefUid);
-      enemies = result.enemies;
-      summonedUnits = result.summonedUnits;
-      if (Object.keys(result.rewards).length > 0) {
-        usePlayerStore.getState().addMaterials(result.rewards);
-      }
-      const targetEnemy = enemies.find((e) => e.uid === targetRefUid);
-      if (targetEnemy && (targetEnemy.defeated || targetEnemy.hp <= 0)) {
-        partyX = targetEnemy.x;
-        partyY = targetEnemy.y;
-        targetKind = null;
-        targetRefUid = null;
-        workProgress = 0;
-      }
-    } else if (targetKind === 'mining') {
-      workProgress += 1;
-      if (workProgress >= ENCOUNTER_HOLD_TICKS) {
-        const node = miningNodes.find((m) => m.uid === targetRefUid);
-        if (node && !node.collected) {
-          usePlayerStore.getState().addMaterials({ [node.resource]: node.amount });
-          miningNodes = miningNodes.map((m) => (m.uid === node.uid ? { ...m, collected: true } : m));
-          partyX = node.x;
-          partyY = node.y;
-        }
-        targetKind = null;
-        targetRefUid = null;
-        workProgress = 0;
-      }
-    } else if (targetKind === 'treasure') {
-      workProgress += 1;
-      if (workProgress >= ENCOUNTER_HOLD_TICKS) {
-        if (treasure && !treasure.collected) {
-          usePlayerStore
-            .getState()
-            .collectTreasure(session.stageId, treasure.rewardMaterial, treasure.rewardAmount);
-          treasure = { ...treasure, collected: true };
-          partyX = treasure.x;
-          partyY = treasure.y;
-        }
-        targetKind = null;
-        targetRefUid = null;
-        workProgress = 0;
-      }
     }
 
     set({
       session: {
         ...session,
         enemies,
-        summonedUnits,
         miningNodes,
         treasure,
+        summonedUnits: survivingUnits,
         energy,
         energyLastUpdated,
-        partyX,
-        partyY,
-        targetKind,
-        targetRefUid,
-        workProgress,
       },
     });
   },

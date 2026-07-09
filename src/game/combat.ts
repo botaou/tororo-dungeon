@@ -1,68 +1,69 @@
 import { EnemyInstance, MaterialId, SummonedUnit } from '../types';
-import { getCharacterDef } from '../data/characters';
 
-export interface CombatRoundResult {
-  enemies: EnemyInstance[];
-  summonedUnits: SummonedUnit[];
-  rewards: Partial<Record<MaterialId, number>>;
+export interface AttackAssignment {
+  unitUid: string;
+  enemyUid: string;
+  damage: number;
+  materialBonusPercent: number;
 }
 
-// One round of auto-battle against a specific target enemy: living attackers
-// hit it, living healers top off the lowest-HP ally instead, every living
-// enemy on the field hits a random living unit back. Pure function so it
-// stays easy to reason about/test independent of store wiring.
-export function resolveCombatRound(
-  enemies: EnemyInstance[],
-  summonedUnits: SummonedUnit[],
-  targetEnemyUid: string
-): CombatRoundResult {
-  const rewards: Partial<Record<MaterialId, number>> = {};
+export interface AttackResult {
+  enemies: EnemyInstance[];
+  rewards: Partial<Record<MaterialId, number>>;
+  // Enemies that took damage this tick and are still alive hit back once,
+  // against a random unit that attacked them.
+  retaliations: { enemyUid: string; damage: number }[];
+}
 
+// Each unit decides independently whether it's attacking (and what), so
+// several distinct enemies can be engaged in the same tick. Group the
+// assignments by target enemy and resolve each independently.
+export function resolveAttacks(enemies: EnemyInstance[], assignments: AttackAssignment[]): AttackResult {
   const nextEnemies = enemies.map((e) => ({ ...e }));
-  const nextUnits = summonedUnits.map((u) => ({ ...u }));
+  const rewards: Partial<Record<MaterialId, number>> = {};
+  const retaliations: { enemyUid: string; damage: number }[] = [];
 
-  const aliveUnits = nextUnits.filter((u) => u.hp > 0);
-  const attackers = aliveUnits.filter((u) => getCharacterDef(u.defId).role === 'attacker');
-  const healers = aliveUnits.filter((u) => getCharacterDef(u.defId).role === 'healer');
+  const byEnemy = new Map<string, AttackAssignment[]>();
+  for (const a of assignments) {
+    if (!byEnemy.has(a.enemyUid)) byEnemy.set(a.enemyUid, []);
+    byEnemy.get(a.enemyUid)!.push(a);
+  }
 
-  for (const healer of healers) {
-    const injured = aliveUnits
-      .filter((u) => u.hp > 0 && u.hp < u.maxHp)
-      .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
-    if (injured) {
-      injured.hp = Math.min(injured.maxHp, injured.hp + healer.atk);
+  for (const [enemyUid, hits] of byEnemy) {
+    const enemy = nextEnemies.find((e) => e.uid === enemyUid);
+    if (!enemy || enemy.defeated || enemy.hp <= 0) continue;
+
+    let bonusPercent = 0;
+    for (const hit of hits) {
+      if (enemy.hp <= 0) break;
+      enemy.hp = Math.max(0, enemy.hp - hit.damage);
+      bonusPercent = Math.max(bonusPercent, hit.materialBonusPercent);
+    }
+
+    if (enemy.hp <= 0) {
+      enemy.defeated = true;
+      const amount = Math.round(enemy.rewardAmount * (1 + bonusPercent / 100));
+      rewards[enemy.rewardMaterial] = (rewards[enemy.rewardMaterial] ?? 0) + amount;
+    } else {
+      retaliations.push({ enemyUid, damage: enemy.atk });
     }
   }
 
-  const target = nextEnemies.find((e) => e.uid === targetEnemyUid && !e.defeated && e.hp > 0);
+  return { enemies: nextEnemies, rewards, retaliations };
+}
 
-  if (target && attackers.length > 0) {
-    for (const unit of attackers) {
-      if (target.hp <= 0) break;
-      target.hp = Math.max(0, target.hp - unit.atk);
-    }
-    if (target.hp <= 0) {
-      target.defeated = true;
-      const bonusPercent = aliveUnits.reduce(
-        (max, u) => Math.max(max, getCharacterDef(u.defId).materialBonusPercent ?? 0),
-        0
-      );
-      const rewardAmount = Math.round(target.rewardAmount * (1 + bonusPercent / 100));
-      rewards[target.rewardMaterial] = (rewards[target.rewardMaterial] ?? 0) + rewardAmount;
-    }
+// Healer support: top off the lowest-HP ally (excluding herself) each tick,
+// independent of positioning/targeting.
+export function applyHealing(units: SummonedUnit[], healerUid: string, healPower: number): SummonedUnit[] {
+  const next = units.map((u) => ({ ...u }));
+  const healer = next.find((u) => u.uid === healerUid);
+  if (!healer || healer.hp <= 0) return next;
+
+  const injured = next
+    .filter((u) => u.uid !== healerUid && u.hp > 0 && u.hp < u.maxHp)
+    .sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
+  if (injured) {
+    injured.hp = Math.min(injured.maxHp, injured.hp + healPower);
   }
-
-  // Only the engaged target fights back — other enemies are elsewhere in
-  // the arena and not yet in the fray.
-  if (target && target.hp > 0) {
-    const survivingUnits = nextUnits.filter((u) => u.hp > 0);
-    if (survivingUnits.length > 0) {
-      const victim = survivingUnits[Math.floor(Math.random() * survivingUnits.length)];
-      victim.hp = Math.max(0, victim.hp - target.atk);
-    }
-  }
-
-  const remainingUnits = nextUnits.filter((u) => u.hp > 0);
-
-  return { enemies: nextEnemies, summonedUnits: remainingUnits, rewards };
+  return next;
 }

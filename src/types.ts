@@ -12,10 +12,20 @@ export interface SkillDef {
 
 export type CharacterRole = 'attacker' | 'healer';
 
+// Each character's independent AI personality:
+// - vanguard: beelines for the nearest enemy, melee.
+// - clingy: stays glued to the vanguard's side, assists whatever it fights.
+// - cautious: hangs back behind the group; only lunges if an enemy gets
+//   within her panic radius, otherwise just heals from a distance.
+// - freeSpirit: prioritizes the nearest unclaimed rock/treasure, and only
+//   joins the fight (assisting the vanguard) once nothing is left to gather.
+export type Personality = 'vanguard' | 'clingy' | 'cautious' | 'freeSpirit';
+
 export interface CharacterDef {
   id: string;
   name: string;
   role: CharacterRole;
+  personality: Personality;
   description: string;
   color: string; // accent color for cards/UI
   emoji: string; // placeholder visual until real art is added
@@ -121,20 +131,31 @@ export interface TreasureNodeInstance {
   collected: boolean;
 }
 
+// What a unit is visibly doing this tick, for animation purposes — distinct
+// from targetKind (its AI's pursuit goal), since e.g. the clingy/cautious
+// personalities can be "fighting" without ever setting a pursuit target.
+export type ActivityKind = 'enemy' | 'mining' | 'treasure' | 'idle';
+
 export interface SummonedUnit {
   uid: string;
   defId: string;
   name: string;
+  x: number; // 0..1 position in the arena, moved independently per unit
+  y: number;
   hp: number;
   maxHp: number;
   atk: number;
+  targetKind: TargetKind | null; // pursuit goal (vanguard/freeSpirit only)
+  targetRefUid: string | null;
+  workProgress: number; // ticks spent working the current mining/treasure target
+  activity: ActivityKind;
 }
 
 export type StageSessionStatus = 'selecting_skill' | 'playing' | 'cleared';
 
-// The party roams the arena freely: each time they're free, they head to
-// whichever unresolved thing (enemy/rock/treasure) is nearest, and auto
-// resolve it (fight/mine/open) on arrival before picking the next one.
+// The party roams the arena freely: the vanguard beelines for the nearest
+// enemy, the free spirit beelines for the nearest rock/treasure, and the
+// other two follow/react rather than pursue independently.
 export type TargetKind = 'enemy' | 'mining' | 'treasure';
 
 export interface StageSession {
@@ -149,9 +170,4 @@ export interface StageSession {
   miningNodes: MiningNodeInstance[];
   treasure: TreasureNodeInstance | null;
   summonedUnits: SummonedUnit[];
-  partyX: number; // 0..1, the party's current anchor position in the arena
-  partyY: number;
-  targetKind: TargetKind | null;
-  targetRefUid: string | null;
-  workProgress: number; // ticks spent working the current mining/treasure target
 }
