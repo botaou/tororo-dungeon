@@ -16,6 +16,17 @@ export const theme = {
   blue: '#5eb8d9',
   red: '#e8776c',
   orange: '#f2984f',
+  pink: '#ff9fb3', // playful accent for highlights/titles
   disabled: '#e3d8c8',
   overlay: 'rgba(120, 90, 60, 0.35)',
+};
+
+// A soft "sticker-like" drop shadow used on cards/buttons/sprites for a
+// cuter, more tactile idle-game feel — spread this into a style array.
+export const cuteShadow = {
+  shadowColor: '#8a6a4a',
+  shadowOffset: { width: 0, height: 3 },
+  shadowOpacity: 0.18,
+  shadowRadius: 5,
+  elevation: 4,
 };

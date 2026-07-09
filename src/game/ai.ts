@@ -193,6 +193,10 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
     return stepJob(bird, def, world);
   }
 
+  if (bird.carrying) {
+    return stepCarrying(bird);
+  }
+
   if (bird.mood === 'hungry') {
     return stepHomeNeed(bird, 'eating');
   }
@@ -241,6 +245,22 @@ function stepHomeNeed(bird: BirdState, activity: 'eating' | 'resting'): AiStepOu
     }
   }
   return emptyOutcome();
+}
+
+// A free-roaming bird that just finished gathering carries its haul back
+// to town before the material is credited to the shared stash — so
+// "what is this bird carrying right now" is a real, visible thing rather
+// than resources teleporting into storage the instant they're picked up.
+function stepCarrying(bird: BirdState): AiStepOutcome {
+  const outcome = emptyOutcome();
+  const arrived = moveToward(bird, TOWN_X, TOWN_Y);
+  bird.activity = 'carrying';
+  if (arrived && bird.carrying) {
+    const { materialId, amount } = bird.carrying;
+    outcome.materialsCollected[materialId] = (outcome.materialsCollected[materialId] ?? 0) + amount;
+    bird.carrying = null;
+  }
+  return outcome;
 }
 
 // Any bird that rolls combat fights whichever enemy is nearest to it.
@@ -309,7 +329,7 @@ function executeGather(bird: BirdState, def: CharacterDef, world: AiWorld): AiSt
       if (arrived) {
         bird.workProgress += 1;
         if (bird.workProgress >= ENCOUNTER_HOLD_TICKS) {
-          outcome.materialsCollected[node.resource] = (outcome.materialsCollected[node.resource] ?? 0) + node.amount;
+          bird.carrying = { materialId: node.resource, amount: node.amount };
           outcome.miningCollectedUid = node.uid;
           bird.targetKind = null;
           bird.targetRefUid = null;

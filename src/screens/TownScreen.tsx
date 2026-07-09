@@ -10,10 +10,12 @@ import { getMoodDef } from '../data/moods';
 import { getBirdThought } from '../game/thoughts';
 import { WorldMap } from '../components/WorldMap';
 import { MaterialsRow } from '../components/MaterialsRow';
+import { BirdStatusRow } from '../components/BirdStatusRow';
 import { AnimatedPressable } from '../components/AnimatedPressable';
 import { RequestBoard } from '../components/RequestBoard';
+import { ShopModal } from '../components/ShopModal';
 import { MaterialId } from '../types';
-import { theme } from '../theme';
+import { cuteShadow, theme } from '../theme';
 
 export function TownScreen() {
   const gold = usePlayerStore((s) => s.gold);
@@ -27,6 +29,7 @@ export function TownScreen() {
 
   const [selectedBirdId, setSelectedBirdId] = useState<string | null>(null);
   const [boardVisible, setBoardVisible] = useState(false);
+  const [shopVisible, setShopVisible] = useState(false);
 
   useEffect(() => {
     if (world.birds.length === 0) initWorld();
@@ -54,6 +57,7 @@ export function TownScreen() {
       <View style={styles.topBar}>
         <Text style={styles.title}>🏡 トロロの街</Text>
         <MaterialsRow gold={gold} materials={materials} />
+        <BirdStatusRow birds={world.birds} />
       </View>
 
       <View style={styles.mapWrap}>
@@ -66,6 +70,7 @@ export function TownScreen() {
           plotStates={plots}
           onBirdPress={(defId) => setSelectedBirdId((prev) => (prev === defId ? null : defId))}
           onPlotPress={handlePlotPress}
+          onShopPress={() => setShopVisible(true)}
         />
       </View>
 
@@ -94,6 +99,8 @@ export function TownScreen() {
         requests={world.requests}
         onPost={handlePost}
       />
+
+      <ShopModal visible={shopVisible} onClose={() => setShopVisible(false)} />
     </SafeAreaView>
   );
 }
@@ -101,7 +108,7 @@ export function TownScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.bgBottom },
   topBar: { paddingHorizontal: 14, paddingTop: 6, gap: 6 },
-  title: { fontSize: 18, fontWeight: '800', color: theme.textPrimary },
+  title: { fontSize: 20, fontWeight: '800', color: theme.textPrimary, letterSpacing: 0.3 },
   mapWrap: { flex: 1, paddingHorizontal: 12, marginTop: 8 },
   bottomBar: {
     flexDirection: 'row',
@@ -114,19 +121,21 @@ const styles = StyleSheet.create({
   thoughtBubble: {
     flex: 1,
     backgroundColor: theme.card,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: theme.cardBorder,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: theme.pink,
     paddingHorizontal: 12,
     paddingVertical: 6,
+    ...cuteShadow,
   },
   thoughtName: { fontSize: 11, fontWeight: '700', color: theme.textMuted },
   thoughtText: { fontSize: 13, fontWeight: '600', color: theme.textPrimary, marginTop: 1 },
   boardButton: {
     backgroundColor: theme.gold,
     borderRadius: 999,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    ...cuteShadow,
   },
   boardButtonText: { color: '#fff', fontWeight: '700', fontSize: 13 },
 });

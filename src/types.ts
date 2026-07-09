@@ -153,7 +153,8 @@ export type ActivityKind =
   | 'resting'
   | 'eating'
   | 'bathing'
-  | 'fishing';
+  | 'fishing'
+  | 'carrying';
 
 // A pursuit goal a bird's AI is actively working toward. A job is just a
 // mining/treasure pursuit restricted to a specific request's material and
@@ -179,6 +180,10 @@ export interface BirdState {
   workProgress: number;
   activity: ActivityKind;
   currentJobId: string | null;
+  // Set the moment a free-roaming (non-job) bird finishes gathering a
+  // mining node; cleared once it carries the haul back to town and the
+  // material is credited to the shared stash.
+  carrying: { materialId: MaterialId; amount: number } | null;
   // Ambient wander destination, used when a bird has nothing more pressing
   // to do — persisted so it commits to a direction instead of jittering.
   wanderX: number | null;

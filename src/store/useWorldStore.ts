@@ -106,6 +106,7 @@ function buildInitialWorld(): WorldState {
     workProgress: 0,
     activity: 'idle',
     currentJobId: null,
+    carrying: null,
     wanderX: null,
     wanderY: null,
   }));

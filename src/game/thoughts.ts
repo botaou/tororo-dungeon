@@ -10,6 +10,7 @@ interface ThoughtLines {
   bathing?: string;
   fishing?: string;
   resting?: string;
+  carrying?: string;
   sleepy?: string;
   happy?: string;
   hungry?: string;
@@ -27,6 +28,7 @@ const LINES: Record<string, ThoughtLines> = {
     bathing: '水浴び気持ちいい！',
     fishing: '釣れるかな…',
     resting: '……ちょっとだけ休む',
+    carrying: 'これを街まで持って帰るぞ！',
     happy: '外の空気が気持ちいい！',
     wantsMoney: '稼げる依頼はないかな',
   },
@@ -37,6 +39,7 @@ const LINES: Record<string, ThoughtLines> = {
     bathing: 'ぱしゃぱしゃ',
     fishing: 'のんびり釣り中',
     resting: 'ねむい……',
+    carrying: 'よいしょ、よいしょ',
     happy: 'たのしいね！',
     wantsMoney: '依頼、受けてみようかな',
   },
@@ -47,6 +50,7 @@ const LINES: Record<string, ThoughtLines> = {
     bathing: '静かでいいところ',
     fishing: 'じっと待つのが好き',
     resting: '少し休みたい',
+    carrying: '落とさないように気をつけよう',
     happy: 'みんな無事でよかった',
     wantsMoney: '依頼をこなそうかな',
   },
@@ -59,6 +63,7 @@ const LINES: Record<string, ThoughtLines> = {
     bathing: 'キラキラした石ないかな',
     fishing: '何か釣れそう！',
     resting: 'もうちょっとだけ掘ってから寝る',
+    carrying: 'いっぱい持って帰るぞ！',
     happy: 'いいもの見つけた！',
     wantsMoney: 'お金になるものを探そう',
   },

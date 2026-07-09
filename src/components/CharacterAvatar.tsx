@@ -2,6 +2,7 @@ import React from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 
 import { CHARACTER_IMAGES } from '../game/characterImages';
+import { cuteShadow } from '../theme';
 
 interface Props {
   characterId: string;
@@ -33,5 +34,11 @@ export function CharacterAvatar({ characterId, emoji, color, size = 40 }: Props)
 
 const styles = StyleSheet.create({
   image: { borderWidth: 2 },
-  fallback: { alignItems: 'center', justifyContent: 'center' },
+  fallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#ffffff',
+    ...cuteShadow,
+  },
 });

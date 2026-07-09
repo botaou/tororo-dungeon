@@ -11,13 +11,13 @@ import {
 } from '../types';
 import { CHARACTERS, getCharacterDef } from '../data/characters';
 import { TOWN_DECOR, TOWN_X, TOWN_Y } from '../data/world';
-import { BUILDING_ICON, TOWN_PLOT_DEFS } from '../data/townGrid';
+import { BUILDING_ICON, SHOP_PLOT_ID, TOWN_PLOT_DEFS } from '../data/townGrid';
 import { HOUSE_POSITIONS } from '../data/houses';
 import { MATERIAL_ICON } from '../data/materials';
 import { CharacterAvatar } from './CharacterAvatar';
 import { AnimatedPressable } from './AnimatedPressable';
 import { TICK_MS } from '../game/config';
-import { theme } from '../theme';
+import { cuteShadow, theme } from '../theme';
 
 const HORIZONTAL_PADDING = 24; // matches TownScreen's paddingHorizontal * 2
 
@@ -30,6 +30,7 @@ interface Props {
   plotStates: Record<string, TownPlotState>;
   onBirdPress: (defId: string) => void;
   onPlotPress: (plotId: string) => void;
+  onShopPress: () => void;
 }
 
 export function WorldMap({
@@ -41,6 +42,7 @@ export function WorldMap({
   plotStates,
   onBirdPress,
   onPlotPress,
+  onShopPress,
 }: Props) {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const fieldWidth = Math.max(240, windowWidth - HORIZONTAL_PADDING);
@@ -58,15 +60,16 @@ export function WorldMap({
       ))}
 
       {TOWN_PLOT_DEFS.map((def) => {
+        const isShop = def.id === SHOP_PLOT_ID;
         const state = plotStates[def.id] ?? { id: def.id, unlocked: def.unlockedByDefault, building: null };
         return (
           <PlotSprite
             key={def.id}
             def={def}
-            state={state}
+            state={isShop ? { ...state, unlocked: true, building: 'shop' } : state}
             x={def.x * fieldWidth}
             y={def.y * fieldHeight}
-            onPress={() => onPlotPress(def.id)}
+            onPress={() => (isShop ? onShopPress() : onPlotPress(def.id))}
           />
         );
       })}
@@ -371,7 +374,8 @@ function BirdSprite({
     bird.activity === 'resting' ||
     bird.activity === 'eating' ||
     bird.activity === 'bathing' ||
-    bird.activity === 'fishing';
+    bird.activity === 'fishing' ||
+    bird.activity === 'carrying';
 
   useEffect(() => {
     if (fainted || isPassiveActivity) return;
@@ -423,6 +427,7 @@ function BirdSprite({
             <CharacterAvatar characterId={bird.defId} emoji={def.emoji} color={def.color} size={30} />
           </Animated.View>
           {showMineSwing && <Text style={styles.pickaxe}>⛏️</Text>}
+          {bird.carrying && <Text style={styles.carryBadge}>{MATERIAL_ICON[bird.carrying.materialId]}</Text>}
           <Text style={styles.nameTag}>{bird.name}</Text>
           <View style={styles.miniBarTrack}>
             <View style={[styles.miniBarFill, { width: `${ratio * 100}%`, backgroundColor: def.color }]} />
@@ -445,12 +450,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 68,
     height: 68,
-    borderRadius: 16,
+    borderRadius: 20,
     backgroundColor: theme.card,
-    borderWidth: 2,
+    borderWidth: 2.5,
     borderColor: theme.gold,
     alignItems: 'center',
     justifyContent: 'center',
+    ...cuteShadow,
   },
   townEmoji: { fontSize: 30 },
   decor: { position: 'absolute', fontSize: 20, opacity: 0.9 },
@@ -458,11 +464,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 36,
     height: 36,
-    borderRadius: 10,
+    borderRadius: 12,
     backgroundColor: theme.card,
-    borderWidth: 2,
+    borderWidth: 2.5,
     alignItems: 'center',
     justifyContent: 'center',
+    ...cuteShadow,
   },
   houseEmoji: { fontSize: 16 },
   houseTag: { position: 'absolute', bottom: -6, right: -6, fontSize: 12 },
@@ -470,7 +477,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 24,
     height: 24,
-    borderRadius: 6,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -482,9 +489,9 @@ const styles = StyleSheet.create({
   },
   plotOpen: {
     backgroundColor: theme.cardAlt,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderStyle: 'dashed',
-    borderColor: theme.cardBorder,
+    borderColor: theme.pink,
   },
   plotLockIcon: { fontSize: 12 },
   plotCostText: { fontSize: 7, fontWeight: '700', color: theme.textMuted, marginTop: 1 },
@@ -494,6 +501,7 @@ const styles = StyleSheet.create({
   tapArea: { alignItems: 'center' },
   emojiLarge: { fontSize: 26 },
   pickaxe: { position: 'absolute', top: -8, right: 0, fontSize: 14 },
+  carryBadge: { position: 'absolute', top: -10, right: -4, fontSize: 15 },
   tag: { fontSize: 9, fontWeight: '700', color: theme.gold, marginTop: 1 },
   nameTag: { fontSize: 9, fontWeight: '700', color: theme.textPrimary, marginTop: 1 },
   enemyFlash: {
