@@ -105,6 +105,8 @@ src/
     combat.ts             自動戦闘の解決ロジック（貢献ダメージ比例の報酬・経験値分配、純粋関数）
     thoughts.ts            鳥をタップした時の一言セリフ
     birdStatus.ts          ステータスカード用の状態・目的ラベル生成
+    birdBaseSprites.ts      鳥本体の2頭身スプライト画像レジストリ(assets/birds/{id}/base.pngへの差し替え口。未登録時は丸型アイコン→絵文字にフォールバック)
+    characterImages.ts      鳥の丸型顔アイコン画像レジストリ(assets/characters/{id}.pngへの差し替え口、将来のメニュー等向け)
     useGameClock.ts       1秒間隔のグローバルティック
   store/
     usePlayerStore.ts     永続化される所持ゴールド・素材・加工品倉庫・各店の店頭在庫（zustand + AsyncStorage、街の共有倉庫。craftItem/stockItem/restockShopItem/fulfillShopPurchaseの各アクションを持つ）
@@ -115,6 +117,7 @@ src/
     TownScreen.tsx        唯一のメイン画面（マップ+最小限のUI）
   components/
     WorldMap.tsx           街・フィールド・鳥・土地区画・家・店主の描画
+    CharacterAvatar.tsx     鳥の見た目表示(本体スプライト→丸型アイコン→絵文字の順にフォールバック)
     RequestBoard.tsx        依頼掲示板のモーダル
     ShopModal.tsx           お店のモーダル(タップ後に加工する/商品を並べる/在庫を見るの3択メニュー。鳥の自律売買は裏で進行)
     CraftingPanel.tsx       加工の中身(レシピ一覧・必要素材・加工ボタン。カテゴリ絞り込み可)
@@ -161,9 +164,11 @@ eas submit --platform ios --profile production --latest
 
 ## 今後の拡張候補
 
+- 鳥本体の2頭身スプライト作成(`assets/birds/{id}/base.png`。技術仕様は`assets/birds/README.md`参照。差し替え口の実装は完了、絵はまだプレースホルダーの絵文字のまま)
+- 装備スプライトの作成と重ね着の仕様決定、歩く・攻撃・ダメージ・アイドル・寝るの各アニメーション、後ろ姿(いずれも本体スプライトと同じキャンバス/アンカー仕様で拡張する想定)
 - 加工レシピの追加・拡充（現状はカテゴリごと数レシピのみ）
 - 食べ物の効果適用（`ItemEffects`のhpRestorePercent/expBonusPercentはデータのみ用意済みで、実際に鳥が食べて効果が出る処理は未実装）
-- 装備の見た目・戦闘ステータスへの反映（現状、武器・防具は鳥が所持するだけで見た目や強さは変わらない）
+- 装備の戦闘ステータスへの反映（現状、武器・防具は鳥が所持するだけで強さは変わらない）
 - お店の種類の追加（宿屋など、`data/shops.ts`のSHOP_DEFSと`townGrid.ts`のSHOP_PLOT_IDSに追加していく想定）
 - 旅人への加工品販売（現状、旅人は素材のみ購入。アイテムの購入は鳥のみ）
 - 本格的な行商人（今回は乱数トリガーで在庫を買っていく簡易処理のみ。専用キャラ・来訪演出・交渉などは未実装）
@@ -171,7 +176,6 @@ eas submit --platform ios --profile production --latest
 - 鳥の転職システム（レベルアップの仮実装はあるが、転職・スキル振り分けなどは未実装）
 - 新しい鳥の仲間入り（ガチャ／ダンジョン探索での加入）、街に家を買って住み着く
 - 別マップのダンジョン（ボス戦、鳥のパーティ編成）
-- 装備による見た目変化
 - 効果音の実装
 - ワールド状態（鳥の位置・気分・依頼・生活ログ、フィールドの資源）の永続化
 - 依頼の数量入力UI（現状はプリセットのワンタップ投稿のみ）
