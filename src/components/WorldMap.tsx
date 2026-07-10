@@ -6,12 +6,14 @@ import {
   EnemyInstance,
   LeisureSpotInstance,
   MiningNodeInstance,
+  ShopKind,
   TownPlotState,
   TreasureNodeInstance,
 } from '../types';
 import { CHARACTERS, getCharacterDef } from '../data/characters';
 import { TOWN_DECOR, TOWN_X, TOWN_Y } from '../data/world';
-import { BUILDING_ICON, SHOP_PLOT_ID, TOWN_PLOT_DEFS } from '../data/townGrid';
+import { BUILDING_ICON, shopKindForPlot, TOWN_PLOT_DEFS } from '../data/townGrid';
+import { SHOP_DEFS } from '../data/shops';
 import { HOUSE_POSITIONS } from '../data/houses';
 import { MATERIAL_ICON } from '../data/materials';
 import { CharacterAvatar } from './CharacterAvatar';
@@ -30,7 +32,7 @@ interface Props {
   plotStates: Record<string, TownPlotState>;
   onBirdPress: (defId: string) => void;
   onPlotPress: (plotId: string) => void;
-  onShopPress: () => void;
+  onShopPress: (shopKind: ShopKind) => void;
 }
 
 export function WorldMap({
@@ -60,16 +62,17 @@ export function WorldMap({
       ))}
 
       {TOWN_PLOT_DEFS.map((def) => {
-        const isShop = def.id === SHOP_PLOT_ID;
+        const shopKind = shopKindForPlot(def.id);
         const state = plotStates[def.id] ?? { id: def.id, unlocked: def.unlockedByDefault, building: null };
         return (
           <PlotSprite
             key={def.id}
             def={def}
-            state={isShop ? { ...state, unlocked: true, building: 'shop' } : state}
+            state={shopKind ? { ...state, unlocked: true, building: 'shop' } : state}
+            shopEmoji={shopKind ? SHOP_DEFS[shopKind].emoji : undefined}
             x={def.x * fieldWidth}
             y={def.y * fieldHeight}
-            onPress={() => (isShop ? onShopPress() : onPlotPress(def.id))}
+            onPress={() => (shopKind ? onShopPress(shopKind) : onPlotPress(def.id))}
           />
         );
       })}
@@ -218,12 +221,14 @@ function TreasureSprite({ treasure, x, y }: { treasure: TreasureNodeInstance; x:
 function PlotSprite({
   def,
   state,
+  shopEmoji,
   x,
   y,
   onPress,
 }: {
   def: (typeof TOWN_PLOT_DEFS)[number];
   state: TownPlotState;
+  shopEmoji?: string;
   x: number;
   y: number;
   onPress: () => void;
@@ -244,7 +249,7 @@ function PlotSprite({
 
   return (
     <AnimatedPressable style={[styles.plot, styles.plotOpen, { left: x - 12, top: y - 12 }]} onPress={onPress}>
-      <Text style={styles.plotBuildingIcon}>{state.building ? BUILDING_ICON[state.building] : '·'}</Text>
+      <Text style={styles.plotBuildingIcon}>{shopEmoji ?? (state.building ? BUILDING_ICON[state.building] : '·')}</Text>
     </AnimatedPressable>
   );
 }

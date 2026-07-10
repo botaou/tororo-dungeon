@@ -14,7 +14,7 @@ import { CraftingModal } from '../components/CraftingModal';
 import { PlayerInventoryModal } from '../components/PlayerInventoryModal';
 import { BirdRosterModal } from '../components/BirdRosterModal';
 import { ActivityLogPanel } from '../components/ActivityLogPanel';
-import { MaterialId } from '../types';
+import { MaterialId, ShopKind } from '../types';
 import { cuteShadow, theme } from '../theme';
 
 export function TownScreen() {
@@ -29,7 +29,7 @@ export function TownScreen() {
   const cycleBuilding = useTownStore((s) => s.cycleBuilding);
 
   const [boardVisible, setBoardVisible] = useState(false);
-  const [shopVisible, setShopVisible] = useState(false);
+  const [openShop, setOpenShop] = useState<ShopKind | null>(null);
   const [inventoryVisible, setInventoryVisible] = useState(false);
   const [rosterVisible, setRosterVisible] = useState(false);
   const [craftingVisible, setCraftingVisible] = useState(false);
@@ -66,7 +66,7 @@ export function TownScreen() {
             <Text style={styles.inventoryButtonText}>🐦</Text>
           </AnimatedPressable>
           <AnimatedPressable style={styles.inventoryButton} onPress={() => setCraftingVisible(true)}>
-            <Text style={styles.inventoryButtonText}>🛠️</Text>
+            <Text style={styles.inventoryButtonText}>🔨</Text>
           </AnimatedPressable>
           <AnimatedPressable style={styles.inventoryButton} onPress={() => setInventoryVisible(true)}>
             <Text style={styles.inventoryButtonText}>🎒</Text>
@@ -84,7 +84,7 @@ export function TownScreen() {
           plotStates={plots}
           onBirdPress={() => setRosterVisible(true)}
           onPlotPress={handlePlotPress}
-          onShopPress={() => setShopVisible(true)}
+          onShopPress={(kind) => setOpenShop(kind)}
         />
       </View>
 
@@ -104,7 +104,7 @@ export function TownScreen() {
         onPost={handlePost}
       />
 
-      <ShopModal visible={shopVisible} onClose={() => setShopVisible(false)} items={items} />
+      <ShopModal visible={openShop !== null} onClose={() => setOpenShop(null)} shopKind={openShop} />
 
       <CraftingModal visible={craftingVisible} onClose={() => setCraftingVisible(false)} />
 

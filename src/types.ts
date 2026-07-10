@@ -18,10 +18,43 @@ export type MaterialId =
   | 'magicStone'
   | 'oldCoin';
 
-// Non-material loot a monster can drop — weapons/armor/rare trinkets. A
-// small, hand-picked catalog (see data/items.ts) rather than a generic
+// Non-material loot/goods — weapons/armor/rare trinkets plus feed-shop food.
+// A small, hand-picked catalog (see data/items.ts) rather than a generic
 // item system, since only a handful exist so far.
-export type ItemId = 'rustySword' | 'leatherArmor' | 'luckyCharm' | 'ancientGem';
+export type ItemId =
+  | 'rustySword'
+  | 'leatherArmor'
+  | 'luckyCharm'
+  | 'ancientGem'
+  // Feed-shop staples — plain commodity food restocked by an NPC supplier
+  // (costs the town gold to restock; never crafted, never sits in the
+  // player's crafted-goods warehouse).
+  | 'seed'
+  | 'milletSpray'
+  | 'nuts'
+  | 'vegetable'
+  // Premium feed — crafted by the player like weapons/armor, then shelved
+  // at the feed shop.
+  | 'nutritionBiscuit'
+  | 'deluxeBlend'
+  | 'energyPellet'
+  | 'luckyTreat';
+
+// What genre of shop carries an item — also which shop building it can be
+// crafted "at" (see data/shops.ts) and shelved into.
+export type ItemCategory = 'weapon' | 'armor' | 'rare' | 'food';
+
+// Which physical shop building this is. Just two for now; adding a third
+// kind later is only a new SHOP_DEFS entry plus a town plot to place it on.
+export type ShopKind = 'general' | 'feed';
+
+// Forward-looking, currently-unused bonus hooks a food item could carry —
+// present purely as data so a later pass can wire actual effects (HP
+// recovery on eating, a temporary exp boost, etc.) without a schema change.
+export interface ItemEffects {
+  hpRestorePercent?: number;
+  expBonusPercent?: number;
+}
 
 export type CharacterRole = 'attacker' | 'healer';
 
@@ -93,16 +126,30 @@ export interface TreasureNodeDef {
 export interface PlayerState {
   gold: number; // the town treasury — spendable balance
   materials: Record<MaterialId, number>;
-  // The town's crafted-goods warehouse — what the player has made out of
-  // bought materials, and what the shop draws its lineup from. Separate
-  // from a bird's personal `items` (monster loot); this is shared stock.
+  // The town's crafted-goods warehouse (the "back room") — what the player
+  // has made out of bought materials. Separate from a bird's personal
+  // `items` (monster loot), and separate from `shopStock` below: crafting
+  // an item doesn't put it up for sale by itself, it has to be shelved.
   items: Partial<Record<ItemId, number>>;
+  // What's actually on display and purchasable at each shop, keyed by
+  // shop kind. Fed two ways: the player manually shelves warehouse items
+  // (`stockItem`), or — for feed-shop commodity staples only — an NPC
+  // supplier restocks it directly, at a cost to `gold` (see expenseFeedRestock).
+  shopStock: Record<ShopKind, Partial<Record<ItemId, number>>>;
   // Lifetime cumulative income counters by source, kept separate from the
   // spendable `gold` balance above so a future ledger/stats screen can show
   // where the town's money has come from. These only ever go up.
   tollFromHunt: number;
   tollFromFood: number;
   tollFromTraveler: number;
+  // Revenue from birds actually buying shop goods (feed-shop food, or
+  // weapons/armor/rare from the general shop) — distinct from tollFromFood,
+  // which is only ever the optional payment for the always-free basic ration.
+  tollFromShop: number;
+  // Lifetime cumulative expense (not income) — gold spent restocking the
+  // feed shop's commodity staples from the NPC supplier. Only goes up,
+  // tracked separately so a future ledger can show costs, not just income.
+  expenseFeedRestock: number;
 }
 
 // ---- World entities (persistent, ephemeral session state) ----
@@ -185,7 +232,8 @@ export type ActivityKind =
   | 'bathing'
   | 'fishing'
   | 'carrying'
-  | 'selling';
+  | 'selling'
+  | 'buyingGear';
 
 // A pursuit goal a bird's AI is actively working toward. A job is just a
 // mining/treasure pursuit restricted to a specific request's material and

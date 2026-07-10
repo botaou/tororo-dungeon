@@ -1,9 +1,4 @@
-import { ItemCategory } from './items';
-
-// One shop kind per definition — deliberately just one entry for now
-// (a general goods store), but keyed so a future shop type (weapon shop,
-// inn, etc.) is just another entry plus wherever a location picks its kind.
-export type ShopKind = 'general';
+import { ItemCategory, ShopKind } from '../types';
 
 export interface ShopDef {
   id: ShopKind;
@@ -12,9 +7,10 @@ export interface ShopDef {
   categories: ItemCategory[];
 }
 
+// Two shop kinds so far — a general goods store (weapons/armor/rare) and a
+// feed shop (food). Adding a third kind later is just another entry here
+// plus a town plot to place it on (see data/townGrid.ts SHOP_PLOT_IDS).
 export const SHOP_DEFS: Record<ShopKind, ShopDef> = {
   general: { id: 'general', name: '道具屋', emoji: '🛠️', categories: ['weapon', 'armor', 'rare'] },
+  feed: { id: 'feed', name: '餌屋', emoji: '🌾', categories: ['food'] },
 };
-
-// The town's single shop building is this kind for now.
-export const ACTIVE_SHOP: ShopKind = 'general';

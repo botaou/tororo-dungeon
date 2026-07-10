@@ -3,17 +3,20 @@ import {
   BirdState,
   CharacterDef,
   EnemyInstance,
+  ItemId,
   JobRequest,
   LeisureSpotInstance,
   MaterialId,
   MiningNodeInstance,
   Personality,
+  ShopKind,
   TreasureNodeInstance,
 } from '../types';
 import {
   ARRIVAL_THRESHOLD,
   ENCOUNTER_HOLD_TICKS,
   FOOD_PRICE,
+  GEAR_SHOP_CHECK_CHANCE,
   HOME_NEED_TICKS,
   LEISURE_CHANCE,
   LEISURE_DWELL_TICKS,
@@ -27,6 +30,7 @@ import {
 import { TOWN_RADIUS, TOWN_X, TOWN_Y } from '../data/world';
 import { getHousePosition } from '../data/houses';
 import { getShopPosition } from '../data/townGrid';
+import { ITEM_DEFS } from '../data/items';
 import { AttackAssignment } from './combat';
 
 // A fainted bird (hp hit 0) rests in place and slowly recovers before
@@ -105,6 +109,10 @@ export interface AiWorld {
   treasures: TreasureNodeInstance[];
   leisureSpots: LeisureSpotInstance[];
   requests: JobRequest[];
+  // Snapshot of what's currently on each shop's shelf — read-only from the
+  // AI's perspective; the store applies the actual decrement (see
+  // AiStepOutcome.shopPurchase).
+  shopStock: Record<ShopKind, Partial<Record<ItemId, number>>>;
 }
 
 export interface AiStepOutcome {
@@ -124,6 +132,10 @@ export interface AiStepOutcome {
   // Gold a bird paid for a shop meal this tick (0 if it ate for free because
   // it couldn't afford FOOD_PRICE, or if nothing happened this tick).
   foodPurchase: number;
+  // Set when a bird completes a real shop purchase — a feed-shop treat
+  // instead of the free ration, or a weapon/armor from the general shop.
+  // The store applies the shelf decrement + item transfer + shop toll.
+  shopPurchase: { shopKind: ShopKind; itemId: ItemId; amount: number; totalCost: number } | null;
 }
 
 function emptyOutcome(): AiStepOutcome {
@@ -136,6 +148,7 @@ function emptyOutcome(): AiStepOutcome {
     sellAttempt: null,
     deliveredMaterial: null,
     foodPurchase: 0,
+    shopPurchase: null,
   };
 }
 
@@ -221,7 +234,7 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
   }
 
   if (bird.mood === 'hungry') {
-    return stepShopFood(bird);
+    return stepShopFood(bird, world);
   }
   if (bird.mood === 'sleepy') {
     return stepHomeNeed(bird, 'resting');
@@ -239,6 +252,19 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
       bird.workProgress = 0;
       return executeSellTrip(bird);
     }
+  }
+
+  // Continue an already-committed gear-shopping trip, or occasionally roll
+  // to start one — a free bird missing a weapon or armor of its own checks
+  // whether the general shop has something it can afford.
+  if (bird.targetKind === 'shop' && bird.activity === 'buyingGear') {
+    return executeGearShopTrip(bird, world);
+  }
+  if (Math.random() < GEAR_SHOP_CHECK_CHANCE && pickGearOffer(bird, world)) {
+    bird.targetKind = 'shop';
+    bird.activity = 'buyingGear';
+    bird.workProgress = 0;
+    return executeGearShopTrip(bird, world);
   }
 
   let category = categoryOf(bird.targetKind);
@@ -284,16 +310,32 @@ function stepHomeNeed(bird: BirdState, activity: 'resting'): AiStepOutcome {
   return emptyOutcome();
 }
 
-// Hungry → walk to the shop for a basic ration. Producing this tier of food
-// is always free (never touches the player's stock), but a bird that can
-// afford FOOD_PRICE pays for its meal — that becomes town income. A broke
-// bird still eats for free; hunger always resolves no matter how poor it is.
-function stepShopFood(bird: BirdState): AiStepOutcome {
+// Picks an affordable, in-stock food item at the feed shop for a hungry
+// bird to treat itself to, instead of the always-free basic ration. Purely
+// a nicer-than-necessary upgrade — returns null (fall back to the free
+// ration) whenever nothing fits, so hunger never fails to resolve.
+function pickFoodTreat(bird: BirdState, world: AiWorld): { itemId: ItemId; price: number } | null {
+  const shelf = world.shopStock.feed;
+  const candidates = ITEM_DEFS.filter(
+    (d) => d.category === 'food' && (shelf[d.id] ?? 0) > 0 && d.buyPrice <= bird.gold
+  );
+  if (candidates.length === 0) return null;
+  const pick = candidates[Math.floor(Math.random() * candidates.length)];
+  return { itemId: pick.id, price: pick.buyPrice };
+}
+
+// Hungry → walk to the feed shop. If it can afford something on the shelf,
+// it buys a real meal there (paid, contributes to shop revenue); otherwise
+// it falls back to the basic ration, which is always free to produce (never
+// touches the player's stock) — a broke bird still eats for free, hunger
+// always resolves no matter how poor it is. That fallback is unchanged from
+// before the feed shop existed.
+function stepShopFood(bird: BirdState, world: AiWorld): AiStepOutcome {
   const outcome = emptyOutcome();
   if (bird.activity !== 'eating') {
     bird.workProgress = 0;
   }
-  const shop = getShopPosition();
+  const shop = getShopPosition('feed');
   const arrived = moveToward(bird, shop.x, shop.y);
   bird.activity = 'eating';
   bird.targetKind = 'shop';
@@ -301,7 +343,11 @@ function stepShopFood(bird: BirdState): AiStepOutcome {
   if (arrived) {
     bird.workProgress += 1;
     if (bird.workProgress >= HOME_NEED_TICKS) {
-      if (bird.gold >= FOOD_PRICE) {
+      const treat = pickFoodTreat(bird, world);
+      if (treat) {
+        bird.gold -= treat.price;
+        outcome.shopPurchase = { shopKind: 'feed', itemId: treat.itemId, amount: 1, totalCost: treat.price };
+      } else if (bird.gold >= FOOD_PRICE) {
         bird.gold -= FOOD_PRICE;
         outcome.foodPurchase = FOOD_PRICE;
       }
@@ -354,11 +400,11 @@ function pickSellOffer(bird: BirdState): { materialId: MaterialId; amount: numbe
 }
 
 // A bird with something to sell (more likely while "wantsMoney") walks to
-// the shop and offers its best-stocked material — the store decides whether
-// the player can actually afford to buy it.
+// the general shop and offers its best-stocked material — the store decides
+// whether the player can actually afford to buy it.
 function executeSellTrip(bird: BirdState): AiStepOutcome {
   const outcome = emptyOutcome();
-  const shop = getShopPosition();
+  const shop = getShopPosition('general');
   const arrived = moveToward(bird, shop.x, shop.y);
   bird.activity = 'selling';
   if (arrived) {
@@ -366,6 +412,49 @@ function executeSellTrip(bird: BirdState): AiStepOutcome {
     if (bird.workProgress >= SELL_DWELL_TICKS) {
       const offer = pickSellOffer(bird);
       if (offer) outcome.sellAttempt = { [offer.materialId]: offer.amount };
+      bird.targetKind = null;
+      bird.workProgress = 0;
+    }
+  }
+  return outcome;
+}
+
+// A bird missing a weapon or armor of its own checks the general shop's
+// shelf — weapon need takes priority over armor. Owning one of a category
+// is "enough" for now (no stacking/upgrading loop), keeping this a one-time
+// self-equip rather than something birds keep doing forever.
+function pickGearOffer(bird: BirdState, world: AiWorld): { itemId: ItemId; price: number } | null {
+  const shelf = world.shopStock.general;
+  for (const category of ['weapon', 'armor'] as const) {
+    const alreadyOwns = ITEM_DEFS.some((d) => d.category === category && (bird.items[d.id] ?? 0) > 0);
+    if (alreadyOwns) continue;
+    const candidates = ITEM_DEFS.filter(
+      (d) => d.category === category && (shelf[d.id] ?? 0) > 0 && d.buyPrice <= bird.gold
+    );
+    if (candidates.length > 0) {
+      const pick = candidates[Math.floor(Math.random() * candidates.length)];
+      return { itemId: pick.id, price: pick.buyPrice };
+    }
+  }
+  return null;
+}
+
+// Walks to the general shop and, once there, buys whichever weapon/armor
+// pickGearOffer settled on. If stock/affordability changed since the trip
+// was committed to, the trip just concludes with nothing bought.
+function executeGearShopTrip(bird: BirdState, world: AiWorld): AiStepOutcome {
+  const outcome = emptyOutcome();
+  const shop = getShopPosition('general');
+  const arrived = moveToward(bird, shop.x, shop.y);
+  bird.activity = 'buyingGear';
+  if (arrived) {
+    bird.workProgress += 1;
+    if (bird.workProgress >= SELL_DWELL_TICKS) {
+      const offer = pickGearOffer(bird, world);
+      if (offer) {
+        bird.gold -= offer.price;
+        outcome.shopPurchase = { shopKind: 'general', itemId: offer.itemId, amount: 1, totalCost: offer.price };
+      }
       bird.targetKind = null;
       bird.workProgress = 0;
     }

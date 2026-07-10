@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { MaterialId, PlayerState } from '../types';
+import { ItemId, MaterialId, PlayerState, ShopKind } from '../types';
 import { STARTING_GOLD, STARTING_MATERIALS } from '../game/config';
 import { CRAFTING_RECIPES } from '../data/recipes';
 
@@ -15,10 +15,20 @@ interface PlayerActions {
   creditHuntToll: (amount: number) => void;
   creditFoodToll: (amount: number) => void;
   creditTravelerToll: (amount: number) => void;
+  creditShopToll: (amount: number) => void;
   // The player's main hands-on action: spend the recipe's material cost
   // out of the town warehouse to produce one crafted item. Returns false
   // (no state change) if the town doesn't have enough of any material.
   craftItem: (recipeId: string) => boolean;
+  // Move `amount` units of a warehouse item onto a shop's shelf, making it
+  // actually purchasable. Returns false if the warehouse doesn't have enough.
+  stockItem: (shopKind: ShopKind, itemId: ItemId, amount: number) => boolean;
+  // Background NPC restock for feed-shop commodity staples: adds straight
+  // to the shelf (bypassing the crafted-goods warehouse) at a cost to gold.
+  restockShopItem: (shopKind: ShopKind, itemId: ItemId, amount: number, unitCost: number) => void;
+  // A bird buying `amount` units off a shop's shelf for `totalRevenue` gold.
+  // Decrements the shelf (clamped at 0) and credits the sale as shop toll.
+  fulfillShopPurchase: (shopKind: ShopKind, itemId: ItemId, amount: number, totalRevenue: number) => void;
 }
 
 type PlayerStore = PlayerState & PlayerActions;
@@ -27,9 +37,12 @@ const initialState: PlayerState = {
   gold: STARTING_GOLD,
   materials: { ...STARTING_MATERIALS },
   items: {},
+  shopStock: { general: {}, feed: {} },
   tollFromHunt: 0,
   tollFromFood: 0,
   tollFromTraveler: 0,
+  tollFromShop: 0,
+  expenseFeedRestock: 0,
 };
 
 export const usePlayerStore = create<PlayerStore>()(
@@ -59,6 +72,7 @@ export const usePlayerStore = create<PlayerStore>()(
       creditFoodToll: (amount) => set((s) => ({ gold: s.gold + amount, tollFromFood: s.tollFromFood + amount })),
       creditTravelerToll: (amount) =>
         set((s) => ({ gold: s.gold + amount, tollFromTraveler: s.tollFromTraveler + amount })),
+      creditShopToll: (amount) => set((s) => ({ gold: s.gold + amount, tollFromShop: s.tollFromShop + amount })),
 
       craftItem: (recipeId) => {
         const recipe = CRAFTING_RECIPES.find((r) => r.id === recipeId);
@@ -77,6 +91,36 @@ export const usePlayerStore = create<PlayerStore>()(
         nextItems[recipe.resultItemId] = (nextItems[recipe.resultItemId] ?? 0) + 1;
         set({ materials: nextMaterials, items: nextItems });
         return true;
+      },
+
+      stockItem: (shopKind, itemId, amount) => {
+        const { items, shopStock } = get();
+        if ((items[itemId] ?? 0) < amount) return false;
+        const nextItems = { ...items, [itemId]: (items[itemId] ?? 0) - amount };
+        const nextShelf = { ...shopStock[shopKind], [itemId]: (shopStock[shopKind][itemId] ?? 0) + amount };
+        set({ items: nextItems, shopStock: { ...shopStock, [shopKind]: nextShelf } });
+        return true;
+      },
+
+      restockShopItem: (shopKind, itemId, amount, unitCost) => {
+        const { gold, shopStock, expenseFeedRestock } = get();
+        const cost = amount * unitCost;
+        const nextShelf = { ...shopStock[shopKind], [itemId]: (shopStock[shopKind][itemId] ?? 0) + amount };
+        set({
+          gold: gold - cost,
+          shopStock: { ...shopStock, [shopKind]: nextShelf },
+          expenseFeedRestock: expenseFeedRestock + cost,
+        });
+      },
+
+      fulfillShopPurchase: (shopKind, itemId, amount, totalRevenue) => {
+        const { shopStock, gold, tollFromShop } = get();
+        const nextShelf = { ...shopStock[shopKind], [itemId]: Math.max(0, (shopStock[shopKind][itemId] ?? 0) - amount) };
+        set({
+          shopStock: { ...shopStock, [shopKind]: nextShelf },
+          gold: gold + totalRevenue,
+          tollFromShop: tollFromShop + totalRevenue,
+        });
       },
     }),
     {

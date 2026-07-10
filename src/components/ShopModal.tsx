@@ -1,27 +1,42 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { ItemId } from '../types';
+import { ItemId, ShopKind } from '../types';
 import { ITEM_DEF_MAP } from '../data/items';
-import { ACTIVE_SHOP, SHOP_DEFS } from '../data/shops';
+import { SHOP_DEFS } from '../data/shops';
+import { usePlayerStore } from '../store/usePlayerStore';
+import { CraftingPanel } from './CraftingPanel';
+import { StockingPanel } from './StockingPanel';
 import { AnimatedPressable } from './AnimatedPressable';
 import { theme } from '../theme';
+
+type Mode = 'menu' | 'craft' | 'stock' | 'view';
 
 interface Props {
   visible: boolean;
   onClose: () => void;
-  items: Partial<Record<ItemId, number>>;
+  shopKind: ShopKind | null;
 }
 
-// Birds already trade materials here on their own (selling surplus, buying
-// a free basic ration when hungry) — this modal is the player-facing side:
-// which shop this is, and what it's currently stocked with. The lineup is
-// just the town's crafted-item warehouse filtered to this shop's genre —
-// no separate "shop inventory" to maintain.
-export function ShopModal({ visible, onClose, items }: Props) {
-  const shop = SHOP_DEFS[ACTIVE_SHOP];
-  const lineup = (Object.keys(items) as ItemId[])
-    .filter((id) => (items[id] ?? 0) > 0 && shop.categories.includes(ITEM_DEF_MAP[id].category));
+// Tapping a shop opens this menu first — what kind of shop it is, and what
+// the player can do here — rather than jumping straight to a feature. Both
+// shop buildings share this component; only the shopKind (and therefore
+// which categories/recipes apply) differs.
+export function ShopModal({ visible, onClose, shopKind }: Props) {
+  const [mode, setMode] = useState<Mode>('menu');
+  const shopStock = usePlayerStore((s) => s.shopStock);
+
+  // Reset back to the menu each time a different shop (or the same shop
+  // again) is opened, rather than reopening on whatever sub-screen was
+  // left open last time.
+  useEffect(() => {
+    if (visible) setMode('menu');
+  }, [visible, shopKind]);
+
+  if (!shopKind) return null;
+  const shop = SHOP_DEFS[shopKind];
+
+  const lineup = (Object.keys(shopStock[shopKind]) as ItemId[]).filter((id) => (shopStock[shopKind][id] ?? 0) > 0);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -35,25 +50,48 @@ export function ShopModal({ visible, onClose, items }: Props) {
               <Text style={styles.closeButtonText}>閉じる</Text>
             </AnimatedPressable>
           </View>
-          <Text style={styles.bodySubText}>鳥たちが自分の判断で素材を売りに来ます。</Text>
 
-          <Text style={styles.sectionLabel}>品揃え</Text>
-          {lineup.length === 0 ? (
-            <Text style={styles.emptyText}>まだ品揃えがありません。加工でアイテムを作ってみましょう。</Text>
-          ) : (
+          {mode !== 'menu' && (
+            <AnimatedPressable style={styles.backButton} onPress={() => setMode('menu')}>
+              <Text style={styles.backButtonText}>← もどる</Text>
+            </AnimatedPressable>
+          )}
+
+          {mode === 'menu' && (
+            <View style={styles.menu}>
+              <Text style={styles.bodySubText}>鳥たちが自分の判断でここを利用します。</Text>
+              <AnimatedPressable style={styles.menuButton} onPress={() => setMode('craft')}>
+                <Text style={styles.menuButtonText}>🛠️ 加工する</Text>
+              </AnimatedPressable>
+              <AnimatedPressable style={styles.menuButton} onPress={() => setMode('stock')}>
+                <Text style={styles.menuButtonText}>📦 商品を並べる</Text>
+              </AnimatedPressable>
+              <AnimatedPressable style={styles.menuButton} onPress={() => setMode('view')}>
+                <Text style={styles.menuButtonText}>👀 在庫を見る</Text>
+              </AnimatedPressable>
+            </View>
+          )}
+
+          {mode === 'craft' && <CraftingPanel categoryFilter={shop.categories} />}
+          {mode === 'stock' && <StockingPanel shopKind={shopKind} categoryFilter={shop.categories} />}
+          {mode === 'view' && (
             <ScrollView style={styles.list}>
-              <View style={styles.grid}>
-                {lineup.map((id) => {
-                  const def = ITEM_DEF_MAP[id];
-                  return (
-                    <View style={styles.item} key={id}>
-                      <Text style={styles.itemIcon}>{def.emoji}</Text>
-                      <Text style={styles.itemLabel}>{def.name}</Text>
-                      <Text style={styles.itemValue}>×{items[id]}</Text>
-                    </View>
-                  );
-                })}
-              </View>
+              {lineup.length === 0 ? (
+                <Text style={styles.emptyText}>まだ品揃えがありません。加工して商品を並べてみましょう。</Text>
+              ) : (
+                <View style={styles.grid}>
+                  {lineup.map((id) => {
+                    const def = ITEM_DEF_MAP[id];
+                    return (
+                      <View style={styles.item} key={id}>
+                        <Text style={styles.itemIcon}>{def.emoji}</Text>
+                        <Text style={styles.itemLabel}>{def.name}</Text>
+                        <Text style={styles.itemValue}>×{shopStock[shopKind][id]}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
             </ScrollView>
           )}
         </View>
@@ -69,11 +107,11 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 26,
     borderTopRightRadius: 26,
     padding: 18,
-    maxHeight: '75%',
+    maxHeight: '80%',
     borderWidth: 1,
     borderColor: theme.cardBorder,
   },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   title: { fontSize: 18, fontWeight: '800', color: theme.gold },
   closeButton: {
     paddingHorizontal: 12,
@@ -82,10 +120,20 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   closeButtonText: { color: theme.blue, fontWeight: '700', fontSize: 13 },
-  bodySubText: { fontSize: 12, color: theme.textSecondary, marginBottom: 4 },
-  sectionLabel: { fontSize: 12, fontWeight: '700', color: theme.textSecondary, marginTop: 10, marginBottom: 8 },
-  emptyText: { fontSize: 12, color: theme.textMuted, paddingBottom: 12 },
-  list: { maxHeight: 320 },
+  backButton: { alignSelf: 'flex-start', marginBottom: 10 },
+  backButtonText: { color: theme.blue, fontWeight: '700', fontSize: 13 },
+  bodySubText: { fontSize: 12, color: theme.textSecondary, marginBottom: 12 },
+  menu: { gap: 10 },
+  menuButton: {
+    backgroundColor: theme.cardAlt,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: theme.cardBorder,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  menuButtonText: { fontSize: 14, fontWeight: '800', color: theme.textPrimary },
+  list: { maxHeight: 400 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   item: {
     width: '30%',
@@ -98,4 +146,5 @@ const styles = StyleSheet.create({
   itemIcon: { fontSize: 20 },
   itemLabel: { fontSize: 10, color: theme.textSecondary },
   itemValue: { fontSize: 14, fontWeight: '800', color: theme.textPrimary },
+  emptyText: { fontSize: 12, color: theme.textMuted, paddingBottom: 12 },
 });

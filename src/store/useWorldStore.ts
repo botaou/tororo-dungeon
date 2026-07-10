@@ -26,12 +26,14 @@ import { AiWorld, separateBirds, stepBird } from '../game/ai';
 import { AttackAssignment, applyHealing, resolveAttacks } from '../game/combat';
 import { scoreRequestAcceptance, tryAcceptRequest } from '../game/requests';
 import { MATERIAL_LABEL } from '../data/materials';
-import { ITEM_DEF_MAP } from '../data/items';
+import { ITEM_DEF_MAP, RESTOCKED_ITEM_IDS } from '../data/items';
 import { MATERIAL_SELL_PRICE } from '../data/marketPrices';
 import {
   ACTIVITY_LOG_MAX,
   ENEMY_RESPAWN_MS,
   expToNextLevel,
+  FEED_RESTOCK_CHECK_CHANCE,
+  FEED_RESTOCK_TARGET,
   LEVEL_UP_ATK_GAIN,
   LEVEL_UP_HP_GAIN,
   MINING_RESPAWN_MS,
@@ -254,6 +256,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       treasures,
       leisureSpots: world.leisureSpots,
       requests,
+      shopStock: usePlayerStore.getState().shopStock,
     };
 
     const allAssignments: AttackAssignment[] = [];
@@ -330,6 +333,14 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
             makeLogEntry(bird.name, 'sell', `${bird.name}が${MATERIAL_LABEL[materialId]}を${soldAmount}個売った(+${cost}G)`)
           );
         }
+      }
+      if (outcome.shopPurchase) {
+        const { shopKind, itemId, amount, totalCost } = outcome.shopPurchase;
+        usePlayerStore.getState().fulfillShopPurchase(shopKind, itemId, amount, totalCost);
+        bird.items[itemId] = (bird.items[itemId] ?? 0) + amount;
+        newLog.push(
+          makeLogEntry(bird.name, 'buyShop', `${bird.name}が${ITEM_DEF_MAP[itemId].name}を買った(街に+${totalCost}G)`)
+        );
       }
     }
 
@@ -409,6 +420,21 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
           newLog.push(makeLogEntry(null, 'traveler', `旅人が${MATERIAL_LABEL[materialId]}を${amount}個買っていった(+${revenue}G)`));
         }
       }
+    }
+
+    // The feed shop's NPC supplier: top up any commodity staple that's
+    // fallen below its target shelf quantity, straight out of the treasury
+    // (unlike crafted goods, these never pass through the player's warehouse).
+    for (const itemId of RESTOCKED_ITEM_IDS) {
+      if (Math.random() >= FEED_RESTOCK_CHECK_CHANCE) continue;
+      const current = usePlayerStore.getState().shopStock.feed[itemId] ?? 0;
+      if (current >= FEED_RESTOCK_TARGET) continue;
+      const shortfall = FEED_RESTOCK_TARGET - current;
+      const unitCost = ITEM_DEF_MAP[itemId].restockCost ?? 0;
+      usePlayerStore.getState().restockShopItem('feed', itemId, shortfall, unitCost);
+      newLog.push(
+        makeLogEntry(null, 'restock', `餌屋に${ITEM_DEF_MAP[itemId].name}が${shortfall}個補充された(-${shortfall * unitCost}G)`)
+      );
     }
 
     const healer = nextBirds.find((b) => getCharacterDef(b.defId).role === 'healer' && b.hp > 0);

@@ -72,6 +72,16 @@ export const FOOD_PRICE = 3;
 export const TRAVELER_CHECK_CHANCE = 0.02;
 export const TRAVELER_MAX_PURCHASE = 6;
 
+// Each tick, a free bird missing a weapon or armor of its own has this
+// chance of checking the general shop's shelf for something it can afford.
+export const GEAR_SHOP_CHECK_CHANCE = 0.01;
+
+// The feed shop's NPC supplier: each tick, per commodity item below its
+// target shelf quantity, this chance of topping it back up to the target
+// (at the item's restockCost per unit, straight out of the treasury).
+export const FEED_RESTOCK_CHECK_CHANCE = 0.15;
+export const FEED_RESTOCK_TARGET = 10;
+
 // Provisional exp/level curve: a bird needs (level * EXP_PER_LEVEL_BASE) exp
 // to advance from its current level, then exp resets toward the remainder.
 export const EXP_PER_LEVEL_BASE = 20;

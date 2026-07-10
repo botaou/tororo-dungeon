@@ -1,4 +1,4 @@
-import { BuildingKind, TownPlotDef } from '../types';
+import { BuildingKind, ShopKind, TownPlotDef } from '../types';
 import { TOWN_X, TOWN_Y } from './world';
 
 // A grid of buildable land around the town hall (the existing 🏘️ marker,
@@ -40,16 +40,25 @@ function buildPlotDefs(): TownPlotDef[] {
 
 export const TOWN_PLOT_DEFS: TownPlotDef[] = buildPlotDefs();
 
-// The south ring-1 plot is a real, always-present shop rather than an
-// empty player-buildable lot — the town always has at least one working
-// (well, tappable) building in it from the start, per the request that
-// the town shouldn't be 100% player-built. Its contents are a placeholder
-// for now; the buy/sell system comes later.
-export const SHOP_PLOT_ID = 'plot_1_0';
+// The north and south ring-1 plots are real, always-present shops rather
+// than empty player-buildable lots — the town always has at least a
+// couple of working (well, tappable) buildings in it from the start, per
+// the request that the town shouldn't be 100% player-built.
+export const SHOP_PLOT_ID = 'plot_1_0'; // south — general goods (道具屋)
+export const FEED_SHOP_PLOT_ID = 'plot_-1_0'; // north — feed shop (餌屋)
 
-export function getShopPosition(): { x: number; y: number } {
-  const def = TOWN_PLOT_DEFS.find((d) => d.id === SHOP_PLOT_ID)!;
+export const SHOP_PLOT_IDS: Record<ShopKind, string> = {
+  general: SHOP_PLOT_ID,
+  feed: FEED_SHOP_PLOT_ID,
+};
+
+export function getShopPosition(kind: ShopKind): { x: number; y: number } {
+  const def = TOWN_PLOT_DEFS.find((d) => d.id === SHOP_PLOT_IDS[kind])!;
   return { x: def.x, y: def.y };
+}
+
+export function shopKindForPlot(plotId: string): ShopKind | null {
+  return (Object.keys(SHOP_PLOT_IDS) as ShopKind[]).find((k) => SHOP_PLOT_IDS[k] === plotId) ?? null;
 }
 
 export const BUILDING_ICON: Record<BuildingKind, string> = {
