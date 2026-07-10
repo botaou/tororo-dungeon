@@ -124,6 +124,7 @@ function buildInitialWorld(): WorldState {
     return {
       defId: c.id,
       name: c.name,
+      isRecruited: wallet.isRecruited,
       x: TOWN_X + (Math.random() - 0.5) * 0.05,
       y: TOWN_Y + (Math.random() - 0.5) * 0.05,
       hp: c.baseHp,
@@ -238,7 +239,11 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     // 'hungry' — and, unlike the other moods, 'hungry' is never overwritten
     // by the ambient timer below; it only clears when the bird actually eats
     // (see stepShopFood in ai.ts, which resets satiety back to full).
+    // A bird that hasn't joined the town yet is completely frozen — no
+    // decay, no mood changes, no AI — until a future recruitment trigger
+    // flips isRecruited to true.
     const birdsWithMood = world.birds.map((b) => {
+      if (!b.isRecruited) return b;
       const satiety = Math.max(0, b.satiety - SATIETY_DECAY_PER_TICK);
       const happiness = Math.min(
         100,
@@ -255,12 +260,13 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
 
     // Free (jobless) birds occasionally check the request board.
     const openRequests = requests.filter((r) => r.status === 'open');
-    const vanguardBird = birdsWithMood.find((b) => getCharacterDef(b.defId).personality === 'vanguard') ?? null;
+    const vanguardBird =
+      birdsWithMood.find((b) => b.isRecruited && getCharacterDef(b.defId).personality === 'vanguard') ?? null;
     const vanguardOutInField = !!vanguardBird && Math.hypot(vanguardBird.x - TOWN_X, vanguardBird.y - TOWN_Y) > TOWN_RADIUS * 1.5;
 
     if (openRequests.length > 0) {
       for (const bird of birdsWithMood) {
-        if (bird.currentJobId || bird.hp <= 0) continue;
+        if (!bird.isRecruited || bird.currentJobId || bird.hp <= 0) continue;
         if (Math.random() > REQUEST_CHECK_CHANCE) continue;
         const def = getCharacterDef(bird.defId);
         const accepted = tryAcceptRequest(bird, def, openRequests, { vanguardOutInField });
@@ -293,6 +299,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     const completedJobIds = new Set<string>();
 
     for (const bird of nextBirds) {
+      if (!bird.isRecruited) continue;
       const def = getCharacterDef(bird.defId);
       const outcome = stepBird(bird, def, aiWorld);
       allAssignments.push(...outcome.assignments);
@@ -468,7 +475,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       );
     }
 
-    const healer = nextBirds.find((b) => getCharacterDef(b.defId).role === 'healer' && b.hp > 0);
+    const healer = nextBirds.find((b) => b.isRecruited && getCharacterDef(b.defId).role === 'healer' && b.hp > 0);
     const healedBirds = healer ? applyHealing(nextBirds, healer.defId, getEffectiveStats(healer).atk) : nextBirds;
     const finalBirds = separateBirds(healedBirds);
 
@@ -493,6 +500,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         luck: b.luck,
         satiety: b.satiety,
         happiness: b.happiness,
+        isRecruited: b.isRecruited,
       };
     useBirdEconomyStore.getState().syncAll(wallets);
 

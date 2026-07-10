@@ -10,7 +10,7 @@ import {
   TownPlotState,
   TreasureNodeInstance,
 } from '../types';
-import { CHARACTERS, getCharacterDef } from '../data/characters';
+import { getCharacterDef } from '../data/characters';
 import { TOWN_DECOR, TOWN_X, TOWN_Y } from '../data/world';
 import { BUILDING_ICON, shopKindForPlot, TOWN_PLOT_DEFS } from '../data/townGrid';
 import { SHOP_DEFS } from '../data/shops';
@@ -80,21 +80,23 @@ export function WorldMap({
       <View
         style={[styles.town, { left: TOWN_X * fieldWidth - 34, top: TOWN_Y * fieldHeight - 34 }]}
       >
-        <Text style={styles.townEmoji}>🏘️</Text>
+        <Text style={styles.townEmoji}>{birds.length <= 1 ? '🛖' : '🏘️'}</Text>
+        {birds.length <= 1 && <Text style={styles.townLabel}>ボロ役場</Text>}
       </View>
 
       <ShopkeeperSprite x={TOWN_X * fieldWidth} y={TOWN_Y * fieldHeight + 44} />
 
-      {CHARACTERS.map((c) => {
-        const pos = HOUSE_POSITIONS[c.id];
+      {birds.map((b) => {
+        const pos = HOUSE_POSITIONS[b.defId];
         if (!pos) return null;
+        const def = getCharacterDef(b.defId);
         return (
           <View
-            key={c.id}
-            style={[styles.house, { left: pos.x * fieldWidth - 18, top: pos.y * fieldHeight - 18, borderColor: c.color }]}
+            key={b.defId}
+            style={[styles.house, { left: pos.x * fieldWidth - 18, top: pos.y * fieldHeight - 18, borderColor: def.color }]}
           >
             <Text style={styles.houseEmoji}>🏠</Text>
-            <Text style={styles.houseTag}>{c.emoji}</Text>
+            <Text style={styles.houseTag}>{def.emoji}</Text>
           </View>
         );
       })}
@@ -466,6 +468,7 @@ const styles = StyleSheet.create({
     ...cuteShadow,
   },
   townEmoji: { fontSize: 30 },
+  townLabel: { fontSize: 8, fontWeight: '700', color: theme.textMuted, position: 'absolute', bottom: 4 },
   decor: { position: 'absolute', fontSize: 20, opacity: 0.9 },
   house: {
     position: 'absolute',

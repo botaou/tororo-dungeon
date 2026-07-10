@@ -94,6 +94,9 @@ export interface CharacterDef {
   role: CharacterRole;
   personality: Personality;
   description: string;
+  // Short tag shown on the starter-selection screen (e.g. "回復・サポート役")
+  // — a human-readable gloss of role+personality, not a mechanical field.
+  roleLabel: string;
   color: string; // accent color for UI
   emoji: string; // placeholder visual until real art is added
   baseAtk: number; // for healers, this is heal power instead of damage
@@ -269,6 +272,11 @@ export type ActivityCategory = 'combat' | 'mining' | 'explore' | 'rest';
 export interface BirdState {
   defId: string; // birds are fixed individuals, defId doubles as identity
   name: string;
+  // Whether this bird has joined the town yet. The game starts with only
+  // the player's chosen starter recruited; the other three sit dormant
+  // (all their phase-0 stats/economy still tracked, just not rendered or
+  // AI-stepped) until a future phase adds a real recruitment trigger.
+  isRecruited: boolean;
   x: number; // 0..1 position in the world
   y: number;
   hp: number;

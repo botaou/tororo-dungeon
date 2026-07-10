@@ -18,6 +18,10 @@ export interface BirdWallet {
   luck: number;
   satiety: number;
   happiness: number;
+  // Whether this bird has joined the town yet — false for everyone until
+  // the starter-selection screen (or, later, a real recruitment trigger)
+  // sets it. See useWorldStore, which only renders/AI-steps recruited birds.
+  isRecruited: boolean;
 }
 
 function defaultWallet(defId: string): BirdWallet {
@@ -34,6 +38,7 @@ function defaultWallet(defId: string): BirdWallet {
     luck: def.baseLuck,
     satiety: STARTING_SATIETY,
     happiness: STARTING_HAPPINESS,
+    isRecruited: false,
   };
 }
 
@@ -51,6 +56,12 @@ interface BirdEconomyActions {
   // Called once per tick with every bird's current gold/inventory/level/exp
   // — a single batched write instead of one per bird per mutation.
   syncAll: (wallets: Record<string, BirdWallet>) => void;
+  // Marks a bird as having joined the town — used by the starter-selection
+  // screen today; a future recruitment trigger would call the same thing.
+  recruitBird: (defId: string) => void;
+  // True once at least one bird has joined — the app shows the
+  // starter-selection screen until this is true.
+  hasAnyRecruited: () => boolean;
 }
 
 export const useBirdEconomyStore = create<BirdEconomyState & BirdEconomyActions>()(
@@ -61,6 +72,11 @@ export const useBirdEconomyStore = create<BirdEconomyState & BirdEconomyActions>
       getWallet: (defId) => ({ ...defaultWallet(defId), ...(get().wallets[defId] ?? {}) }),
 
       syncAll: (wallets) => set({ wallets }),
+
+      recruitBird: (defId) =>
+        set((s) => ({ wallets: { ...s.wallets, [defId]: { ...get().getWallet(defId), isRecruited: true } } })),
+
+      hasAnyRecruited: () => Object.values(get().wallets).some((w) => w.isRecruited),
     }),
     {
       name: 'tororo-dungeon-bird-economy-v1',

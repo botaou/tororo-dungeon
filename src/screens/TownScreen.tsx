@@ -38,6 +38,10 @@ export function TownScreen() {
     if (world.birds.length === 0) initWorld();
   }, [world.birds.length, initWorld]);
 
+  // Dormant (not-yet-recruited) birds are still tracked in world.birds
+  // (see useWorldStore) but never shown on the map or in the roster.
+  const activeBirds = world.birds.filter((b) => b.isRecruited);
+
   const handlePost = (materialId: MaterialId, amount: number, reward: number) => {
     postRequest(materialId, amount, reward);
   };
@@ -80,7 +84,7 @@ export function TownScreen() {
           miningNodes={world.miningNodes}
           treasures={world.treasures}
           leisureSpots={world.leisureSpots}
-          birds={world.birds}
+          birds={activeBirds}
           plotStates={plots}
           onBirdPress={() => setRosterVisible(true)}
           onPlotPress={handlePlotPress}
@@ -116,7 +120,7 @@ export function TownScreen() {
         items={items}
       />
 
-      <BirdRosterModal visible={rosterVisible} onClose={() => setRosterVisible(false)} birds={world.birds} />
+      <BirdRosterModal visible={rosterVisible} onClose={() => setRosterVisible(false)} birds={activeBirds} />
     </SafeAreaView>
   );
 }

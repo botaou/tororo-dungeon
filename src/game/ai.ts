@@ -704,6 +704,7 @@ export function separateBirds(birds: BirdState[]): BirdState[] {
       const a = next[i];
       const b = next[j];
       if (a.hp <= 0 || b.hp <= 0) continue; // fainted birds stay put
+      if (!a.isRecruited || !b.isRecruited) continue; // dormant birds don't interact with anyone
 
       const dx = b.x - a.x;
       const dy = b.y - a.y;
