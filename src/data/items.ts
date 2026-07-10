@@ -1,4 +1,4 @@
-import { ItemCategory, ItemEffects, ItemId } from '../types';
+import { ItemCategory, ItemEffects, ItemId, ItemStatBonus } from '../types';
 
 export interface ItemDef {
   id: ItemId;
@@ -16,6 +16,13 @@ export interface ItemDef {
   // any gameplay logic yet, just data shaped so a later pass (e.g. "eating
   // this heals X%") doesn't need a schema change.
   effects?: ItemEffects;
+  // Present only on equippable items (weapon/armor/hat/shield) — added to
+  // the wearer's base stats while equipped (see game/birdStats.ts).
+  statBonus?: ItemStatBonus;
+  // Forward-looking, currently-unused hook for a future look change when
+  // this item is equipped (e.g. a sprite overlay/recolor key). Present so
+  // that pass doesn't need a schema change either.
+  spriteVariant?: string;
 }
 
 // Small hand-picked catalog of monster-dropped loot and shop goods. Not
@@ -24,8 +31,10 @@ export interface ItemDef {
 // premium food items are both craftable and drop-able... except drops here
 // currently only produce the weapon/armor/rare tier (see data/world.ts).
 export const ITEM_DEFS: ItemDef[] = [
-  { id: 'rustySword', name: 'さびた剣', category: 'weapon', emoji: '🗡️', buyPrice: 60 },
-  { id: 'leatherArmor', name: '革の鎧', category: 'armor', emoji: '🛡️', buyPrice: 50 },
+  { id: 'rustySword', name: 'さびた剣', category: 'weapon', emoji: '🗡️', buyPrice: 60, statBonus: { atk: 3 } },
+  { id: 'leatherArmor', name: '革の鎧', category: 'armor', emoji: '🛡️', buyPrice: 50, statBonus: { defense: 3 } },
+  { id: 'leatherHat', name: '革の帽子', category: 'hat', emoji: '🧢', buyPrice: 40, statBonus: { defense: 2 } },
+  { id: 'woodenShield', name: '木の盾', category: 'shield', emoji: '🛡', buyPrice: 55, statBonus: { defense: 4 } },
   { id: 'luckyCharm', name: '幸運のお守り', category: 'rare', emoji: '🍀', buyPrice: 80 },
   { id: 'ancientGem', name: '古代の宝石', category: 'rare', emoji: '💎', buyPrice: 140 },
 

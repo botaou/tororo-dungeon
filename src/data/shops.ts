@@ -11,6 +11,6 @@ export interface ShopDef {
 // feed shop (food). Adding a third kind later is just another entry here
 // plus a town plot to place it on (see data/townGrid.ts SHOP_PLOT_IDS).
 export const SHOP_DEFS: Record<ShopKind, ShopDef> = {
-  general: { id: 'general', name: '道具屋', emoji: '🛠️', categories: ['weapon', 'armor', 'rare'] },
+  general: { id: 'general', name: '道具屋', emoji: '🛠️', categories: ['weapon', 'armor', 'hat', 'shield', 'rare'] },
   feed: { id: 'feed', name: '餌屋', emoji: '🌾', categories: ['food'] },
 };

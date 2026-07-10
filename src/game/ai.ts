@@ -26,11 +26,13 @@ import {
   SELL_CHECK_CHANCE_WANTS_MONEY,
   SELL_DWELL_TICKS,
   SELL_MAX_PER_TRIP,
+  STARTING_SATIETY,
 } from './config';
 import { TOWN_RADIUS, TOWN_X, TOWN_Y } from '../data/world';
 import { getHousePosition } from '../data/houses';
 import { getShopPosition } from '../data/townGrid';
 import { ITEM_DEFS } from '../data/items';
+import { getEffectiveStats } from './birdStats';
 import { AttackAssignment } from './combat';
 
 // A fainted bird (hp hit 0) rests in place and slowly recovers before
@@ -351,6 +353,7 @@ function stepShopFood(bird: BirdState, world: AiWorld): AiStepOutcome {
         bird.gold -= FOOD_PRICE;
         outcome.foodPurchase = FOOD_PRICE;
       }
+      bird.satiety = STARTING_SATIETY;
       bird.mood = 'normal';
       bird.moodChangedAt = Date.now();
       bird.workProgress = 0;
@@ -419,15 +422,14 @@ function executeSellTrip(bird: BirdState): AiStepOutcome {
   return outcome;
 }
 
-// A bird missing a weapon or armor of its own checks the general shop's
-// shelf — weapon need takes priority over armor. Owning one of a category
-// is "enough" for now (no stacking/upgrading loop), keeping this a one-time
-// self-equip rather than something birds keep doing forever.
+// A bird missing any of its four equipment slots checks the general shop's
+// shelf, in slot priority order (weapon > armor > hat > shield). Owning one
+// of a category is "enough" for now (no stacking/upgrading loop), keeping
+// this a one-time self-equip rather than something birds keep doing forever.
 function pickGearOffer(bird: BirdState, world: AiWorld): { itemId: ItemId; price: number } | null {
   const shelf = world.shopStock.general;
-  for (const category of ['weapon', 'armor'] as const) {
-    const alreadyOwns = ITEM_DEFS.some((d) => d.category === category && (bird.items[d.id] ?? 0) > 0);
-    if (alreadyOwns) continue;
+  for (const category of ['weapon', 'armor', 'hat', 'shield'] as const) {
+    if (bird.equipment[category]) continue;
     const candidates = ITEM_DEFS.filter(
       (d) => d.category === category && (shelf[d.id] ?? 0) > 0 && d.buyPrice <= bird.gold
     );
@@ -484,7 +486,7 @@ function executeCombat(bird: BirdState, def: CharacterDef, world: AiWorld): AiSt
     outcome.assignments.push({
       unitUid: bird.defId,
       enemyUid: enemy.uid,
-      damage: bird.atk,
+      damage: getEffectiveStats(bird).atk,
       materialBonusPercent: def.materialBonusPercent ?? 0,
     });
   }

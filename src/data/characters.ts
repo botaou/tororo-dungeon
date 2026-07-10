@@ -12,6 +12,9 @@ export const CHARACTERS: CharacterDef[] = [
     emoji: '🟢',
     baseAtk: 10,
     baseHp: 70,
+    baseDefense: 2,
+    baseSpeed: 6,
+    baseLuck: 4,
   },
   {
     id: 'vivi',
@@ -23,6 +26,9 @@ export const CHARACTERS: CharacterDef[] = [
     emoji: '💛',
     baseAtk: 18,
     baseHp: 25,
+    baseDefense: 1,
+    baseSpeed: 8,
+    baseLuck: 5,
   },
   {
     id: 'haku',
@@ -34,6 +40,9 @@ export const CHARACTERS: CharacterDef[] = [
     emoji: '🩵',
     baseAtk: 8, // heal power / enraged attack power
     baseHp: 35,
+    baseDefense: 5,
+    baseSpeed: 3,
+    baseLuck: 6,
   },
   {
     id: 'mone',
@@ -45,6 +54,9 @@ export const CHARACTERS: CharacterDef[] = [
     emoji: '✨',
     baseAtk: 8,
     baseHp: 30,
+    baseDefense: 3,
+    baseSpeed: 5,
+    baseLuck: 8,
     materialBonusPercent: 20,
   },
 ];

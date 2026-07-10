@@ -1,16 +1,24 @@
 import React from 'react';
 import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { BirdState, ItemId, MaterialId } from '../types';
+import { BirdState, EquipSlot, ItemId, MaterialId } from '../types';
 import { CHARACTERS } from '../data/characters';
 import { MATERIAL_ICON } from '../data/materials';
 import { ITEM_DEF_MAP } from '../data/items';
 import { getMoodDef } from '../data/moods';
 import { getBirdGoalLabel, getBirdStatusLabel } from '../game/birdStatus';
+import { getEffectiveStats } from '../game/birdStats';
 import { expToNextLevel } from '../game/config';
 import { AnimatedPressable } from './AnimatedPressable';
 import { CharacterAvatar } from './CharacterAvatar';
 import { theme } from '../theme';
+
+const EQUIP_SLOT_ORDER: { slot: EquipSlot; emptyIcon: string }[] = [
+  { slot: 'weapon', emptyIcon: '🗡️' },
+  { slot: 'armor', emptyIcon: '🛡️' },
+  { slot: 'hat', emptyIcon: '🧢' },
+  { slot: 'shield', emptyIcon: '🛡' },
+];
 
 interface Props {
   visible: boolean;
@@ -36,6 +44,7 @@ export function BirdRosterModal({ visible, onClose, birds }: Props) {
               const owned = (Object.keys(bird.inventory) as MaterialId[]).filter((k) => bird.inventory[k] > 0);
               const ownedItems = (Object.keys(bird.items) as ItemId[]).filter((k) => (bird.items[k] ?? 0) > 0);
               const moodLabel = getMoodDef(bird.mood).label;
+              const stats = getEffectiveStats(bird);
               return (
                 <View key={c.id} style={[styles.card, { borderColor: c.color }]}>
                   <View style={styles.cardHeader}>
@@ -55,6 +64,36 @@ export function BirdRosterModal({ visible, onClose, birds }: Props) {
                     {moodLabel ? `・${moodLabel}` : ''}
                   </Text>
                   <Text style={styles.cardGoal}>{getBirdGoalLabel(bird)}</Text>
+
+                  <View style={styles.statsRow}>
+                    <Text style={styles.statItem}>❤️{bird.hp}/{bird.maxHp}</Text>
+                    <Text style={styles.statItem}>⚔️{stats.atk}</Text>
+                    <Text style={styles.statItem}>🛡️{stats.defense}</Text>
+                    <Text style={styles.statItem}>🏃{stats.speed}</Text>
+                    <Text style={styles.statItem}>🍀{stats.luck}</Text>
+                  </View>
+                  <View style={styles.statsRow}>
+                    <Text style={styles.meterItem}>🍚満腹度 {Math.round(bird.satiety)}</Text>
+                    <Text style={styles.meterItem}>😊ご機嫌度 {Math.round(bird.happiness)}</Text>
+                  </View>
+
+                  <View style={styles.equipRow}>
+                    {EQUIP_SLOT_ORDER.map(({ slot, emptyIcon }) => {
+                      const equippedId = bird.equipment[slot];
+                      const equipDef = equippedId ? ITEM_DEF_MAP[equippedId] : null;
+                      return (
+                        <View style={styles.equipSlot} key={slot}>
+                          <Text style={[styles.equipIcon, !equipDef && styles.equipIconEmpty]}>
+                            {equipDef?.emoji ?? emptyIcon}
+                          </Text>
+                          <Text style={styles.equipLabel} numberOfLines={1}>
+                            {equipDef?.name ?? '(空)'}
+                          </Text>
+                        </View>
+                      );
+                    })}
+                  </View>
+
                   <View style={styles.inventoryRow}>
                     {owned.length === 0 && ownedItems.length === 0 ? (
                       <Text style={styles.emptyInventory}>持ち物なし</Text>
@@ -121,6 +160,23 @@ const styles = StyleSheet.create({
   cardGold: { fontSize: 13, fontWeight: '800', color: theme.gold },
   cardStatus: { fontSize: 12, fontWeight: '700', color: theme.textPrimary, marginTop: 6 },
   cardGoal: { fontSize: 11, color: theme.textSecondary, marginTop: 1 },
+  statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 6 },
+  statItem: { fontSize: 12, fontWeight: '700', color: theme.textPrimary },
+  meterItem: { fontSize: 11, fontWeight: '700', color: theme.textSecondary },
+  equipRow: { flexDirection: 'row', gap: 6, marginTop: 8 },
+  equipSlot: {
+    flex: 1,
+    alignItems: 'center',
+    backgroundColor: theme.card,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.cardBorder,
+    paddingVertical: 6,
+    gap: 1,
+  },
+  equipIcon: { fontSize: 16 },
+  equipIconEmpty: { opacity: 0.3 },
+  equipLabel: { fontSize: 9, color: theme.textMuted, maxWidth: 60 },
   inventoryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
   emptyInventory: { fontSize: 10, color: theme.textMuted },
   inventoryItem: { fontSize: 11, fontWeight: '700', color: theme.textPrimary },

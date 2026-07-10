@@ -2,19 +2,39 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { ItemId, MaterialId } from '../types';
-import { STARTING_MATERIALS } from '../game/config';
+import { EquipSlot, ItemId, MaterialId } from '../types';
+import { getCharacterDef } from '../data/characters';
+import { STARTING_HAPPINESS, STARTING_MATERIALS, STARTING_SATIETY } from '../game/config';
 
 export interface BirdWallet {
   gold: number;
   inventory: Record<MaterialId, number>;
   items: Partial<Record<ItemId, number>>;
+  equipment: Record<EquipSlot, ItemId | null>;
   level: number;
   exp: number;
+  defense: number;
+  speed: number;
+  luck: number;
+  satiety: number;
+  happiness: number;
 }
 
-function defaultWallet(): BirdWallet {
-  return { gold: 0, inventory: { ...STARTING_MATERIALS }, items: {}, level: 1, exp: 0 };
+function defaultWallet(defId: string): BirdWallet {
+  const def = getCharacterDef(defId);
+  return {
+    gold: 0,
+    inventory: { ...STARTING_MATERIALS },
+    items: {},
+    equipment: { weapon: null, armor: null, hat: null, shield: null },
+    level: 1,
+    exp: 0,
+    defense: def.baseDefense,
+    speed: def.baseSpeed,
+    luck: def.baseLuck,
+    satiety: STARTING_SATIETY,
+    happiness: STARTING_HAPPINESS,
+  };
 }
 
 interface BirdEconomyState {
@@ -38,7 +58,7 @@ export const useBirdEconomyStore = create<BirdEconomyState & BirdEconomyActions>
     (set, get) => ({
       wallets: {},
 
-      getWallet: (defId) => ({ ...defaultWallet(), ...(get().wallets[defId] ?? {}) }),
+      getWallet: (defId) => ({ ...defaultWallet(defId), ...(get().wallets[defId] ?? {}) }),
 
       syncAll: (wallets) => set({ wallets }),
     }),

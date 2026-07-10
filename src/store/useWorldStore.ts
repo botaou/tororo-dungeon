@@ -25,6 +25,7 @@ import { rollRandomMood } from '../data/moods';
 import { AiWorld, separateBirds, stepBird } from '../game/ai';
 import { AttackAssignment, applyHealing, resolveAttacks } from '../game/combat';
 import { scoreRequestAcceptance, tryAcceptRequest } from '../game/requests';
+import { getEffectiveStats, maybeAutoEquip } from '../game/birdStats';
 import { MATERIAL_LABEL } from '../data/materials';
 import { ITEM_DEF_MAP, RESTOCKED_ITEM_IDS } from '../data/items';
 import { MATERIAL_SELL_PRICE } from '../data/marketPrices';
@@ -35,10 +36,14 @@ import {
   FEED_RESTOCK_CHECK_CHANCE,
   FEED_RESTOCK_TARGET,
   LEVEL_UP_ATK_GAIN,
+  LEVEL_UP_DEFENSE_GAIN,
   LEVEL_UP_HP_GAIN,
+  LEVEL_UP_SPEED_GAIN,
   MINING_RESPAWN_MS,
   MOOD_REFRESH_MS,
   REQUEST_CHECK_CHANCE,
+  SATIETY_DECAY_PER_TICK,
+  SATIETY_HUNGRY_THRESHOLD,
   SELL_MAX_GOLD_PER_TRIP,
   TRAVELER_CHECK_CHANCE,
   TRAVELER_MAX_PURCHASE,
@@ -124,6 +129,11 @@ function buildInitialWorld(): WorldState {
       hp: c.baseHp,
       maxHp: c.baseHp,
       atk: c.baseAtk,
+      defense: wallet.defense,
+      speed: wallet.speed,
+      luck: wallet.luck,
+      satiety: wallet.satiety,
+      happiness: wallet.happiness,
       mood: rollRandomMood(),
       moodChangedAt: Date.now(),
       targetKind: null,
@@ -135,6 +145,7 @@ function buildInitialWorld(): WorldState {
       gold: wallet.gold,
       inventory: { ...wallet.inventory },
       items: { ...wallet.items },
+      equipment: { ...wallet.equipment },
       level: wallet.level,
       exp: wallet.exp,
       wanderX: null,
@@ -156,6 +167,8 @@ function grantExp(bird: BirdState, amount: number, log: ActivityLogEntry[]) {
     bird.atk += LEVEL_UP_ATK_GAIN;
     bird.maxHp += LEVEL_UP_HP_GAIN;
     bird.hp += LEVEL_UP_HP_GAIN;
+    bird.defense += LEVEL_UP_DEFENSE_GAIN;
+    bird.speed += LEVEL_UP_SPEED_GAIN;
     log.push(makeLogEntry(bird.name, 'levelUp', `${bird.name}がLv${bird.level}になった!`));
   }
 }
@@ -220,10 +233,25 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     );
     let requests = world.requests;
 
-    // Refresh moods that have expired.
-    const birdsWithMood = world.birds.map((b) =>
-      now - b.moodChangedAt > MOOD_REFRESH_MS ? { ...b, mood: rollRandomMood(), moodChangedAt: now } : { ...b }
-    );
+    // Satiety always decays and happiness always drifts, regardless of the
+    // mood-refresh timer. Once satiety bottoms out, mood is forced to
+    // 'hungry' — and, unlike the other moods, 'hungry' is never overwritten
+    // by the ambient timer below; it only clears when the bird actually eats
+    // (see stepShopFood in ai.ts, which resets satiety back to full).
+    const birdsWithMood = world.birds.map((b) => {
+      const satiety = Math.max(0, b.satiety - SATIETY_DECAY_PER_TICK);
+      const happiness = Math.min(
+        100,
+        Math.max(0, b.happiness + (b.mood === 'happy' ? 1 : b.mood === 'hungry' ? -1 : 0))
+      );
+      if (satiety <= SATIETY_HUNGRY_THRESHOLD && b.mood !== 'hungry') {
+        return { ...b, satiety, happiness, mood: 'hungry' as const, moodChangedAt: now };
+      }
+      if (b.mood !== 'hungry' && now - b.moodChangedAt > MOOD_REFRESH_MS) {
+        return { ...b, satiety, happiness, mood: rollRandomMood(), moodChangedAt: now };
+      }
+      return { ...b, satiety, happiness };
+    });
 
     // Free (jobless) birds occasionally check the request board.
     const openRequests = requests.filter((r) => r.status === 'open');
@@ -338,6 +366,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         const { shopKind, itemId, amount, totalCost } = outcome.shopPurchase;
         usePlayerStore.getState().fulfillShopPurchase(shopKind, itemId, amount, totalCost);
         bird.items[itemId] = (bird.items[itemId] ?? 0) + amount;
+        maybeAutoEquip(bird, itemId);
         newLog.push(
           makeLogEntry(bird.name, 'buyShop', `${bird.name}が${ITEM_DEF_MAP[itemId].name}を買った(街に+${totalCost}G)`)
         );
@@ -376,6 +405,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
           );
         } else {
           bird.items[drop.itemId] = (bird.items[drop.itemId] ?? 0) + 1;
+          maybeAutoEquip(bird, drop.itemId);
           newLog.push(
             makeLogEntry(bird.name, 'drop', `${bird.name}が${kill.enemyName}から${ITEM_DEF_MAP[drop.itemId].name}をドロップで手に入れた!`)
           );
@@ -400,7 +430,8 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       const candidates = nextBirds.filter((b) => attackerUids.has(b.defId) && b.hp > 0);
       if (candidates.length > 0) {
         const victim = candidates[Math.floor(Math.random() * candidates.length)];
-        victim.hp = Math.max(0, victim.hp - damage);
+        const mitigated = Math.max(1, damage - getEffectiveStats(victim).defense);
+        victim.hp = Math.max(0, victim.hp - mitigated);
       }
     }
 
@@ -438,7 +469,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     }
 
     const healer = nextBirds.find((b) => getCharacterDef(b.defId).role === 'healer' && b.hp > 0);
-    const healedBirds = healer ? applyHealing(nextBirds, healer.defId, healer.atk) : nextBirds;
+    const healedBirds = healer ? applyHealing(nextBirds, healer.defId, getEffectiveStats(healer).atk) : nextBirds;
     const finalBirds = separateBirds(healedBirds);
 
     if (Object.keys(materialsToAdd).length > 0) {
@@ -450,7 +481,19 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
 
     const wallets: Record<string, BirdWallet> = {};
     for (const b of finalBirds)
-      wallets[b.defId] = { gold: b.gold, inventory: b.inventory, items: b.items, level: b.level, exp: b.exp };
+      wallets[b.defId] = {
+        gold: b.gold,
+        inventory: b.inventory,
+        items: b.items,
+        equipment: b.equipment,
+        level: b.level,
+        exp: b.exp,
+        defense: b.defense,
+        speed: b.speed,
+        luck: b.luck,
+        satiety: b.satiety,
+        happiness: b.happiness,
+      };
     useBirdEconomyStore.getState().syncAll(wallets);
 
     const activityLog = [...newLog, ...world.activityLog].slice(0, ACTIVITY_LOG_MAX);

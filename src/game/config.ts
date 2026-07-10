@@ -87,6 +87,21 @@ export const FEED_RESTOCK_TARGET = 10;
 export const EXP_PER_LEVEL_BASE = 20;
 export const LEVEL_UP_ATK_GAIN = 1;
 export const LEVEL_UP_HP_GAIN = 5;
+export const LEVEL_UP_DEFENSE_GAIN = 1;
+export const LEVEL_UP_SPEED_GAIN = 1;
+
+// Numeric meters behind the mood label (see BirdState.satiety/happiness).
+export const STARTING_SATIETY = 100;
+export const STARTING_HAPPINESS = 70;
+// Ticks down every tick regardless of mood; ~65 ticks/point means a bird
+// starting full takes roughly the same number of ticks to go hungry as the
+// old pure-random hungry roll used to average out to, so the existing food
+// economy tuning (toll rates, shop visit cadence) doesn't need re-tuning.
+export const SATIETY_DECAY_PER_TICK = 0.15;
+// Once satiety drops to/below this, mood is forced to 'hungry' (overriding
+// whatever the ambient mood-refresh timer would otherwise roll) until the
+// bird actually eats, at which point satiety resets to STARTING_SATIETY.
+export const SATIETY_HUNGRY_THRESHOLD = 30;
 
 export function expToNextLevel(level: number): number {
   return level * EXP_PER_LEVEL_BASE;

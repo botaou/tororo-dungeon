@@ -24,6 +24,8 @@ export type MaterialId =
 export type ItemId =
   | 'rustySword'
   | 'leatherArmor'
+  | 'leatherHat'
+  | 'woodenShield'
   | 'luckyCharm'
   | 'ancientGem'
   // Feed-shop staples — plain commodity food restocked by an NPC supplier
@@ -41,8 +43,15 @@ export type ItemId =
   | 'luckyTreat';
 
 // What genre of shop carries an item — also which shop building it can be
-// crafted "at" (see data/shops.ts) and shelved into.
-export type ItemCategory = 'weapon' | 'armor' | 'rare' | 'food';
+// crafted "at" (see data/shops.ts) and shelved into. weapon/armor/hat/shield
+// double as the four equipment slots (see EquipSlot) — rare/food are goods,
+// not gear, and can't be equipped.
+export type ItemCategory = 'weapon' | 'armor' | 'hat' | 'shield' | 'rare' | 'food';
+
+// The four equipment slots a bird has, one item each. Deliberately the same
+// literal values as their matching ItemCategory so "which slot does this
+// item go in" never needs a separate lookup table.
+export type EquipSlot = 'weapon' | 'armor' | 'hat' | 'shield';
 
 // Which physical shop building this is. Just two for now; adding a third
 // kind later is only a new SHOP_DEFS entry plus a town plot to place it on.
@@ -54,6 +63,16 @@ export type ShopKind = 'general' | 'feed';
 export interface ItemEffects {
   hpRestorePercent?: number;
   expBonusPercent?: number;
+}
+
+// Stat bonuses an equippable item (weapon/armor/hat/shield) grants while
+// equipped — added on top of the wearer's own base stats (see
+// game/birdStats.ts's getEffectiveStats).
+export interface ItemStatBonus {
+  atk?: number;
+  defense?: number;
+  speed?: number;
+  luck?: number;
 }
 
 export type CharacterRole = 'attacker' | 'healer';
@@ -79,6 +98,9 @@ export interface CharacterDef {
   emoji: string; // placeholder visual until real art is added
   baseAtk: number; // for healers, this is heal power instead of damage
   baseHp: number;
+  baseDefense: number;
+  baseSpeed: number; // reserved for future movement/turn-order use; display-only today
+  baseLuck: number; // reserved for future drop/crit-rate use; display-only today
   materialBonusPercent?: number; // bonus % applied when this bird delivers materials
 }
 
@@ -252,6 +274,15 @@ export interface BirdState {
   hp: number;
   maxHp: number;
   atk: number;
+  defense: number;
+  speed: number;
+  luck: number;
+  // Numeric meters behind the mood label. satiety decays over time and
+  // drives the 'hungry' mood (see SATIETY_HUNGRY_THRESHOLD); happiness
+  // drifts up/down alongside the current mood — both shown on the roster
+  // card alongside the existing text mood, not replacing it.
+  satiety: number; // 0..100
+  happiness: number; // 0..100
   mood: MoodId;
   moodChangedAt: number; // epoch ms, for periodic mood refresh
   targetKind: TargetKind | null;
@@ -272,6 +303,11 @@ export interface BirdState {
   // Loot dropped by monsters (weapons/armor/rare trinkets) — personal, like
   // the rest of a bird's belongings; not something the player buys.
   items: Partial<Record<ItemId, number>>;
+  // One item per slot, auto-filled the moment a bird acquires an
+  // equippable item (bought or dropped) for a slot that's still empty —
+  // see game/birdStats.ts's maybeAutoEquip. Never auto-replaces something
+  // already equipped; extra copies just sit unequipped in `items`.
+  equipment: Record<EquipSlot, ItemId | null>;
   // Provisional growth system: exp comes only from combat contribution.
   // `exp` resets toward 0 each time it crosses the current level's
   // threshold (see expToNextLevel in game/config.ts) rather than
