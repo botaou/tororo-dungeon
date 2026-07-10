@@ -9,6 +9,7 @@ import { getMoodDef } from '../data/moods';
 import { getBirdGoalLabel, getBirdStatusLabel } from '../game/birdStatus';
 import { expToNextLevel } from '../game/config';
 import { AnimatedPressable } from './AnimatedPressable';
+import { CharacterAvatar } from './CharacterAvatar';
 import { theme } from '../theme';
 
 interface Props {
@@ -38,7 +39,7 @@ export function BirdRosterModal({ visible, onClose, birds }: Props) {
               return (
                 <View key={c.id} style={[styles.card, { borderColor: c.color }]}>
                   <View style={styles.cardHeader}>
-                    <Text style={styles.cardEmoji}>{c.emoji}</Text>
+                    <CharacterAvatar characterId={c.id} emoji={c.emoji} color={c.color} size={48} />
                     <View style={styles.cardHeaderText}>
                       <Text style={styles.cardName}>
                         {bird.name} <Text style={styles.cardLevel}>Lv{bird.level}</Text>
@@ -113,7 +114,6 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  cardEmoji: { fontSize: 24 },
   cardHeaderText: { flex: 1 },
   cardName: { fontSize: 15, fontWeight: '800', color: theme.textPrimary },
   cardLevel: { fontSize: 12, fontWeight: '700', color: theme.textSecondary },

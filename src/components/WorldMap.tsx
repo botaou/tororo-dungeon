@@ -430,7 +430,7 @@ function BirdSprite({
               opacity: fainted ? 0.5 : 1,
             }}
           >
-            <CharacterAvatar characterId={bird.defId} emoji={def.emoji} color={def.color} size={30} />
+            <CharacterAvatar characterId={bird.defId} emoji={def.emoji} color={def.color} size={44} />
           </Animated.View>
           {showMineSwing && <Text style={styles.pickaxe}>⛏️</Text>}
           {bird.carrying && <Text style={styles.carryBadge}>{MATERIAL_ICON[bird.carrying.materialId]}</Text>}
