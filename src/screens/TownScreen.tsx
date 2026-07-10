@@ -10,6 +10,7 @@ import { WorldMap } from '../components/WorldMap';
 import { AnimatedPressable } from '../components/AnimatedPressable';
 import { RequestBoard } from '../components/RequestBoard';
 import { ShopModal } from '../components/ShopModal';
+import { CraftingModal } from '../components/CraftingModal';
 import { PlayerInventoryModal } from '../components/PlayerInventoryModal';
 import { BirdRosterModal } from '../components/BirdRosterModal';
 import { ActivityLogPanel } from '../components/ActivityLogPanel';
@@ -19,6 +20,7 @@ import { cuteShadow, theme } from '../theme';
 export function TownScreen() {
   const gold = usePlayerStore((s) => s.gold);
   const materials = usePlayerStore((s) => s.materials);
+  const items = usePlayerStore((s) => s.items);
   const world = useWorldStore((s) => s.world);
   const initWorld = useWorldStore((s) => s.initWorld);
   const postRequest = useWorldStore((s) => s.postRequest);
@@ -30,6 +32,7 @@ export function TownScreen() {
   const [shopVisible, setShopVisible] = useState(false);
   const [inventoryVisible, setInventoryVisible] = useState(false);
   const [rosterVisible, setRosterVisible] = useState(false);
+  const [craftingVisible, setCraftingVisible] = useState(false);
 
   useEffect(() => {
     if (world.birds.length === 0) initWorld();
@@ -61,6 +64,9 @@ export function TownScreen() {
           </View>
           <AnimatedPressable style={styles.inventoryButton} onPress={() => setRosterVisible(true)}>
             <Text style={styles.inventoryButtonText}>🐦</Text>
+          </AnimatedPressable>
+          <AnimatedPressable style={styles.inventoryButton} onPress={() => setCraftingVisible(true)}>
+            <Text style={styles.inventoryButtonText}>🛠️</Text>
           </AnimatedPressable>
           <AnimatedPressable style={styles.inventoryButton} onPress={() => setInventoryVisible(true)}>
             <Text style={styles.inventoryButtonText}>🎒</Text>
@@ -98,13 +104,16 @@ export function TownScreen() {
         onPost={handlePost}
       />
 
-      <ShopModal visible={shopVisible} onClose={() => setShopVisible(false)} />
+      <ShopModal visible={shopVisible} onClose={() => setShopVisible(false)} items={items} />
+
+      <CraftingModal visible={craftingVisible} onClose={() => setCraftingVisible(false)} />
 
       <PlayerInventoryModal
         visible={inventoryVisible}
         onClose={() => setInventoryVisible(false)}
         gold={gold}
         materials={materials}
+        items={items}
       />
 
       <BirdRosterModal visible={rosterVisible} onClose={() => setRosterVisible(false)} birds={world.birds} />

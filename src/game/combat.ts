@@ -1,4 +1,4 @@
-import { BirdState, EnemyInstance } from '../types';
+import { BirdState, EnemyInstance, MaterialId, ItemId } from '../types';
 import { SECURITY_FEE_RATE } from './config';
 
 export interface AttackAssignment {
@@ -7,6 +7,13 @@ export interface AttackAssignment {
   damage: number;
   materialBonusPercent: number;
 }
+
+// One drop roll that actually triggered on a kill, awarded to one random
+// participant — the winning bird's inventory/items get credited by the
+// caller (useWorldStore), same as everything else it personally owns.
+export type KillDrop =
+  | { kind: 'material'; unitUid: string; materialId: MaterialId; amount: number }
+  | { kind: 'item'; unitUid: string; itemId: ItemId };
 
 // One defeated enemy's full outcome — gold split, town's cut, and exp for
 // every bird that contributed — so callers (useWorldStore) can apply all
@@ -19,6 +26,7 @@ export interface EnemyKillSummary {
   rewards: { unitUid: string; gold: number }[];
   expReward: number; // flat amount every participant below receives (not split)
   participants: string[]; // bird defIds that damaged this enemy at all
+  drops: KillDrop[];
 }
 
 export interface AttackResult {
@@ -70,13 +78,28 @@ export function resolveAttacks(enemies: EnemyInstance[], assignments: AttackAssi
           if (share > 0) rewards.push({ unitUid, gold: share });
         }
       }
+      const participants = Object.keys(enemy.damageLog);
+      const drops: KillDrop[] = [];
+      if (participants.length > 0) {
+        for (const entry of enemy.dropTable) {
+          if (Math.random() >= entry.chance) continue;
+          const winnerUid = participants[Math.floor(Math.random() * participants.length)];
+          drops.push(
+            entry.kind === 'material'
+              ? { kind: 'material', unitUid: winnerUid, materialId: entry.materialId, amount: entry.amount }
+              : { kind: 'item', unitUid: winnerUid, itemId: entry.itemId }
+          );
+        }
+      }
+
       kills.push({
         enemyName: enemy.name,
         totalGold,
         feeGold: fee,
         rewards,
         expReward: enemy.expReward,
-        participants: Object.keys(enemy.damageLog),
+        participants,
+        drops,
       });
       enemy.damageLog = {}; // reset for this enemy's next life
     } else {

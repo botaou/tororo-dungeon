@@ -26,6 +26,7 @@ import { AiWorld, separateBirds, stepBird } from '../game/ai';
 import { AttackAssignment, applyHealing, resolveAttacks } from '../game/combat';
 import { scoreRequestAcceptance, tryAcceptRequest } from '../game/requests';
 import { MATERIAL_LABEL } from '../data/materials';
+import { ITEM_DEF_MAP } from '../data/items';
 import { MATERIAL_SELL_PRICE } from '../data/marketPrices';
 import {
   ACTIVITY_LOG_MAX,
@@ -36,6 +37,7 @@ import {
   MINING_RESPAWN_MS,
   MOOD_REFRESH_MS,
   REQUEST_CHECK_CHANCE,
+  SELL_MAX_GOLD_PER_TRIP,
   TRAVELER_CHECK_CHANCE,
   TRAVELER_MAX_PURCHASE,
   TREASURE_RESPAWN_MS,
@@ -75,6 +77,7 @@ function buildInitialWorld(): WorldState {
     atk: e.atk,
     goldReward: e.goldReward,
     expReward: e.expReward,
+    dropTable: e.dropTable ?? [],
     defeated: false,
     respawnAt: null,
     damageLog: {},
@@ -129,6 +132,7 @@ function buildInitialWorld(): WorldState {
       carrying: null,
       gold: wallet.gold,
       inventory: { ...wallet.inventory },
+      items: { ...wallet.items },
       level: wallet.level,
       exp: wallet.exp,
       wanderX: null,
@@ -313,7 +317,8 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         // slow trickle of income and trade just stalls.
         const [materialId, offeredAmount] = Object.entries(outcome.sellAttempt)[0] as [MaterialId, number];
         const unitPrice = MATERIAL_SELL_PRICE[materialId];
-        const affordableUnits = unitPrice > 0 ? Math.floor(usePlayerStore.getState().gold / unitPrice) : 0;
+        const spendCap = Math.min(usePlayerStore.getState().gold, SELL_MAX_GOLD_PER_TRIP);
+        const affordableUnits = unitPrice > 0 ? Math.floor(spendCap / unitPrice) : 0;
         const soldAmount = Math.min(offeredAmount ?? 0, affordableUnits);
         if (soldAmount > 0) {
           const cost = soldAmount * unitPrice;
@@ -349,6 +354,21 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       for (const unitUid of kill.participants) {
         const bird = nextBirds.find((b) => b.defId === unitUid);
         if (bird) grantExp(bird, kill.expReward, newLog);
+      }
+      for (const drop of kill.drops) {
+        const bird = nextBirds.find((b) => b.defId === drop.unitUid);
+        if (!bird) continue;
+        if (drop.kind === 'material') {
+          bird.inventory[drop.materialId] = (bird.inventory[drop.materialId] ?? 0) + drop.amount;
+          newLog.push(
+            makeLogEntry(bird.name, 'drop', `${bird.name}が${kill.enemyName}から${MATERIAL_LABEL[drop.materialId]}をドロップで手に入れた`)
+          );
+        } else {
+          bird.items[drop.itemId] = (bird.items[drop.itemId] ?? 0) + 1;
+          newLog.push(
+            makeLogEntry(bird.name, 'drop', `${bird.name}が${kill.enemyName}から${ITEM_DEF_MAP[drop.itemId].name}をドロップで手に入れた!`)
+          );
+        }
       }
       const participantNames = kill.participants
         .map((uid) => nextBirds.find((b) => b.defId === uid)?.name)
@@ -403,7 +423,8 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     }
 
     const wallets: Record<string, BirdWallet> = {};
-    for (const b of finalBirds) wallets[b.defId] = { gold: b.gold, inventory: b.inventory, level: b.level, exp: b.exp };
+    for (const b of finalBirds)
+      wallets[b.defId] = { gold: b.gold, inventory: b.inventory, items: b.items, level: b.level, exp: b.exp };
     useBirdEconomyStore.getState().syncAll(wallets);
 
     const activityLog = [...newLog, ...world.activityLog].slice(0, ACTIVITY_LOG_MAX);

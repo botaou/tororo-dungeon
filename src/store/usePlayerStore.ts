@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { MaterialId, PlayerState } from '../types';
 import { STARTING_GOLD, STARTING_MATERIALS } from '../game/config';
+import { CRAFTING_RECIPES } from '../data/recipes';
 
 interface PlayerActions {
   addGold: (amount: number) => void;
@@ -14,6 +15,10 @@ interface PlayerActions {
   creditHuntToll: (amount: number) => void;
   creditFoodToll: (amount: number) => void;
   creditTravelerToll: (amount: number) => void;
+  // The player's main hands-on action: spend the recipe's material cost
+  // out of the town warehouse to produce one crafted item. Returns false
+  // (no state change) if the town doesn't have enough of any material.
+  craftItem: (recipeId: string) => boolean;
 }
 
 type PlayerStore = PlayerState & PlayerActions;
@@ -21,6 +26,7 @@ type PlayerStore = PlayerState & PlayerActions;
 const initialState: PlayerState = {
   gold: STARTING_GOLD,
   materials: { ...STARTING_MATERIALS },
+  items: {},
   tollFromHunt: 0,
   tollFromFood: 0,
   tollFromTraveler: 0,
@@ -53,6 +59,25 @@ export const usePlayerStore = create<PlayerStore>()(
       creditFoodToll: (amount) => set((s) => ({ gold: s.gold + amount, tollFromFood: s.tollFromFood + amount })),
       creditTravelerToll: (amount) =>
         set((s) => ({ gold: s.gold + amount, tollFromTraveler: s.tollFromTraveler + amount })),
+
+      craftItem: (recipeId) => {
+        const recipe = CRAFTING_RECIPES.find((r) => r.id === recipeId);
+        if (!recipe) return false;
+        const { materials, items } = get();
+        const canAfford = (Object.entries(recipe.materialCost) as [MaterialId, number][]).every(
+          ([materialId, amount]) => (materials[materialId] ?? 0) >= amount
+        );
+        if (!canAfford) return false;
+
+        const nextMaterials = { ...materials };
+        (Object.entries(recipe.materialCost) as [MaterialId, number][]).forEach(([materialId, amount]) => {
+          nextMaterials[materialId] = (nextMaterials[materialId] ?? 0) - amount;
+        });
+        const nextItems = { ...items };
+        nextItems[recipe.resultItemId] = (nextItems[recipe.resultItemId] ?? 0) + 1;
+        set({ materials: nextMaterials, items: nextItems });
+        return true;
+      },
     }),
     {
       // Bumped from v1: the schema changed (stamina removed, gold is now a

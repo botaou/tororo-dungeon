@@ -2,18 +2,19 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { MaterialId } from '../types';
+import { ItemId, MaterialId } from '../types';
 import { STARTING_MATERIALS } from '../game/config';
 
 export interface BirdWallet {
   gold: number;
   inventory: Record<MaterialId, number>;
+  items: Partial<Record<ItemId, number>>;
   level: number;
   exp: number;
 }
 
 function defaultWallet(): BirdWallet {
-  return { gold: 0, inventory: { ...STARTING_MATERIALS }, level: 1, exp: 0 };
+  return { gold: 0, inventory: { ...STARTING_MATERIALS }, items: {}, level: 1, exp: 0 };
 }
 
 interface BirdEconomyState {

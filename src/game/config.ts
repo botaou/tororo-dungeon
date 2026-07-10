@@ -37,19 +37,28 @@ export const LEISURE_CHANCE = 0.5;
 // Cut of every combat kill reward that goes to the player as "town security
 // cooperation money" instead of the attacking bird(s) — one of the player's
 // few guaranteed income sources alongside food and traveler tolls.
-export const SECURITY_FEE_RATE = 0.15;
+export const SECURITY_FEE_RATE = 0.4;
 
 // How long a bird lingers at the shop while selling off its inventory.
 export const SELL_DWELL_TICKS = 2;
 // Each tick, a free bird with something to sell has this base chance of
 // deciding to make a trip to the shop; much more likely while "wantsMoney".
-export const SELL_CHECK_CHANCE_BASE = 0.05;
-export const SELL_CHECK_CHANCE_WANTS_MONEY = 0.4;
+export const SELL_CHECK_CHANCE_BASE = 0.006;
+export const SELL_CHECK_CHANCE_WANTS_MONEY = 0.07;
 // A bird sells only its single most-plentiful material per trip (capped at
 // this amount), not its whole stash at once — otherwise a well-stocked bird's
 // asking price quickly outgrows what the player can ever afford, and trade
 // freezes up entirely instead of trickling along a little at a time.
-export const SELL_MAX_PER_TRIP = 20;
+export const SELL_MAX_PER_TRIP = 8;
+// When a bird's full offer would cost more than the player currently has,
+// the player still buys a partial amount (see useWorldStore) rather than
+// letting the trip fail outright — but a single sale can never cost the
+// player more than this flat amount of gold, no matter how large the
+// treasury has grown. A fraction-of-balance cap would let spend scale up
+// right along with income and never let the treasury actually get ahead;
+// a flat ceiling keeps each sale's drain bounded so toll income (which
+// keeps accumulating) can outpace it over time.
+export const SELL_MAX_GOLD_PER_TRIP = 15;
 
 // A basic ration is always free to produce (never touches the player's
 // funds or stock) — but if the bird can afford it, it pays this much for
@@ -78,8 +87,8 @@ export const ACTIVITY_LOG_MAX = 10;
 
 // Depleted enemies/resources come back after this long so the world never
 // runs permanently dry.
-export const ENEMY_RESPAWN_MS = 25_000;
-export const MINING_RESPAWN_MS = 30_000;
+export const ENEMY_RESPAWN_MS = 12_000;
+export const MINING_RESPAWN_MS = 90_000;
 export const TREASURE_RESPAWN_MS = 90_000;
 
 export const STARTING_GOLD = 300;

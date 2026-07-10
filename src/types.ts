@@ -18,6 +18,11 @@ export type MaterialId =
   | 'magicStone'
   | 'oldCoin';
 
+// Non-material loot a monster can drop — weapons/armor/rare trinkets. A
+// small, hand-picked catalog (see data/items.ts) rather than a generic
+// item system, since only a handful exist so far.
+export type ItemId = 'rustySword' | 'leatherArmor' | 'luckyCharm' | 'ancientGem';
+
 export type CharacterRole = 'attacker' | 'healer';
 
 // Each character's independent AI personality — governs both free-roam
@@ -44,6 +49,13 @@ export interface CharacterDef {
   materialBonusPercent?: number; // bonus % applied when this bird delivers materials
 }
 
+// One possible drop roll on a kill — independently checked against `chance`
+// (0..1) per entry, so an enemy can drop several things (or nothing) from
+// the same kill. Rolled fresh each kill, awarded to one random participant.
+export type EnemyDropEntry =
+  | { kind: 'material'; materialId: MaterialId; amount: number; chance: number }
+  | { kind: 'item'; itemId: ItemId; chance: number };
+
 // Defs carry a hand-placed design-time position (0..1) so the world reads
 // as a deliberately laid-out diorama instead of randomly scattered items.
 export interface EnemyDef {
@@ -54,6 +66,7 @@ export interface EnemyDef {
   atk: number;
   goldReward: number;
   expReward: number; // flat exp granted to every bird that damaged it
+  dropTable?: EnemyDropEntry[];
   x: number;
   y: number;
 }
@@ -80,6 +93,10 @@ export interface TreasureNodeDef {
 export interface PlayerState {
   gold: number; // the town treasury — spendable balance
   materials: Record<MaterialId, number>;
+  // The town's crafted-goods warehouse — what the player has made out of
+  // bought materials, and what the shop draws its lineup from. Separate
+  // from a bird's personal `items` (monster loot); this is shared stock.
+  items: Partial<Record<ItemId, number>>;
   // Lifetime cumulative income counters by source, kept separate from the
   // spendable `gold` balance above so a future ledger/stats screen can show
   // where the town's money has come from. These only ever go up.
@@ -102,6 +119,7 @@ export interface EnemyInstance {
   atk: number;
   goldReward: number;
   expReward: number;
+  dropTable: EnemyDropEntry[];
   defeated: boolean;
   respawnAt: number | null; // epoch ms; set when defeated, revives once passed
   // Cumulative damage dealt by each attacking bird (keyed by defId) while
@@ -203,6 +221,9 @@ export interface BirdState {
   // shared stash (PlayerState.materials).
   gold: number;
   inventory: Record<MaterialId, number>;
+  // Loot dropped by monsters (weapons/armor/rare trinkets) — personal, like
+  // the rest of a bird's belongings; not something the player buys.
+  items: Partial<Record<ItemId, number>>;
   // Provisional growth system: exp comes only from combat contribution.
   // `exp` resets toward 0 each time it crosses the current level's
   // threshold (see expToNextLevel in game/config.ts) rather than

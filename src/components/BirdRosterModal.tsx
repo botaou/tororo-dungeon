@@ -1,9 +1,10 @@
 import React from 'react';
 import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { BirdState, MaterialId } from '../types';
+import { BirdState, ItemId, MaterialId } from '../types';
 import { CHARACTERS } from '../data/characters';
 import { MATERIAL_ICON } from '../data/materials';
+import { ITEM_DEF_MAP } from '../data/items';
 import { getMoodDef } from '../data/moods';
 import { getBirdGoalLabel, getBirdStatusLabel } from '../game/birdStatus';
 import { expToNextLevel } from '../game/config';
@@ -32,6 +33,7 @@ export function BirdRosterModal({ visible, onClose, birds }: Props) {
               const bird = birds.find((b) => b.defId === c.id);
               if (!bird) return null;
               const owned = (Object.keys(bird.inventory) as MaterialId[]).filter((k) => bird.inventory[k] > 0);
+              const ownedItems = (Object.keys(bird.items) as ItemId[]).filter((k) => (bird.items[k] ?? 0) > 0);
               const moodLabel = getMoodDef(bird.mood).label;
               return (
                 <View key={c.id} style={[styles.card, { borderColor: c.color }]}>
@@ -53,15 +55,23 @@ export function BirdRosterModal({ visible, onClose, birds }: Props) {
                   </Text>
                   <Text style={styles.cardGoal}>{getBirdGoalLabel(bird)}</Text>
                   <View style={styles.inventoryRow}>
-                    {owned.length === 0 ? (
+                    {owned.length === 0 && ownedItems.length === 0 ? (
                       <Text style={styles.emptyInventory}>持ち物なし</Text>
                     ) : (
-                      owned.map((k) => (
-                        <Text style={styles.inventoryItem} key={k}>
-                          {MATERIAL_ICON[k]}
-                          {bird.inventory[k]}
-                        </Text>
-                      ))
+                      <>
+                        {owned.map((k) => (
+                          <Text style={styles.inventoryItem} key={k}>
+                            {MATERIAL_ICON[k]}
+                            {bird.inventory[k]}
+                          </Text>
+                        ))}
+                        {ownedItems.map((k) => (
+                          <Text style={styles.inventoryItem} key={k}>
+                            {ITEM_DEF_MAP[k].emoji}
+                            {bird.items[k]}
+                          </Text>
+                        ))}
+                      </>
                     )}
                   </View>
                 </View>

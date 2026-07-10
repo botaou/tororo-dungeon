@@ -1,4 +1,4 @@
-import { EnemyDef, LeisureSpotDef, MiningNodeDef, TreasureNodeDef } from '../types';
+import { EnemyDef, EnemyDropEntry, LeisureSpotDef, MiningNodeDef, TreasureNodeDef } from '../types';
 
 // The town sits at the center of the world; everything else is arranged in
 // deliberate, natural-feeling zones around it (a forest to the northwest,
@@ -14,11 +14,33 @@ export const TOWN_RADIUS = 0.12;
 // expReward is a flat grant to every bird that damaged the enemy (not split
 // like gold) — tiered roughly with difficulty; a future boss tier would
 // just need a much larger value here, no structural changes.
+// Drop tables scale roughly with difficulty: weaker/common enemies mostly
+// drop a bit of extra material with a rare chance at basic gear; the
+// tougher wolves have better odds at rarer loot. Each entry rolls
+// independently, so a single kill can drop more than one thing (or nothing).
+const SLIME_DROPS: EnemyDropEntry[] = [
+  { kind: 'material', materialId: 'herb', amount: 1, chance: 0.25 },
+  { kind: 'item', itemId: 'leatherArmor', chance: 0.03 },
+];
+const BAT_DROPS: EnemyDropEntry[] = [
+  { kind: 'material', materialId: 'feather', amount: 1, chance: 0.3 },
+  { kind: 'item', itemId: 'rustySword', chance: 0.04 },
+  { kind: 'item', itemId: 'luckyCharm', chance: 0.02 },
+];
+const WOLF_DROPS: EnemyDropEntry[] = [
+  { kind: 'material', materialId: 'gem', amount: 1, chance: 0.2 },
+  { kind: 'item', itemId: 'rustySword', chance: 0.08 },
+  { kind: 'item', itemId: 'ancientGem', chance: 0.03 },
+];
+
 export const ENEMY_DEFS: EnemyDef[] = [
-  { id: 'slime_a', name: 'スライム', emoji: '🟢', hp: 30, atk: 3, goldReward: 8, expReward: 5, x: 0.231, y: 0.292 },
-  { id: 'slime_b', name: 'スライム', emoji: '🟢', hp: 30, atk: 3, goldReward: 8, expReward: 5, x: 0.16, y: 0.66 },
-  { id: 'bat_a', name: 'コウモリ', emoji: '🦇', hp: 25, atk: 4, goldReward: 10, expReward: 7, x: 0.55, y: 0.16 },
-  { id: 'wolf_a', name: 'オオカミ', emoji: '🐺', hp: 45, atk: 6, goldReward: 16, expReward: 10, x: 0.82, y: 0.34 },
+  { id: 'slime_a', name: 'スライム', emoji: '🟢', hp: 30, atk: 3, goldReward: 8, expReward: 5, dropTable: SLIME_DROPS, x: 0.231, y: 0.292 },
+  { id: 'slime_b', name: 'スライム', emoji: '🟢', hp: 30, atk: 3, goldReward: 8, expReward: 5, dropTable: SLIME_DROPS, x: 0.16, y: 0.66 },
+  { id: 'bat_a', name: 'コウモリ', emoji: '🦇', hp: 25, atk: 4, goldReward: 10, expReward: 7, dropTable: BAT_DROPS, x: 0.55, y: 0.16 },
+  { id: 'wolf_a', name: 'オオカミ', emoji: '🐺', hp: 45, atk: 6, goldReward: 16, expReward: 10, dropTable: WOLF_DROPS, x: 0.82, y: 0.34 },
+  { id: 'slime_c', name: 'スライム', emoji: '🟢', hp: 30, atk: 3, goldReward: 8, expReward: 5, dropTable: SLIME_DROPS, x: 0.08, y: 0.23 },
+  { id: 'bat_b', name: 'コウモリ', emoji: '🦇', hp: 25, atk: 4, goldReward: 10, expReward: 7, dropTable: BAT_DROPS, x: 0.63, y: 0.19 },
+  { id: 'wolf_b', name: 'オオカミ', emoji: '🐺', hp: 45, atk: 6, goldReward: 16, expReward: 10, dropTable: WOLF_DROPS, x: 0.75, y: 0.45 },
 ];
 
 export const MINING_NODE_DEFS: MiningNodeDef[] = [
