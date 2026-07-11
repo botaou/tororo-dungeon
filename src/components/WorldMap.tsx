@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, StyleSheet, Text, TouchableWithoutFeedback, View } from 'react-native';
+import { Animated, Easing, Image, StyleSheet, Text, TouchableWithoutFeedback, View } from 'react-native';
 
 import {
   BirdState,
@@ -25,6 +25,7 @@ import {
 import { SHOP_DEFS } from '../data/shops';
 import { HOUSE_POSITIONS } from '../data/houses';
 import { MATERIAL_ICON } from '../data/materials';
+import { TILE_IMAGES, TILE_REPEAT_IMAGES } from '../data/tileImages';
 import { CharacterAvatar } from './CharacterAvatar';
 import { AnimatedPressable } from './AnimatedPressable';
 import { TICK_MS } from '../game/config';
@@ -42,16 +43,17 @@ import { cuteShadow, theme } from '../theme';
 export const WORLD_CANVAS_WIDTH = 900;
 export const WORLD_CANVAS_HEIGHT = 1400;
 
-// Soft, low-opacity background patches suggesting the field's loose zoning
-// (forest / quarry / mushroom patch / lake / ruins) without needing real
-// tile art — matches the natural clusters data/world.ts's enemy/mining defs
-// already sit in, just made visually legible instead of implicit.
-const FIELD_ZONE_PATCHES: { cx: number; cy: number; rx: number; ry: number; color: string }[] = [
-  { cx: 0.22, cy: 0.22, rx: 0.16, ry: 0.13, color: '#bfe0a8' }, // forest, upper-left
-  { cx: 0.75, cy: 0.22, rx: 0.16, ry: 0.14, color: '#d9cdb4' }, // quarry, upper-right
-  { cx: 0.23, cy: 0.76, rx: 0.13, ry: 0.11, color: '#cbb8d9' }, // mushroom patch, lower-left
-  { cx: 0.63, cy: 0.86, rx: 0.2, ry: 0.11, color: '#a8cfe0' }, // lake, south
-  { cx: 0.5, cy: 0.13, rx: 0.14, ry: 0.08, color: '#e0d3a8' }, // ruins, north
+// Low-opacity, tiled ground-texture patches suggesting the field's loose
+// zoning (forest / quarry / mushroom patch / lake / ruins) — matches the
+// natural clusters data/world.ts's enemy/mining defs already sit in, now
+// made visually legible with actual hand-painted ground art (see
+// data/tileImages.ts's TILE_REPEAT_IMAGES) instead of a flat color fill.
+const FIELD_ZONE_PATCHES: { cx: number; cy: number; rx: number; ry: number; texture: keyof typeof TILE_REPEAT_IMAGES }[] = [
+  { cx: 0.22, cy: 0.22, rx: 0.16, ry: 0.13, texture: 'forest' }, // upper-left
+  { cx: 0.75, cy: 0.22, rx: 0.16, ry: 0.14, texture: 'quarry' }, // upper-right
+  { cx: 0.23, cy: 0.76, rx: 0.13, ry: 0.11, texture: 'mushroom' }, // lower-left
+  { cx: 0.63, cy: 0.86, rx: 0.2, ry: 0.11, texture: 'lake' }, // south
+  { cx: 0.5, cy: 0.13, rx: 0.14, ry: 0.08, texture: 'ruins' }, // north
 ];
 
 interface Props {
@@ -98,27 +100,35 @@ export function WorldMap({
 
   return (
     <View style={[styles.field, { width: fieldWidth, height: fieldHeight }]}>
-      {FIELD_ZONE_PATCHES.map((p, i) => (
-        <View
-          key={i}
-          pointerEvents="none"
-          style={[
-            styles.fieldZonePatch,
-            {
-              left: p.cx * fieldWidth - p.rx * fieldWidth,
-              top: p.cy * fieldHeight - p.ry * fieldHeight,
-              width: p.rx * 2 * fieldWidth,
-              height: p.ry * 2 * fieldHeight,
-              borderRadius: Math.max(p.rx * fieldWidth, p.ry * fieldHeight),
-              backgroundColor: p.color,
-            },
-          ]}
-        />
-      ))}
+      {FIELD_ZONE_PATCHES.map((p, i) => {
+        const w = p.rx * 2 * fieldWidth;
+        const h = p.ry * 2 * fieldHeight;
+        return (
+          <View
+            key={i}
+            pointerEvents="none"
+            style={[
+              styles.fieldZonePatch,
+              {
+                left: p.cx * fieldWidth - p.rx * fieldWidth,
+                top: p.cy * fieldHeight - p.ry * fieldHeight,
+                width: w,
+                height: h,
+                borderRadius: Math.max(w, h),
+              },
+            ]}
+          >
+            <Image source={TILE_REPEAT_IMAGES[p.texture]} resizeMode="repeat" style={styles.fieldZoneTexture} />
+          </View>
+        );
+      })}
 
       {/* The town zone's own backdrop — a warm-toned ellipse (vs. the
           field's meadow green) that grows with town level, plus a dashed
-          ring marking the boundary between "town" and "adventure field". */}
+          ring marking the boundary between "town" and "adventure field".
+          A faint tiled grass texture sits underneath the tint so it reads
+          as "cozy garden ground" rather than a flat color, without
+          overpowering the town's flat, clean-lined look. */}
       <View
         pointerEvents="none"
         style={[
@@ -131,7 +141,10 @@ export function WorldMap({
             borderRadius: Math.max(zoneWidth, zoneHeight),
           },
         ]}
-      />
+      >
+        <Image source={TILE_REPEAT_IMAGES.town} resizeMode="repeat" style={styles.townZoneTexture} />
+        <View style={styles.townZoneTint} />
+      </View>
       <View
         pointerEvents="none"
         style={[
@@ -376,6 +389,7 @@ function RockSprite({ node, x, y }: { node: MiningNodeInstance; x: number; y: nu
         },
       ]}
     >
+      <Image source={TILE_IMAGES.dirtPatchRound} resizeMode="contain" style={styles.rockAccent} />
       <Text style={styles.emojiLarge}>{icon}</Text>
       <Text style={styles.tag}>+{node.amount}</Text>
     </Animated.View>
@@ -432,19 +446,19 @@ function PlotSprite({
 }) {
   if (!state.unlocked) {
     // Plots gated behind a town level the player hasn't reached yet read as
-    // untamed, quietly-waiting ground (a soft grass-toned layer, no cost
+    // untamed, quietly-waiting ground (real grass art, dimmer, no cost
     // shown since attempting is pointless right now) rather than the same
-    // "locked, here's the price" look as an affordable-but-unclaimed plot.
+    // "locked, here's the price" look as an affordable-but-unclaimed plot —
+    // both now share the same grass-tile backdrop (see data/tileImages.ts)
+    // instead of a flat gray/green box, just dimmed differently.
     return (
       <AnimatedPressable
         style={[styles.plot, levelLocked ? styles.plotUntamed : styles.plotLocked, { left: x - 12, top: y - 12 }]}
         onPress={onPress}
       >
+        <Image source={TILE_IMAGES.grassPlain} resizeMode="cover" style={[styles.plotGrassBg, levelLocked && styles.plotGrassBgDim]} />
         {levelLocked ? (
-          <>
-            <View style={styles.plotUntamedInner} />
-            <Text style={styles.plotLevelReq}>Lv.{def.minTownLevel}</Text>
-          </>
+          <Text style={styles.plotLevelReq}>Lv.{def.minTownLevel}</Text>
         ) : (
           <>
             <Text style={styles.plotLockIcon}>🔒</Text>
@@ -711,8 +725,11 @@ const styles = StyleSheet.create({
   field: {
     backgroundColor: theme.ground,
   },
-  fieldZonePatch: { position: 'absolute', opacity: 0.35 },
-  townZoneBackdrop: { position: 'absolute', backgroundColor: theme.bgBottom, opacity: 0.9 },
+  fieldZonePatch: { position: 'absolute', opacity: 0.45, overflow: 'hidden' },
+  fieldZoneTexture: { width: '100%', height: '100%' },
+  townZoneBackdrop: { position: 'absolute', overflow: 'hidden' },
+  townZoneTexture: { position: 'absolute', width: '100%', height: '100%', opacity: 0.4 },
+  townZoneTint: { position: 'absolute', width: '100%', height: '100%', backgroundColor: theme.bgBottom, opacity: 0.6 },
   townZoneBoundary: {
     position: 'absolute',
     borderWidth: 2,
@@ -757,12 +774,12 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   plotLocked: {
     backgroundColor: theme.disabled,
     borderWidth: 1,
     borderColor: theme.cardBorder,
-    opacity: 0.85,
   },
   plotOpen: {
     backgroundColor: theme.cardAlt,
@@ -774,19 +791,19 @@ const styles = StyleSheet.create({
   plotCostText: { fontSize: 7, fontWeight: '700', color: theme.textMuted, marginTop: 1 },
   plotBuildingIcon: { fontSize: 16, color: theme.textMuted },
   plotUntamed: {
-    backgroundColor: 'rgba(107, 189, 110, 0.18)',
     borderWidth: 1,
     borderColor: 'rgba(107, 189, 110, 0.3)',
   },
-  plotUntamedInner: {
-    position: 'absolute',
-    width: 14,
-    height: 14,
-    borderRadius: 5,
-    backgroundColor: 'rgba(107, 189, 110, 0.35)',
-  },
-  plotLevelReq: { fontSize: 7, fontWeight: '800', color: theme.textMuted },
+  // Real grass art behind both locked states (see data/tileImages.ts) —
+  // level-gated plots dim it further so they still read as "further off"
+  // than a merely gold-locked one.
+  plotGrassBg: { position: 'absolute', width: '100%', height: '100%', opacity: 0.75 },
+  plotGrassBgDim: { opacity: 0.4 },
+  plotLevelReq: { fontSize: 7, fontWeight: '800', color: theme.textPrimary },
   sprite: { position: 'absolute', alignItems: 'center', width: 56 },
+  // A faint dug-out patch behind a mining node's icon (see data/tileImages.ts)
+  // — purely decorative, sits underneath the emoji/amount text.
+  rockAccent: { position: 'absolute', width: 40, height: 40, top: -6, left: 8, opacity: 0.55 },
   leisureSprite: { opacity: 0.85 },
   tapArea: { alignItems: 'center' },
   emojiLarge: { fontSize: 26 },
