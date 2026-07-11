@@ -250,7 +250,10 @@ function grantExp(bird: BirdState, amount: number, log: ActivityLogEntry[]) {
 function buildRequestFromPreset(preset: JobPreset): JobRequest {
   return {
     id: uid('job'),
+    kind: preset.kind,
     materialId: preset.materialId,
+    enemyName: preset.enemyName,
+    itemId: preset.itemId,
     amount: preset.amount,
     reward: preset.reward,
     expReward: preset.expReward,
@@ -267,6 +270,57 @@ interface WorldActions {
   initWorld: () => void;
   tick: () => void;
   postRequest: (preset: JobPreset) => boolean;
+  // Called after a successful craftItem() — advances any matching in-progress
+  // 'craft' job's progress (a player action, not something the accepting
+  // bird does itself; see ai.ts's stepJob comment).
+  reportCraftCompleted: (itemId: ItemId) => void;
+  // Delivers as much as the player's warehouse currently has (up to what's
+  // still needed) toward a 'merchantDeliver' job — only while a merchant is
+  // actually present. Returns false (no state change) if there's no
+  // merchant, the request doesn't match, or the warehouse has none to give.
+  deliverToMerchant: (requestId: string) => boolean;
+}
+
+// Shared by reportCraftCompleted and deliverToMerchant — both are player-
+// triggered completions outside the tick loop, so they commit their own
+// world update instead of folding into the tick's one big set() call. Pays
+// the reward + exp to the accepting bird, grants the town's dev/reputation
+// points, marks the request done, and refills the board — the same
+// completion pipeline the tick applies to finished gather/hunt jobs.
+function finalizeStandaloneJob(world: WorldState, request: JobRequest, actionFragment: string): WorldState {
+  const birdIndex = world.birds.findIndex((b) => b.defId === request.acceptedBy);
+  const nextBirds = [...world.birds];
+  const tempLog: ActivityLogEntry[] = [];
+  if (birdIndex !== -1) {
+    const bird = { ...world.birds[birdIndex] };
+    grantExp(bird, request.expReward, tempLog);
+    bird.gold += request.reward;
+    nextBirds[birdIndex] = bird;
+    tempLog.push(
+      makeLogEntry(
+        bird.name,
+        'job',
+        `${bird.name}が依頼(${actionFragment})を達成した!(報酬${request.reward}G/経験値${request.expReward})`
+      )
+    );
+  }
+  useTownStore.getState().addDevelopmentPoints(request.developmentPoints);
+  useTownStore.getState().addReputation(request.reputationPoints);
+  usePlayerStore.getState().addGold(-request.reward);
+
+  let nextRequests = world.requests.map((r) => (r.id === request.id ? { ...r, status: 'done' as const } : r));
+  const activeCount = nextRequests.filter((r) => r.status !== 'done').length;
+  if (activeCount < MAX_ACTIVE_REQUESTS) {
+    const preset = JOB_PRESETS[Math.floor(Math.random() * JOB_PRESETS.length)];
+    nextRequests = [...nextRequests, buildRequestFromPreset(preset)];
+  }
+
+  return {
+    ...world,
+    birds: nextBirds,
+    requests: nextRequests,
+    activityLog: [...tempLog, ...world.activityLog].slice(0, ACTIVITY_LOG_MAX),
+  };
 }
 
 interface WorldStore {
@@ -298,6 +352,38 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
 
     const request = buildRequestFromPreset(preset);
     set({ world: { ...get().world, requests: [...get().world.requests, request] } });
+    return true;
+  },
+
+  reportCraftCompleted: (itemId) => {
+    const { world } = get();
+    const request = world.requests.find((r) => r.kind === 'craft' && r.status === 'inProgress' && r.itemId === itemId);
+    if (!request) return;
+    request.delivered += 1; // mutated in place, same convention as gather/hunt progress
+    if (request.delivered < request.amount) {
+      set({ world: { ...world, requests: [...world.requests] } });
+      return;
+    }
+    set({ world: finalizeStandaloneJob(world, request, `${ITEM_DEF_MAP[itemId].name}を${request.amount}個加工`) });
+  },
+
+  deliverToMerchant: (requestId) => {
+    const { world } = get();
+    if (!world.merchant) return false;
+    const request = world.requests.find((r) => r.id === requestId);
+    if (!request || request.kind !== 'merchantDeliver' || request.status !== 'inProgress' || !request.itemId) return false;
+    const remaining = request.amount - request.delivered;
+    if (remaining <= 0) return false;
+    const owned = usePlayerStore.getState().items[request.itemId] ?? 0;
+    const deliverAmount = Math.min(remaining, owned);
+    if (deliverAmount <= 0) return false;
+    usePlayerStore.getState().consumeItems(request.itemId, deliverAmount);
+    request.delivered += deliverAmount;
+    if (request.delivered < request.amount) {
+      set({ world: { ...world, requests: [...world.requests] } });
+      return true;
+    }
+    set({ world: finalizeStandaloneJob(world, request, `${ITEM_DEF_MAP[request.itemId].name}を商人に${request.amount}個納品`) });
     return true;
   },
 
@@ -406,10 +492,16 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         const def = getCharacterDef(bird.defId);
         const accepted = tryAcceptRequest(bird, def, openRequests, { vanguardOutInField });
         if (accepted) {
-          bird.currentJobId = accepted.id;
-          bird.targetKind = null;
-          bird.targetRefUid = null;
-          bird.workProgress = 0;
+          // 'craft'/'merchantDeliver' jobs are player actions (see
+          // reportCraftCompleted/deliverToMerchant) — the accepting bird
+          // just "owns" the reward, it has no work of its own to pursue, so
+          // it stays free to act normally instead of getting tied up.
+          if (accepted.kind === 'gather' || accepted.kind === 'hunt') {
+            bird.currentJobId = accepted.id;
+            bird.targetKind = null;
+            bird.targetRefUid = null;
+            bird.workProgress = 0;
+          }
           accepted.status = 'inProgress';
           accepted.acceptedBy = bird.defId;
         }
@@ -478,11 +570,13 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
           grantExp(bird, request.expReward, newLog);
           useTownStore.getState().addDevelopmentPoints(request.developmentPoints);
           useTownStore.getState().addReputation(request.reputationPoints);
+          // Only 'gather' jobs ever set outcome.jobCompletedId — 'hunt'
+          // completions are detected later, in the kills loop below.
           newLog.push(
             makeLogEntry(
               bird.name,
               'job',
-              `${bird.name}が依頼(${MATERIAL_LABEL[request.materialId]}${request.amount}個)を達成した!(報酬${request.reward}G/経験値${request.expReward})`
+              `${bird.name}が依頼(${MATERIAL_LABEL[request.materialId!]}${request.amount}個)を達成した!(報酬${request.reward}G/経験値${request.expReward})`
             )
           );
         }
@@ -558,23 +652,6 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       }
     }
 
-    if (completedJobIds.size > 0) {
-      requests = requests.map((r) => {
-        if (!completedJobIds.has(r.id)) return r;
-        goldToAdd -= r.reward; // paid out below alongside the gathered material's own gold-neutral value
-        return { ...r, status: 'done' as const };
-      });
-      // Refill 1:1 for each slot that just freed up, capped at
-      // MAX_ACTIVE_REQUESTS — keeps the board a steady, bounded pool without
-      // overriding the player's own choice of which presets to post.
-      let activeCount = requests.filter((r) => r.status !== 'done').length;
-      for (let i = 0; i < completedJobIds.size && activeCount < MAX_ACTIVE_REQUESTS; i++) {
-        const preset = JOB_PRESETS[Math.floor(Math.random() * JOB_PRESETS.length)];
-        requests = [...requests, buildRequestFromPreset(preset)];
-        activeCount += 1;
-      }
-    }
-
     const combatResult = resolveAttacks(enemies, allAssignments);
     enemies = combatResult.enemies.map((e) =>
       e.defeated && e.respawnAt === null ? { ...e, respawnAt: now + ENEMY_RESPAWN_MS } : e
@@ -584,6 +661,38 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       // Mone's alternate recruitment path — the town's first wolf-tier kill.
       if (kill.enemyName === WOLF_ENEMY_NAME) {
         useQuestStore.getState().complete(MONE_WOLF_KILL_MILESTONE_ID);
+      }
+      // 'hunt' job progress — only counts toward the bird that actually
+      // accepted the job (mirrors gather, where the accepting bird is the
+      // one that has to do the delivering), not just anyone who helped.
+      const huntRequest = requests.find(
+        (r) =>
+          r.kind === 'hunt' &&
+          r.status === 'inProgress' &&
+          r.enemyName === kill.enemyName &&
+          r.acceptedBy &&
+          kill.participants.includes(r.acceptedBy)
+      );
+      if (huntRequest) {
+        huntRequest.delivered += 1;
+        if (huntRequest.delivered >= huntRequest.amount) {
+          completedJobIds.add(huntRequest.id);
+          const bird = nextBirds.find((b) => b.defId === huntRequest.acceptedBy);
+          if (bird) {
+            grantExp(bird, huntRequest.expReward, newLog);
+            useTownStore.getState().addDevelopmentPoints(huntRequest.developmentPoints);
+            useTownStore.getState().addReputation(huntRequest.reputationPoints);
+            bird.gold += huntRequest.reward;
+            bird.currentJobId = null;
+            newLog.push(
+              makeLogEntry(
+                bird.name,
+                'job',
+                `${bird.name}が依頼(${huntRequest.enemyName}${huntRequest.amount}体討伐)を達成した!(報酬${huntRequest.reward}G/経験値${huntRequest.expReward})`
+              )
+            );
+          }
+        }
       }
       for (const { unitUid, gold } of kill.rewards) {
         const bird = nextBirds.find((b) => b.defId === unitUid);
@@ -620,6 +729,23 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
             `${participantNames.join('・')}が${kill.enemyName}を倒した!(報酬${kill.totalGold}G、街に${kill.feeGold}G)`
           )
         );
+      }
+    }
+
+    if (completedJobIds.size > 0) {
+      requests = requests.map((r) => {
+        if (!completedJobIds.has(r.id)) return r;
+        goldToAdd -= r.reward; // paid out below alongside the gathered material's own gold-neutral value
+        return { ...r, status: 'done' as const };
+      });
+      // Refill 1:1 for each slot that just freed up, capped at
+      // MAX_ACTIVE_REQUESTS — keeps the board a steady, bounded pool without
+      // overriding the player's own choice of which presets to post.
+      let activeCount = requests.filter((r) => r.status !== 'done').length;
+      for (let i = 0; i < completedJobIds.size && activeCount < MAX_ACTIVE_REQUESTS; i++) {
+        const preset = JOB_PRESETS[Math.floor(Math.random() * JOB_PRESETS.length)];
+        requests = [...requests, buildRequestFromPreset(preset)];
+        activeCount += 1;
       }
     }
 

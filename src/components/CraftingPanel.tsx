@@ -6,6 +6,7 @@ import { CRAFTING_RECIPES } from '../data/recipes';
 import { ITEM_DEF_MAP } from '../data/items';
 import { MATERIAL_ICON, MATERIAL_LABEL } from '../data/materials';
 import { usePlayerStore } from '../store/usePlayerStore';
+import { useWorldStore } from '../store/useWorldStore';
 import { AnimatedPressable } from './AnimatedPressable';
 import { theme } from '../theme';
 
@@ -23,6 +24,7 @@ export function CraftingPanel({ categoryFilter }: Props) {
   const materials = usePlayerStore((s) => s.materials);
   const items = usePlayerStore((s) => s.items);
   const craftItem = usePlayerStore((s) => s.craftItem);
+  const reportCraftCompleted = useWorldStore((s) => s.reportCraftCompleted);
 
   const recipes = categoryFilter
     ? CRAFTING_RECIPES.filter((r) => categoryFilter.includes(ITEM_DEF_MAP[r.resultItemId].category))
@@ -60,7 +62,9 @@ export function CraftingPanel({ categoryFilter }: Props) {
             <AnimatedPressable
               style={[styles.craftButton, !canAfford && styles.craftButtonDisabled]}
               disabled={!canAfford}
-              onPress={() => craftItem(recipe.id)}
+              onPress={() => {
+                if (craftItem(recipe.id)) reportCraftCompleted(recipe.resultItemId);
+              }}
             >
               <Text style={styles.craftButtonText}>{canAfford ? '加工する' : '素材が足りません'}</Text>
             </AnimatedPressable>

@@ -28,6 +28,7 @@ export function TownScreen() {
   const world = useWorldStore((s) => s.world);
   const initWorld = useWorldStore((s) => s.initWorld);
   const postRequest = useWorldStore((s) => s.postRequest);
+  const deliverToMerchant = useWorldStore((s) => s.deliverToMerchant);
   const plots = useTownStore((s) => s.plots);
   const developmentPoints = useTownStore((s) => s.developmentPoints);
   const levelUpEvents = useTownStore((s) => s.levelUpEvents);
@@ -125,7 +126,10 @@ export function TownScreen() {
         visible={boardVisible}
         onClose={() => setBoardVisible(false)}
         requests={world.requests}
+        merchant={world.merchant}
+        playerItems={items}
         onPost={handlePost}
+        onDeliverToMerchant={deliverToMerchant}
       />
 
       <ShopModal visible={openShop !== null} onClose={() => setOpenShop(null)} shopKind={openShop} />

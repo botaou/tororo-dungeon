@@ -26,6 +26,11 @@ interface PlayerActions {
   // Move `amount` units of a warehouse item onto a shop's shelf, making it
   // actually purchasable. Returns false if the warehouse doesn't have enough.
   stockItem: (shopKind: ShopKind, itemId: ItemId, amount: number) => boolean;
+  // Removes `amount` units of a warehouse item outright — no shelf involved,
+  // unlike stockItem. Used for delivering a crafted item to the visiting
+  // merchant to fulfill a 'merchantDeliver' job request (see useWorldStore's
+  // deliverToMerchant). Returns false if the warehouse doesn't have enough.
+  consumeItems: (itemId: ItemId, amount: number) => boolean;
   // Background NPC restock for feed-shop commodity staples: adds straight
   // to the shelf (bypassing the crafted-goods warehouse) at a cost to gold.
   restockShopItem: (shopKind: ShopKind, itemId: ItemId, amount: number, unitCost: number) => void;
@@ -105,6 +110,13 @@ export const usePlayerStore = create<PlayerStore>()(
         const nextItems = { ...items, [itemId]: (items[itemId] ?? 0) - amount };
         const nextShelf = { ...shopStock[shopKind], [itemId]: (shopStock[shopKind][itemId] ?? 0) + amount };
         set({ items: nextItems, shopStock: { ...shopStock, [shopKind]: nextShelf } });
+        return true;
+      },
+
+      consumeItems: (itemId, amount) => {
+        const { items } = get();
+        if ((items[itemId] ?? 0) < amount) return false;
+        set({ items: { ...items, [itemId]: (items[itemId] ?? 0) - amount } });
         return true;
       },
 

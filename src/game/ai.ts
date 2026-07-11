@@ -795,9 +795,11 @@ function executeRest(bird: BirdState, world: AiWorld): AiStepOutcome {
   return emptyOutcome();
 }
 
-// Any bird with an accepted job heads for the nearest unclaimed node of the
-// requested material, delivers it, and collects the bounty on completion —
-// this overrides normal category selection until the job concludes.
+// Any bird with an accepted job pursues it — this overrides normal category
+// selection until the job concludes. Only 'gather' and 'hunt' jobs ever end
+// up here (see useWorldStore's acceptance loop): 'craft'/'merchantDeliver'
+// jobs are player actions, so an accepting bird for those never gets
+// currentJobId set at all and just keeps acting normally.
 function stepJob(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutcome {
   const outcome = emptyOutcome();
   const request = world.requests.find((r) => r.id === bird.currentJobId);
@@ -806,6 +808,10 @@ function stepJob(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutc
     bird.targetKind = null;
     bird.targetRefUid = null;
     return outcome;
+  }
+
+  if (request.kind === 'hunt') {
+    return stepHuntJob(bird, def, world, request.enemyName!);
   }
 
   const matching = world.miningNodes.filter((m) => !m.collected && m.resource === request.materialId);
@@ -855,6 +861,53 @@ function stepJob(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutc
         bird.currentJobId = null;
       }
     }
+  }
+  return outcome;
+}
+
+// A 'hunt' job's bird actively seeks out the specific enemy species by name
+// (enemies share a name across their several map spawns) instead of just
+// fighting whatever's nearest, same shape as stepJob's gather pursuit. Only
+// pushes the attack assignment — the kill itself resolves later in the same
+// tick (see combat.ts's resolveAttacks), and useWorldStore's kills loop is
+// what actually counts progress/completes the job and clears currentJobId,
+// since a single kill can finish off a job even mid-tick relative to this
+// function's own bookkeeping.
+function stepHuntJob(bird: BirdState, def: CharacterDef, world: AiWorld, enemyName: string): AiStepOutcome {
+  const outcome = emptyOutcome();
+  const matching = world.enemies.filter((e) => !e.defeated && e.hp > 0 && e.name === enemyName);
+  const stillValid = bird.targetKind === 'enemy' && matching.some((e) => e.uid === bird.targetRefUid);
+  if (!stillValid) {
+    const target = nearest(matching, bird.x, bird.y);
+    if (!target) {
+      // None of that species alive right now — hang around town and keep
+      // the job, same fallback as gather's "nothing available" case.
+      const hasDest = bird.wanderX !== null && bird.wanderY !== null;
+      const arrived = hasDest ? moveToward(bird, bird.wanderX!, bird.wanderY!) : true;
+      if (!hasDest || arrived) {
+        const dest = randomPointNearTown(TOWN_RADIUS * 1.6);
+        bird.wanderX = dest.x;
+        bird.wanderY = dest.y;
+      }
+      bird.activity = 'idle';
+      return outcome;
+    }
+    bird.targetKind = 'enemy';
+    bird.targetRefUid = target.uid;
+  }
+
+  const enemy = matching.find((e) => e.uid === bird.targetRefUid);
+  if (!enemy) return outcome;
+
+  const arrived = moveToward(bird, enemy.x, enemy.y);
+  bird.activity = 'enemy';
+  if (arrived) {
+    outcome.assignments.push({
+      unitUid: bird.defId,
+      enemyUid: enemy.uid,
+      damage: getEffectiveStats(bird).atk,
+      materialBonusPercent: def.materialBonusPercent ?? 0,
+    });
   }
   return outcome;
 }

@@ -375,11 +375,30 @@ export interface BirdState {
 
 export type JobStatus = 'open' | 'inProgress' | 'done';
 
-// A request posted on the board: "I want N of material X, here's the
-// reward" — birds decide for themselves whether to take it.
+// What kind of work a request asks for — each kind targets a different
+// existing system and tracks progress differently (see stepJob in ai.ts and
+// useWorldStore's tick/reportCraftCompleted/deliverToMerchant):
+// - 'gather': deliver N of a material (the original job type; a bird
+//   physically gathers and carries it, same as free-roam mining).
+// - 'hunt': defeat N of a specific enemy species (by name — enemies share a
+//   name across their several map instances, e.g. all オオカミ spawns count).
+//   The accepting bird actively seeks that enemy out (see stepJob).
+// - 'craft': craft N of a specific item at any shop's crafting panel — a
+//   player action, not something the accepting bird does itself.
+// - 'merchantDeliver': deliver N of a specific item to the visiting
+//   merchant while present — also a player action (see deliverToMerchant),
+//   and impossible to progress while no merchant has arrived yet.
+export type JobKind = 'gather' | 'hunt' | 'craft' | 'merchantDeliver';
+
+// A request posted on the board — birds decide for themselves whether to
+// take it (see game/requests.ts's scoring, which is kind-agnostic). Exactly
+// one of materialId/enemyName/itemId is set, matching `kind`.
 export interface JobRequest {
   id: string;
-  materialId: MaterialId;
+  kind: JobKind;
+  materialId: MaterialId | null; // set only when kind === 'gather'
+  enemyName: string | null; // set only when kind === 'hunt'
+  itemId: ItemId | null; // set only when kind === 'craft' | 'merchantDeliver'
   amount: number;
   reward: number; // gold, paid to the completing bird
   // Granted to the completing bird alongside the gold reward (see grantExp
@@ -396,9 +415,9 @@ export interface JobRequest {
   status: JobStatus;
   acceptedBy: string | null; // bird defId
   createdAt: number;
-  // Cumulative amount delivered so far — a single gather trip may not yield
-  // enough on its own, so progress accumulates across trips until it
-  // reaches `amount` (see stepJob in ai.ts). Starts at 0 when posted.
+  // Cumulative progress so far, in whatever unit `kind` counts (materials
+  // delivered, enemies defeated, items crafted/delivered) — accumulates
+  // until it reaches `amount`. Starts at 0 when posted.
   delivered: number;
 }
 
