@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, Image, StyleSheet, Text, TouchableWithoutFeedback, View } from 'react-native';
 
 import {
@@ -56,6 +56,54 @@ const FIELD_ZONE_PATCHES: { cx: number; cy: number; rx: number; ry: number; text
   { cx: 0.5, cy: 0.13, rx: 0.14, ry: 0.08, texture: 'ruins' }, // north
 ];
 
+// Displayed size of one repeating ground tile in the background patches
+// below. Deliberately NOT relying on Image's resizeMode="repeat" (which
+// tiles at the source file's own native pixel size and has inconsistent
+// platform support) — instead we lay out an explicit grid of ordinary
+// resizeMode="cover" Image cells ourselves, so behavior is the same
+// wherever plain <Image> works at all. 60px keeps the total tile count per
+// patch modest (tens, not hundreds) since this grid is recomputed only when
+// a patch's own size changes (see the useMemo calls below), not every game
+// tick.
+const GROUND_TILE_SIZE = 60;
+
+// A memoized grid of repeating ground-tile cells filling a width x height
+// box. Wrapped in React.memo + useMemo so re-renders of the (frequently
+// ticking) WorldMap component don't re-layout or re-create this potentially
+// large list of Image elements unless the box's own size actually changes.
+const TiledBackground = React.memo(function TiledBackground({
+  width,
+  height,
+  source,
+}: {
+  width: number;
+  height: number;
+  source: number;
+}) {
+  const cells = useMemo(() => {
+    const cols = Math.ceil(width / GROUND_TILE_SIZE) + 1;
+    const rows = Math.ceil(height / GROUND_TILE_SIZE) + 1;
+    const list: { left: number; top: number }[] = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) list.push({ left: c * GROUND_TILE_SIZE, top: r * GROUND_TILE_SIZE });
+    }
+    return list;
+  }, [width, height]);
+
+  return (
+    <>
+      {cells.map((cell, i) => (
+        <Image
+          key={i}
+          source={source}
+          resizeMode="cover"
+          style={[styles.tileCell, { left: cell.left, top: cell.top }]}
+        />
+      ))}
+    </>
+  );
+});
+
 interface Props {
   enemies: EnemyInstance[];
   miningNodes: MiningNodeInstance[];
@@ -98,9 +146,17 @@ export function WorldMap({
   const zoneWidth = zoneRadius.rx * 2 * fieldWidth;
   const zoneHeight = zoneRadius.ry * 2 * fieldHeight;
 
-  return (
-    <View style={[styles.field, { width: fieldWidth, height: fieldHeight }]}>
-      {FIELD_ZONE_PATCHES.map((p, i) => {
+  // WorldMap re-renders every game tick (birds/enemies/etc. are fresh arrays
+  // each tick), but these background layers only ever depend on constants
+  // (the field patches) or on the town's zone size (which only changes on a
+  // town level-up). Recomputing — and re-laying-out every one of the tiled
+  // Image cells inside them — on every single tick was cheap to write but
+  // expensive to run, and was the real cause of a reported freeze (tap and
+  // scroll both stop responding once the JS thread is stuck redoing this
+  // every tick). Memoizing means this subtree is built once and left alone.
+  const fieldZonePatchNodes = useMemo(
+    () =>
+      FIELD_ZONE_PATCHES.map((p, i) => {
         const w = p.rx * 2 * fieldWidth;
         const h = p.ry * 2 * fieldHeight;
         return (
@@ -118,46 +174,63 @@ export function WorldMap({
               },
             ]}
           >
-            <Image source={TILE_REPEAT_IMAGES[p.texture]} resizeMode="repeat" style={styles.fieldZoneTexture} />
+            <TiledBackground width={w} height={h} source={TILE_REPEAT_IMAGES[p.texture]} />
           </View>
         );
-      })}
+      }),
+    [fieldWidth, fieldHeight]
+  );
 
-      {/* The town zone's own backdrop — a warm-toned ellipse (vs. the
-          field's meadow green) that grows with town level, plus a dashed
-          ring marking the boundary between "town" and "adventure field".
-          A faint tiled grass texture sits underneath the tint so it reads
-          as "cozy garden ground" rather than a flat color, without
-          overpowering the town's flat, clean-lined look. */}
-      <View
-        pointerEvents="none"
-        style={[
-          styles.townZoneBackdrop,
-          {
-            left: TOWN_X * fieldWidth - zoneWidth / 2,
-            top: TOWN_Y * fieldHeight - zoneHeight / 2,
-            width: zoneWidth,
-            height: zoneHeight,
-            borderRadius: Math.max(zoneWidth, zoneHeight),
-          },
-        ]}
-      >
-        <Image source={TILE_REPEAT_IMAGES.town} resizeMode="repeat" style={styles.townZoneTexture} />
-        <View style={styles.townZoneTint} />
-      </View>
-      <View
-        pointerEvents="none"
-        style={[
-          styles.townZoneBoundary,
-          {
-            left: TOWN_X * fieldWidth - zoneWidth / 2,
-            top: TOWN_Y * fieldHeight - zoneHeight / 2,
-            width: zoneWidth,
-            height: zoneHeight,
-            borderRadius: Math.max(zoneWidth, zoneHeight),
-          },
-        ]}
-      />
+  // The town zone's own backdrop — a warm-toned ellipse (vs. the field's
+  // meadow green) that grows with town level, plus a dashed ring marking the
+  // boundary between "town" and "adventure field". A faint tiled grass
+  // texture sits underneath the tint so it reads as "cozy garden ground"
+  // rather than a flat color, without overpowering the town's flat,
+  // clean-lined look.
+  const townZoneNodes = useMemo(
+    () => (
+      <>
+        <View
+          pointerEvents="none"
+          style={[
+            styles.townZoneBackdrop,
+            {
+              left: TOWN_X * fieldWidth - zoneWidth / 2,
+              top: TOWN_Y * fieldHeight - zoneHeight / 2,
+              width: zoneWidth,
+              height: zoneHeight,
+              borderRadius: Math.max(zoneWidth, zoneHeight),
+            },
+          ]}
+        >
+          <View style={styles.townZoneTextureLayer}>
+            <TiledBackground width={zoneWidth} height={zoneHeight} source={TILE_REPEAT_IMAGES.town} />
+          </View>
+          <View style={styles.townZoneTint} />
+        </View>
+        <View
+          pointerEvents="none"
+          style={[
+            styles.townZoneBoundary,
+            {
+              left: TOWN_X * fieldWidth - zoneWidth / 2,
+              top: TOWN_Y * fieldHeight - zoneHeight / 2,
+              width: zoneWidth,
+              height: zoneHeight,
+              borderRadius: Math.max(zoneWidth, zoneHeight),
+            },
+          ]}
+        />
+      </>
+    ),
+    [fieldWidth, fieldHeight, zoneWidth, zoneHeight]
+  );
+
+  return (
+    <View style={[styles.field, { width: fieldWidth, height: fieldHeight }]}>
+      {fieldZonePatchNodes}
+
+      {townZoneNodes}
 
       {/* A simple cross-road motif suggesting the town's plots all connect
           back to the town hall — not literal pathing, just a quick visual
@@ -726,9 +799,11 @@ const styles = StyleSheet.create({
     backgroundColor: theme.ground,
   },
   fieldZonePatch: { position: 'absolute', opacity: 0.45, overflow: 'hidden' },
-  fieldZoneTexture: { width: '100%', height: '100%' },
+  // Each ground-tile cell in a TiledBackground grid — absolute-positioned by
+  // the grid's own computed left/top, sized by GROUND_TILE_SIZE.
+  tileCell: { position: 'absolute', width: GROUND_TILE_SIZE, height: GROUND_TILE_SIZE },
   townZoneBackdrop: { position: 'absolute', overflow: 'hidden' },
-  townZoneTexture: { position: 'absolute', width: '100%', height: '100%', opacity: 0.4 },
+  townZoneTextureLayer: { position: 'absolute', width: '100%', height: '100%', opacity: 0.4 },
   townZoneTint: { position: 'absolute', width: '100%', height: '100%', backgroundColor: theme.bgBottom, opacity: 0.6 },
   townZoneBoundary: {
     position: 'absolute',
