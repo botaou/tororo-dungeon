@@ -31,6 +31,10 @@ export function WelcomeBackModal({ report, onClose }: Props) {
     (sum, o) => sum + Object.values(o.materialsGained).reduce((s, n) => s + (n ?? 0), 0),
     0
   );
+  // How much of what birds gathered actually landed in the shared town
+  // warehouse (via selling to the shop) rather than staying in a bird's own
+  // pocket — see offlineProgress.ts's sell-trip simulation.
+  const totalWarehouseGain = Object.values(report.materialsDelta).reduce((s, n) => s + Math.max(0, n ?? 0), 0);
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
@@ -56,6 +60,11 @@ export function WelcomeBackModal({ report, onClose }: Props) {
           </Text>
           {totalMaterialsGained > 0 && (
             <Text style={styles.bodyText}>鳥たちが集めた素材: 合計{totalMaterialsGained}個</Text>
+          )}
+          {totalWarehouseGain > 0 && (
+            <Text style={styles.bodyText}>
+              うち街の倉庫に入った分: {totalWarehouseGain}個(鳥からの買い取り -{report.sellExpense}G)
+            </Text>
           )}
 
           <Text style={styles.sectionLabel}>🐦 鳥たちのようす</Text>

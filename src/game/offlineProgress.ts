@@ -19,6 +19,15 @@
 // request-board jobs, and per-tick satiety/mood cycling — a bird is just
 // assumed to have eaten for free the whole time and settles back near its
 // normal baseline mood.
+//
+// Selling to the town's shop IS modeled (see the sell-trip loop below) even
+// though mood isn't — otherwise every material a bird gathers offline would
+// pile up in that bird's own pocket forever, and the shared town warehouse
+// would never grow from a long offline gap the way it does during online
+// play (where a free bird periodically walks over and sells its most
+// plentiful material). Approximated at the mood-agnostic SELL_CHECK_CHANCE_BASE
+// rate (ignoring the higher "wantsMoney" rate, consistent with not modeling
+// mood at all) rather than a full per-personality calibration.
 
 import { ItemId, MaterialId } from '../types';
 import { BirdWallet } from '../store/useBirdEconomyStore';
@@ -32,6 +41,9 @@ import {
   OFFLINE_TICKS_PER_GATHER,
   OFFLINE_TICKS_PER_KILL,
   SECURITY_FEE_RATE,
+  SELL_CHECK_CHANCE_BASE,
+  SELL_MAX_GOLD_PER_TRIP,
+  SELL_MAX_PER_TRIP,
   STARTING_HAPPINESS,
   STARTING_SATIETY,
   TICK_MS,
@@ -57,7 +69,8 @@ export interface OfflineReport {
   huntFeeIncome: number; // town's cut of offline combat rewards
   travelerIncome: number; // town's income from offline traveler visits
   townGoldDelta: number; // huntFeeIncome + travelerIncome
-  materialsDelta: Partial<Record<MaterialId, number>>; // net change to the town warehouse (traveler purchases only)
+  sellExpense: number; // gold the town spent buying materials birds sold to the shop
+  materialsDelta: Partial<Record<MaterialId, number>>; // net change to the town warehouse (bird sales add, traveler purchases remove)
   birdOutcomes: OfflineBirdOutcome[];
   highlight: string; // one flavor line picked from whatever stood out, or a generic "quiet" line
 }
@@ -70,11 +83,22 @@ export function simulateOfflineProgress(
   realElapsedMs: number,
   cappedRealElapsedMs: number,
   wallets: Record<string, BirdWallet>,
-  townMaterials: Record<MaterialId, number>
+  townMaterials: Record<MaterialId, number>,
+  playerGold: number
 ): OfflineReport {
   const effectiveTicks = Math.floor(cappedRealElapsedMs / TICK_MS);
 
   let huntFeeIncome = 0;
+  let sellExpense = 0;
+  // Mutated by both the per-bird selling loop below and the traveler loop
+  // further down, then diffed against townMaterials at the end — a single
+  // running snapshot keeps the two income sources (bird sales add, traveler
+  // purchases remove) consistent instead of tracked separately.
+  const materialsSnapshot = { ...townMaterials };
+  // Capped the same way a single online sale is (SELL_MAX_GOLD_PER_TRIP per
+  // trip) and never allowed to go negative, so a long offline gap can't let
+  // simulated buying-from-birds outspend what the player actually has.
+  let simulatedPlayerGold = playerGold;
   const birdOutcomes: OfflineBirdOutcome[] = [];
   const highlights: string[] = [];
 
@@ -144,9 +168,41 @@ export function simulateOfflineProgress(
       nextItems[itemId] = (nextItems[itemId] ?? 0) + 1;
     }
 
+    // Same "sell the single most-plentiful material" behavior as the
+    // online path's pickSellOffer/executeSellTrip, just rolled in bulk over
+    // the whole offline gap instead of one tick at a time. Without this,
+    // everything gathered offline would stay stuck in the bird's own
+    // pocket, and the shared town warehouse (and bird's gold) would never
+    // grow the way it does during an equivalent stretch of online play.
+    let sellGoldGained = 0;
+    const sellTrips = Math.round(effectiveTicks * SELL_CHECK_CHANCE_BASE);
+    for (let i = 0; i < sellTrips; i++) {
+      let bestId: MaterialId | null = null;
+      let bestAmount = 0;
+      for (const [materialId, amount] of Object.entries(nextInventory) as [MaterialId, number][]) {
+        if ((amount ?? 0) > bestAmount) {
+          bestId = materialId;
+          bestAmount = amount ?? 0;
+        }
+      }
+      if (!bestId || bestAmount <= 0) break;
+      const unitPrice = MATERIAL_SELL_PRICE[bestId];
+      const offeredAmount = Math.min(bestAmount, SELL_MAX_PER_TRIP);
+      const spendCap = Math.min(simulatedPlayerGold, SELL_MAX_GOLD_PER_TRIP);
+      const affordableUnits = unitPrice > 0 ? Math.floor(spendCap / unitPrice) : 0;
+      const soldAmount = Math.min(offeredAmount, affordableUnits);
+      if (soldAmount <= 0) continue;
+      const cost = soldAmount * unitPrice;
+      nextInventory[bestId] = bestAmount - soldAmount;
+      materialsSnapshot[bestId] = (materialsSnapshot[bestId] ?? 0) + soldAmount;
+      simulatedPlayerGold -= cost;
+      sellExpense += cost;
+      sellGoldGained += cost;
+    }
+
     const updatedWallet: BirdWallet = {
       ...wallet,
-      gold: wallet.gold + goldGained,
+      gold: wallet.gold + goldGained + sellGoldGained,
       inventory: nextInventory,
       items: nextItems,
       level,
@@ -175,13 +231,14 @@ export function simulateOfflineProgress(
     if (levelsGained > 0) highlights.push(`${c.name}がLv${level}まで成長していました`);
     if (itemsFound.length > 0) highlights.push(`${c.name}が掘り出し物を見つけていました`);
     if (encounters > 0 && goldGained > 0) highlights.push(`${c.name}が討伐で${goldGained}Gを稼いでいました`);
+    if (sellGoldGained > 0) highlights.push(`${c.name}が街に素材を売っていました(+${sellGoldGained}G)`);
   }
 
   // Traveler visits — same odds as the online path (see useWorldStore's
   // tick()), buying straight out of whatever the town happens to have in
-  // stock right now.
+  // stock right now (materialsSnapshot already reflects any bird sales
+  // above, so a traveler can draw from stock the birds just sold in).
   let travelerIncome = 0;
-  const materialsSnapshot = { ...townMaterials };
   const travelerRolls = Math.round(effectiveTicks * TRAVELER_CHECK_CHANCE);
   for (let i = 0; i < travelerRolls; i++) {
     const owned = (Object.keys(MATERIAL_SELL_PRICE) as MaterialId[]).filter((k) => (materialsSnapshot[k] ?? 0) > 0);
@@ -211,6 +268,7 @@ export function simulateOfflineProgress(
     huntFeeIncome,
     travelerIncome,
     townGoldDelta: huntFeeIncome + travelerIncome,
+    sellExpense,
     materialsDelta,
     birdOutcomes,
     highlight,

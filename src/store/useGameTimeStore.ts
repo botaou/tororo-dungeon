@@ -68,7 +68,8 @@ export const useGameTimeStore = create<GameTimeState & GameTimeActions>()(
         }
 
         const materials = usePlayerStore.getState().materials;
-        const report = simulateOfflineProgress(realElapsedMs, cappedRealElapsedMs, wallets, materials);
+        const playerGold = usePlayerStore.getState().gold;
+        const report = simulateOfflineProgress(realElapsedMs, cappedRealElapsedMs, wallets, materials, playerGold);
 
         const nextWallets = { ...wallets };
         for (const outcome of report.birdOutcomes) {
@@ -78,6 +79,10 @@ export const useGameTimeStore = create<GameTimeState & GameTimeActions>()(
 
         if (report.huntFeeIncome > 0) usePlayerStore.getState().creditHuntToll(report.huntFeeIncome);
         if (report.travelerIncome > 0) usePlayerStore.getState().creditTravelerToll(report.travelerIncome);
+        // Buying materials birds sold offline is a real spend, already capped
+        // against playerGold inside the simulation — not toll income (that's
+        // credited above), just money out in exchange for warehouse stock.
+        if (report.sellExpense > 0) usePlayerStore.getState().trySpendGold(report.sellExpense);
         if (Object.keys(report.materialsDelta).length > 0) {
           usePlayerStore.getState().addMaterials(report.materialsDelta);
         }
