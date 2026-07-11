@@ -20,6 +20,7 @@ import { MATERIAL_ICON } from '../data/materials';
 import { CharacterAvatar } from './CharacterAvatar';
 import { AnimatedPressable } from './AnimatedPressable';
 import { TICK_MS } from '../game/config';
+import { RETREAT_LINES } from '../game/thoughts';
 import { cuteShadow, theme } from '../theme';
 
 const HORIZONTAL_PADDING = 24; // matches TownScreen's paddingHorizontal * 2
@@ -413,7 +414,31 @@ function BirdSprite({
   const prevTargetXRef = useRef(targetX);
   const [facingRight, setFacingRight] = useState(true);
 
-  const fainted = bird.hp <= 0;
+  // A bird whose HP has bottomed out is tired, not incapacitated — it's
+  // already on its way home to recover (see ai.ts's stepRecover), so it
+  // still visibly walks, just dimmed a touch and without any of the
+  // activity-specific animations below (it's not fighting/mining/etc.).
+  const isSulking = bird.hp <= 0;
+
+  // The instant HP bottoms out, pop up a quick, light speech-bubble line
+  // before the bird heads home — never anything heavier than "tired and a
+  // little bratty about it".
+  const [retreatLine, setRetreatLine] = useState<string | null>(null);
+  const bubbleOpacity = useRef(new Animated.Value(0)).current;
+  const prevHpRef = useRef(bird.hp);
+  useEffect(() => {
+    if (prevHpRef.current > 0 && bird.hp <= 0) {
+      setRetreatLine(RETREAT_LINES[Math.floor(Math.random() * RETREAT_LINES.length)]);
+      bubbleOpacity.setValue(1);
+      Animated.sequence([
+        Animated.delay(2200),
+        Animated.timing(bubbleOpacity, { toValue: 0, duration: 400, useNativeDriver: true }),
+      ]).start(({ finished }) => {
+        if (finished) setRetreatLine(null);
+      });
+    }
+    prevHpRef.current = bird.hp;
+  }, [bird.hp, bubbleOpacity]);
 
   // Constant-speed walk: each update is one tick's worth of travel, animated
   // linearly over exactly one tick so consecutive steps chain into smooth,
@@ -433,7 +458,6 @@ function BirdSprite({
   }, [targetX, targetY, pos]);
 
   useEffect(() => {
-    if (fainted) return;
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(walk, { toValue: 1, duration: 260, useNativeDriver: true }),
@@ -442,7 +466,7 @@ function BirdSprite({
     );
     loop.start();
     return () => loop.stop();
-  }, [walk, fainted]);
+  }, [walk]);
 
   const isPassiveActivity =
     bird.activity === 'idle' ||
@@ -456,7 +480,7 @@ function BirdSprite({
     bird.activity === 'recovering';
 
   useEffect(() => {
-    if (fainted || isPassiveActivity) return;
+    if (isSulking || isPassiveActivity) return;
     const isQuick = def.role === 'attacker';
     const loop = Animated.loop(
       Animated.sequence([
@@ -467,10 +491,10 @@ function BirdSprite({
     );
     loop.start();
     return () => loop.stop();
-  }, [bird.activity, def.role, doing, fainted]);
+  }, [bird.activity, def.role, doing, isSulking]);
 
-  const bobY = fainted ? 0 : walk.interpolate({ inputRange: [0, 1], outputRange: [0, -4] });
-  const waddleRotate = fainted ? '0deg' : walk.interpolate({ inputRange: [0, 1], outputRange: ['-6deg', '6deg'] });
+  const bobY = walk.interpolate({ inputRange: [0, 1], outputRange: [0, -4] });
+  const waddleRotate = walk.interpolate({ inputRange: [0, 1], outputRange: ['-6deg', '6deg'] });
 
   const showLunge = bird.activity === 'enemy' && def.role === 'attacker';
   const showMineSwing = bird.activity === 'mining';
@@ -490,6 +514,11 @@ function BirdSprite({
         { transform: [{ translateX: pos.x }, { translateY: Animated.add(pos.y, Animated.add(bobY, hopY)) }] },
       ]}
     >
+      {retreatLine && (
+        <Animated.View style={[styles.speechBubble, { opacity: bubbleOpacity }]}>
+          <Text style={styles.speechBubbleText}>{retreatLine}</Text>
+        </Animated.View>
+      )}
       <TouchableWithoutFeedback onPress={onPress}>
         <View style={styles.tapArea}>
           <Animated.View
@@ -497,13 +526,14 @@ function BirdSprite({
               transform: [
                 { scaleX: facingRight ? 1 : -1 },
                 { scale: Animated.multiply(lungeScale, auraScale) },
-                { rotate: fainted ? '90deg' : waddleRotate },
+                { rotate: waddleRotate },
               ],
-              opacity: fainted ? 0.5 : 1,
+              opacity: isSulking ? 0.6 : 1,
             }}
           >
             <CharacterAvatar characterId={bird.defId} emoji={def.emoji} color={def.color} size={44} />
           </Animated.View>
+          {isSulking && <Text style={styles.sulkBadge}>😤</Text>}
           {showMineSwing && <Text style={styles.pickaxe}>⛏️</Text>}
           {bird.carrying && <Text style={styles.carryBadge}>{MATERIAL_ICON[bird.carrying.materialId]}</Text>}
           {(bird.activity === 'selling' || bird.activity === 'merchantSelling') && (
@@ -584,6 +614,20 @@ const styles = StyleSheet.create({
   emojiLarge: { fontSize: 26 },
   pickaxe: { position: 'absolute', top: -8, right: 0, fontSize: 14 },
   carryBadge: { position: 'absolute', top: -10, right: -4, fontSize: 15 },
+  sulkBadge: { position: 'absolute', top: -10, left: -4, fontSize: 14 },
+  speechBubble: {
+    position: 'absolute',
+    top: -34,
+    alignSelf: 'center',
+    backgroundColor: theme.card,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.cardBorder,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    ...cuteShadow,
+  },
+  speechBubbleText: { fontSize: 10, fontWeight: '700', color: theme.textPrimary },
   tag: { fontSize: 9, fontWeight: '700', color: theme.gold, marginTop: 1 },
   nameTag: { fontSize: 9, fontWeight: '700', color: theme.textPrimary, marginTop: 1 },
   enemyFlash: {

@@ -18,8 +18,8 @@ export const ARRIVAL_THRESHOLD = 0.035;
 // gently pushed apart so they never visually stack on top of each other.
 export const MIN_BIRD_DISTANCE = 0.05;
 
-// A bird whose HP falls to/below this fraction of its max (or hits 0, i.e.
-// faints) drops everything and heads home to recover — this takes priority
+// A bird whose HP falls to/below this fraction of its max (or bottoms out
+// at 0) drops everything and heads home to recover — this takes priority
 // over jobs, carrying, hunger, selling, everything (see ai.ts's stepBird).
 // Once triggered it stays in recovery (see the 'recovering' activity) until
 // fully healed, even if HP climbs back above this threshold en route —

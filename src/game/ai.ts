@@ -239,15 +239,15 @@ function isStillPursuing(bird: BirdState, category: ActivityCategory, world: AiW
 }
 
 export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutcome {
-  // Survival comes before everything else — a bird that's fainted (hp 0)
-  // or critically low heads straight home to recover, overriding jobs,
-  // carrying, hunger, selling, all of it. Once recovery starts it's
-  // "sticky" (bird.activity stays 'recovering') until HP is completely
-  // full, not just back above the trigger threshold — otherwise a bird
-  // would leave home the instant it ticks over the line and immediately
-  // walk back into the same fight that almost killed it (the old faint
-  // loop: faint → tiny in-place heal → straight back into combat → faint
-  // again).
+  // Survival comes before everything else — a bird whose hp has bottomed
+  // out (or gotten critically low) heads straight home to recover,
+  // overriding jobs, carrying, hunger, selling, all of it. Once recovery
+  // starts it's "sticky" (bird.activity stays 'recovering') until HP is
+  // completely full, not just back above the trigger threshold —
+  // otherwise a bird would leave home the instant it ticks over the line
+  // and immediately walk back into the same fight that wore it out in the
+  // first place (the old loop: hp bottoms out → tiny in-place heal →
+  // straight back into combat → hp bottoms out again).
   const isRecovering = bird.activity === 'recovering' ? bird.hp < bird.maxHp : bird.hp <= 0 || bird.hp < bird.maxHp * LOW_HP_RETREAT_THRESHOLD_PERCENT;
   if (isRecovering) {
     return stepRecover(bird);
@@ -339,8 +339,8 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
   }
 }
 
-// Critically wounded or fainted → walk home and convalesce until fully
-// healed (see LOW_HP_RETREAT_THRESHOLD_PERCENT/HOME_HEAL_PER_TICK). No
+// Critically wounded or completely worn out → walk home and rest up until
+// fully healed (see LOW_HP_RETREAT_THRESHOLD_PERCENT/HOME_HEAL_PER_TICK). No
 // in-place instant partial heal, no re-engaging combat halfway recovered —
 // only once HP is completely full does stepBird let normal behavior (and
 // combat) resume.
@@ -868,7 +868,7 @@ export function separateBirds(birds: BirdState[]): BirdState[] {
     for (let j = i + 1; j < next.length; j++) {
       const a = next[i];
       const b = next[j];
-      if (a.hp <= 0 || b.hp <= 0) continue; // fainted birds stay put
+      if (a.hp <= 0 || b.hp <= 0) continue; // a bird heading home to recover isn't jostled by this
       if (!a.isRecruited || !b.isRecruited) continue; // dormant birds don't interact with anyone
 
       const dx = b.x - a.x;

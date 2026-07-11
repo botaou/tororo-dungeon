@@ -94,6 +94,11 @@ const LINES: Record<string, ThoughtLines> = {
   },
 };
 
+// Shown as a floating speech bubble the instant a bird's HP bottoms out,
+// before it heads home to recover — deliberately light and a little
+// bratty ("tired and heading home to sulk"), never anything heavier.
+export const RETREAT_LINES = ['疲れたから帰る〜!', 'もうやーだ。', '飽きた!', 'ぴえん'];
+
 export function getBirdThought(defId: string, mood: MoodId, activity: ActivityKind, hasJob: boolean): string {
   const lines = LINES[defId];
   if (!lines) return '…';

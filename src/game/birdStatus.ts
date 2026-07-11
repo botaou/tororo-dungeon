@@ -3,7 +3,10 @@ import { BirdState } from '../types';
 // Human-readable "現在の状態" for the status card — derived from existing
 // activity/hp fields rather than storing redundant new state.
 export function getBirdStatusLabel(bird: BirdState): string {
-  if (bird.hp <= 0) return '気絶中';
+  // hp<=0 shows as "帰宅中" for the brief window before the bird actually
+  // reaches home (its activity may still read as whatever it was doing the
+  // instant it wore out) — once actually home and topping back up, "療養中".
+  if (bird.hp <= 0) return '帰宅中';
   switch (bird.activity) {
     case 'recovering':
       return '療養中';
