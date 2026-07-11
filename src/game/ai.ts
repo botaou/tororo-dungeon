@@ -55,7 +55,7 @@ interface PersonalityProfile {
   dangerAversion: number; // 0 = fearless, 1 = avoids anything but the weakest foe
 }
 
-const PERSONALITY_PROFILES: Record<Personality, PersonalityProfile> = {
+export const PERSONALITY_PROFILES: Record<Personality, PersonalityProfile> = {
   vanguard: { combat: 0.55, explore: 0.3, mining: 0.1, rest: 0.05, dangerAversion: 0 },
   freeSpirit: { combat: 0.2, explore: 0.2, mining: 0.55, rest: 0.05, dangerAversion: 0.35 },
   clingy: { combat: 0.25, explore: 0.2, mining: 0.15, rest: 0.4, dangerAversion: 0.5 },

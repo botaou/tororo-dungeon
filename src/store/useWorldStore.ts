@@ -56,12 +56,14 @@ import {
   SATIETY_DECAY_PER_TICK,
   SATIETY_HUNGRY_THRESHOLD,
   SELL_MAX_GOLD_PER_TRIP,
+  TICK_MS,
   TRAVELER_CHECK_CHANCE,
   TRAVELER_MAX_PURCHASE,
   TREASURE_RESPAWN_MS,
 } from '../game/config';
 import { usePlayerStore } from './usePlayerStore';
 import { BirdWallet, useBirdEconomyStore } from './useBirdEconomyStore';
+import { useGameTimeStore } from './useGameTimeStore';
 
 let uidCounter = 0;
 function uid(prefix: string): string {
@@ -257,6 +259,10 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
 
     const now = Date.now();
     const newLog: ActivityLogEntry[] = [];
+
+    // Advances the cosmetic game calendar in lockstep with this tick — see
+    // config.ts's ONLINE_TIME_SCALE and useGameTimeStore.
+    useGameTimeStore.getState().advanceOnline(TICK_MS);
 
     // Depleted enemies/resources come back once their respawn timer is up,
     // so the world never runs permanently dry.

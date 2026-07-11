@@ -1,5 +1,7 @@
 // Tunable pacing constants for the prototype.
 
+import { Personality } from '../types';
+
 export const TICK_MS = 1_000;
 
 // How many ticks a bird spends animating a mining/treasure/job encounter
@@ -147,6 +149,51 @@ export const MERCHANT_SELL_CHECK_CHANCE = 0.05;
 // Each tick, a free bird has this chance of checking the merchant's shelf
 // for something affordable (only rolled while a merchant is present).
 export const MERCHANT_BUY_CHECK_CHANCE = 0.02;
+
+// ---- Game-time (calendar) system ----
+// A purely cosmetic "game calendar" layered on top of the tick loop: while
+// the app is open, the calendar advances faster than real time (see
+// useGameTimeStore's advanceOnline), and the gap while the app was closed
+// is caught up in one lump sum on next launch (see game/offlineProgress.ts
+// and useGameTimeStore's catchUpOffline). Nothing in the actual simulation
+// depends on this value today — existing tick-based timers (respawns,
+// merchant visit length, etc.) still run on their own real-tick clocks;
+// this just gives future systems (town level curves, quest deadlines) a
+// shared clock to reference later, per the design request.
+export const ONLINE_TIME_SCALE = 60; // 1 real second online = 60 game-seconds (~1 real minute = 1 game hour)
+
+// How long a closed-app gap can count toward offline progress — caps how
+// much a single catch-up calculation can grant, no matter how long the app
+// was actually closed, so a long absence can't break the economy.
+export const OFFLINE_PROGRESS_CAP_MS = 8 * 60 * 60 * 1000;
+// Gaps shorter than this aren't worth a welcome-back report (covers a quick
+// screen lock or app-switcher glance, not just genuinely leaving).
+export const OFFLINE_MIN_REPORT_MS = 60_000;
+
+// Offline catch-up is a statistical approximation, not a tick-by-tick
+// replay (a capped 8-hour gap is ~28,800 ticks — cheap to approximate,
+// expensive to replay faithfully). These say how many ticks an average
+// combat kill / gathering trip takes for each personality, including
+// travel and however much of its time that personality actually spends
+// pursuing combat/mining versus everything else (hunger, sleep, selling,
+// gear-shopping, resting) — measured empirically by running the real
+// stepBird AI solo for 5000 ticks per personality (see the calibration
+// notes in game/offlineProgress.ts). These numbers vary a lot by
+// personality (a vanguard fights almost every tick it's free; a cautious
+// healer mostly doesn't), which is exactly why they're per-personality
+// instead of one flat constant.
+export const OFFLINE_TICKS_PER_KILL: Record<Personality, number> = {
+  vanguard: 15,
+  freeSpirit: 33,
+  clingy: 60,
+  cautious: 54,
+};
+export const OFFLINE_TICKS_PER_GATHER: Record<Personality, number> = {
+  vanguard: 62,
+  freeSpirit: 21,
+  clingy: 40,
+  cautious: 51,
+};
 
 export const STARTING_GOLD = 300;
 export const STARTING_MATERIALS = {
