@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, StyleSheet, Text, TouchableWithoutFeedback, View, useWindowDimensions } from 'react-native';
+import { Animated, Easing, StyleSheet, Text, TouchableWithoutFeedback, View } from 'react-native';
 
 import {
   BirdState,
@@ -32,7 +32,15 @@ import { RETREAT_LINES } from '../game/thoughts';
 import { MONE_ENCOUNTER_SPOT, TORORO_ENCOUNTER_SPOT } from '../game/recruitment';
 import { cuteShadow, theme } from '../theme';
 
-const HORIZONTAL_PADDING = 24; // matches TownScreen's paddingHorizontal * 2
+// The map's actual, fixed "real" size — deliberately bigger than any phone
+// viewport so the field reads as a real place to pan/zoom around in rather
+// than a shrink-to-fit diorama (see components/PannableMap.tsx, which wraps
+// this in a zoomable/scrollable ScrollView). Every position in this file
+// stays in the same 0..1 normalized coordinate space as before; only the
+// canvas these get multiplied against changed from a window-derived size to
+// this fixed one.
+export const WORLD_CANVAS_WIDTH = 900;
+export const WORLD_CANVAS_HEIGHT = 1400;
 
 // Soft, low-opacity background patches suggesting the field's loose zoning
 // (forest / quarry / mushroom patch / lake / ruins) without needing real
@@ -80,9 +88,8 @@ export function WorldMap({
   onShopPress,
   onMerchantPress,
 }: Props) {
-  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const fieldWidth = Math.max(240, windowWidth - HORIZONTAL_PADDING);
-  const fieldHeight = Math.max(420, windowHeight * 0.72);
+  const fieldWidth = WORLD_CANVAS_WIDTH;
+  const fieldHeight = WORLD_CANVAS_HEIGHT;
   const townLevel = getTownLevel(developmentPoints);
   const townLevelDef = getTownLevelDef(townLevel);
   const zoneRadius = getTownZoneRadius(townLevel);
@@ -90,7 +97,7 @@ export function WorldMap({
   const zoneHeight = zoneRadius.ry * 2 * fieldHeight;
 
   return (
-    <View style={[styles.field, { height: fieldHeight }]}>
+    <View style={[styles.field, { width: fieldWidth, height: fieldHeight }]}>
       {FIELD_ZONE_PATCHES.map((p, i) => (
         <View
           key={i}
@@ -698,12 +705,11 @@ function BirdSprite({
 }
 
 const styles = StyleSheet.create({
+  // The rounded "card frame" look now lives on the viewport wrapper (see
+  // components/PannableMap.tsx) — this is the real, fixed-size scrollable
+  // canvas itself, so it just needs the background fill.
   field: {
     backgroundColor: theme.ground,
-    borderRadius: 20,
-    borderWidth: 3,
-    borderColor: theme.cardBorder,
-    overflow: 'hidden',
   },
   fieldZonePatch: { position: 'absolute', opacity: 0.35 },
   townZoneBackdrop: { position: 'absolute', backgroundColor: theme.bgBottom, opacity: 0.9 },

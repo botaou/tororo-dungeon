@@ -6,7 +6,9 @@ import { usePlayerStore } from '../store/usePlayerStore';
 import { useWorldStore } from '../store/useWorldStore';
 import { useTownStore } from '../store/useTownStore';
 import { TOWN_PLOT_DEFS } from '../data/townGrid';
-import { WorldMap } from '../components/WorldMap';
+import { WorldMap, WORLD_CANVAS_HEIGHT, WORLD_CANVAS_WIDTH } from '../components/WorldMap';
+import { PannableMap } from '../components/PannableMap';
+import { TOWN_X, TOWN_Y } from '../data/world';
 import { AnimatedPressable } from '../components/AnimatedPressable';
 import { RequestBoard } from '../components/RequestBoard';
 import { ShopModal } from '../components/ShopModal';
@@ -96,21 +98,23 @@ export function TownScreen() {
       </View>
 
       <View style={styles.mapWrap}>
-        <WorldMap
-          enemies={world.enemies}
-          miningNodes={world.miningNodes}
-          treasures={world.treasures}
-          leisureSpots={world.leisureSpots}
-          birds={activeBirds}
-          dormantDefIds={dormantDefIds}
-          plotStates={plots}
-          developmentPoints={developmentPoints}
-          merchant={world.merchant}
-          onBirdPress={() => setRosterVisible(true)}
-          onPlotPress={handlePlotPress}
-          onShopPress={(kind) => setOpenShop(kind)}
-          onMerchantPress={() => setMerchantVisible(true)}
-        />
+        <PannableMap contentWidth={WORLD_CANVAS_WIDTH} contentHeight={WORLD_CANVAS_HEIGHT} initialFocus={{ x: TOWN_X, y: TOWN_Y }}>
+          <WorldMap
+            enemies={world.enemies}
+            miningNodes={world.miningNodes}
+            treasures={world.treasures}
+            leisureSpots={world.leisureSpots}
+            birds={activeBirds}
+            dormantDefIds={dormantDefIds}
+            plotStates={plots}
+            developmentPoints={developmentPoints}
+            merchant={world.merchant}
+            onBirdPress={() => setRosterVisible(true)}
+            onPlotPress={handlePlotPress}
+            onShopPress={(kind) => setOpenShop(kind)}
+            onMerchantPress={() => setMerchantVisible(true)}
+          />
+        </PannableMap>
       </View>
 
       <View style={styles.bottomBar}>
