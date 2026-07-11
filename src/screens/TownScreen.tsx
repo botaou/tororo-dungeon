@@ -14,6 +14,7 @@ import { CraftingModal } from '../components/CraftingModal';
 import { PlayerInventoryModal } from '../components/PlayerInventoryModal';
 import { BirdRosterModal } from '../components/BirdRosterModal';
 import { MerchantModal } from '../components/MerchantModal';
+import { RecruitmentModal } from '../components/RecruitmentModal';
 import { ActivityLogPanel } from '../components/ActivityLogPanel';
 import { MaterialId, ShopKind } from '../types';
 import { cuteShadow, theme } from '../theme';
@@ -35,6 +36,10 @@ export function TownScreen() {
   const [rosterVisible, setRosterVisible] = useState(false);
   const [craftingVisible, setCraftingVisible] = useState(false);
   const [merchantVisible, setMerchantVisible] = useState(false);
+  // How many of world.recruitmentEvents we've already shown a modal for —
+  // the array only ever grows, so anything past this index is new (see
+  // useWorldStore's recruitment-trigger checks).
+  const [shownRecruitCount, setShownRecruitCount] = useState(0);
 
   useEffect(() => {
     if (world.birds.length === 0) initWorld();
@@ -43,6 +48,8 @@ export function TownScreen() {
   // Dormant (not-yet-recruited) birds are still tracked in world.birds
   // (see useWorldStore) but never shown on the map or in the roster.
   const activeBirds = world.birds.filter((b) => b.isRecruited);
+  const dormantDefIds = world.birds.filter((b) => !b.isRecruited).map((b) => b.defId);
+  const pendingRecruit = world.recruitmentEvents[shownRecruitCount] ?? null;
 
   const handlePost = (materialId: MaterialId, amount: number, reward: number) => {
     postRequest(materialId, amount, reward);
@@ -87,6 +94,7 @@ export function TownScreen() {
           treasures={world.treasures}
           leisureSpots={world.leisureSpots}
           birds={activeBirds}
+          dormantDefIds={dormantDefIds}
           plotStates={plots}
           merchant={world.merchant}
           onBirdPress={() => setRosterVisible(true)}
@@ -127,6 +135,8 @@ export function TownScreen() {
       <BirdRosterModal visible={rosterVisible} onClose={() => setRosterVisible(false)} birds={activeBirds} />
 
       <MerchantModal visible={merchantVisible} onClose={() => setMerchantVisible(false)} merchant={world.merchant} />
+
+      <RecruitmentModal defId={pendingRecruit} onClose={() => setShownRecruitCount((c) => c + 1)} />
     </SafeAreaView>
   );
 }

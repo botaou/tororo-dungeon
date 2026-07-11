@@ -428,6 +428,11 @@ export interface WorldState {
   requests: JobRequest[];
   activityLog: ActivityLogEntry[];
   merchant: MerchantState | null;
+  // Ever-growing log of dormant-bird recruitments this session (defId per
+  // event) — the UI queues off this to show a join announcement for each
+  // one exactly once (see TownScreen), without needing to guess whether a
+  // given event has already been shown.
+  recruitmentEvents: string[];
 }
 
 // ---- Town expansion (land grid) ----

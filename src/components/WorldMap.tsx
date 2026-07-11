@@ -13,7 +13,7 @@ import {
 } from '../types';
 import { getCharacterDef } from '../data/characters';
 import { TOWN_DECOR, TOWN_X, TOWN_Y } from '../data/world';
-import { BUILDING_ICON, MERCHANT_SPOT, shopKindForPlot, TOWN_PLOT_DEFS } from '../data/townGrid';
+import { BUILDING_ICON, getTownLevel, MERCHANT_SPOT, shopKindForPlot, TOWN_PLOT_DEFS } from '../data/townGrid';
 import { SHOP_DEFS } from '../data/shops';
 import { HOUSE_POSITIONS } from '../data/houses';
 import { MATERIAL_ICON } from '../data/materials';
@@ -21,6 +21,7 @@ import { CharacterAvatar } from './CharacterAvatar';
 import { AnimatedPressable } from './AnimatedPressable';
 import { TICK_MS } from '../game/config';
 import { RETREAT_LINES } from '../game/thoughts';
+import { MONE_ENCOUNTER_SPOT, TORORO_ENCOUNTER_SPOT } from '../game/recruitment';
 import { cuteShadow, theme } from '../theme';
 
 const HORIZONTAL_PADDING = 24; // matches TownScreen's paddingHorizontal * 2
@@ -31,6 +32,10 @@ interface Props {
   treasures: TreasureNodeInstance[];
   leisureSpots: LeisureSpotInstance[];
   birds: BirdState[];
+  // Not-yet-recruited defIds — only used to decide whether to show a
+  // discoverable marker at tororo's/mone's encounter spot (see
+  // game/recruitment.ts); dormant birds otherwise have no map presence.
+  dormantDefIds: string[];
   plotStates: Record<string, TownPlotState>;
   merchant: MerchantState | null;
   onBirdPress: (defId: string) => void;
@@ -45,6 +50,7 @@ export function WorldMap({
   treasures,
   leisureSpots,
   birds,
+  dormantDefIds,
   plotStates,
   merchant,
   onBirdPress,
@@ -55,6 +61,7 @@ export function WorldMap({
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const fieldWidth = Math.max(240, windowWidth - HORIZONTAL_PADDING);
   const fieldHeight = Math.max(420, windowHeight * 0.72);
+  const townLevel = getTownLevel(plotStates);
 
   return (
     <View style={[styles.field, { height: fieldHeight }]}>
@@ -86,8 +93,8 @@ export function WorldMap({
       <View
         style={[styles.town, { left: TOWN_X * fieldWidth - 34, top: TOWN_Y * fieldHeight - 34 }]}
       >
-        <Text style={styles.townEmoji}>{birds.length <= 1 ? '🛖' : '🏘️'}</Text>
-        {birds.length <= 1 && <Text style={styles.townLabel}>ボロ役場</Text>}
+        <Text style={styles.townEmoji}>{townLevel <= 1 ? '🛖' : '🏘️'}</Text>
+        <Text style={styles.townLabel}>{townLevel <= 1 ? 'ボロ役場' : '村役場'}</Text>
       </View>
 
       <ShopkeeperSprite x={TOWN_X * fieldWidth} y={TOWN_Y * fieldHeight + 44} />
@@ -99,6 +106,13 @@ export function WorldMap({
           y={MERCHANT_SPOT.y * fieldHeight}
           onPress={onMerchantPress}
         />
+      )}
+
+      {dormantDefIds.includes('tororo') && (
+        <EncounterMarker x={TORORO_ENCOUNTER_SPOT.x * fieldWidth} y={TORORO_ENCOUNTER_SPOT.y * fieldHeight} />
+      )}
+      {dormantDefIds.includes('mone') && (
+        <EncounterMarker x={MONE_ENCOUNTER_SPOT.x * fieldWidth} y={MONE_ENCOUNTER_SPOT.y * fieldHeight} />
       )}
 
       {birds.map((b) => {
@@ -168,6 +182,34 @@ function ShopkeeperSprite({ x, y }: { x: number; y: number }) {
     <Animated.View style={[styles.sprite, { left: x, top: y, transform: [{ translateY: bobY }] }]}>
       <Text style={styles.emojiLarge}>🧑‍🌾</Text>
       <Text style={styles.nameTag}>店主</Text>
+    </Animated.View>
+  );
+}
+
+// A subtle, discoverable hint that someone's out here — shown at a
+// not-yet-recruited bird's encounter spot (see game/recruitment.ts). Just a
+// gently pulsing "?"; the actual encounter itself is a quiet chance roll
+// once an active bird wanders close, not a tap target.
+function EncounterMarker({ x, y }: { x: number; y: number }) {
+  const pulse = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 1000, useNativeDriver: true, easing: Easing.inOut(Easing.sin) }),
+        Animated.timing(pulse, { toValue: 0, duration: 1000, useNativeDriver: true, easing: Easing.inOut(Easing.sin) }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+
+  const scale = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.9, 1.1] });
+  const opacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0.9] });
+
+  return (
+    <Animated.View style={[styles.sprite, { left: x, top: y, transform: [{ scale }], opacity }]}>
+      <Text style={styles.emojiLarge}>❓</Text>
     </Animated.View>
   );
 }

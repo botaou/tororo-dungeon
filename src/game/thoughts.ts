@@ -99,6 +99,15 @@ const LINES: Record<string, ThoughtLines> = {
 // bratty ("tired and heading home to sulk"), never anything heavier.
 export const RETREAT_LINES = ['疲れたから帰る〜!', 'もうやーだ。', '飽きた!', 'ぴえん'];
 
+// One short line shown in the join announcement when a dormant bird
+// actually joins the town (see game/recruitment.ts / RecruitmentModal).
+export const RECRUIT_LINES: Record<string, string> = {
+  vivi: '街が大きくなってきたね!わたしも仲間に入れて!',
+  haku: '少しはお役に立てそうです。よろしくお願いします。',
+  tororo: 'ここで会ったのも何かの縁!一緒に行こう!',
+  mone: '面白そうな街だね!わたしも混ぜて!',
+};
+
 export function getBirdThought(defId: string, mood: MoodId, activity: ActivityKind, hasJob: boolean): string {
   const lines = LINES[defId];
   if (!lines) return '…';

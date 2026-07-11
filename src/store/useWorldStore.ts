@@ -29,6 +29,15 @@ import { AiWorld, separateBirds, stepBird } from '../game/ai';
 import { respawnPosition, stepEnemy } from '../game/enemyAi';
 import { AttackAssignment, applyHealing, resolveAttacks } from '../game/combat';
 import { scoreRequestAcceptance, tryAcceptRequest } from '../game/requests';
+import {
+  checkHaku,
+  checkMoneEncounter,
+  checkTororoEncounter,
+  checkVivi,
+  HAKU_QUEST_ID,
+  MONE_WOLF_KILL_MILESTONE_ID,
+  WOLF_ENEMY_NAME,
+} from '../game/recruitment';
 import { getEffectiveStats, maybeAutoEquip } from '../game/birdStats';
 import { MATERIAL_LABEL } from '../data/materials';
 import { ITEM_DEF_MAP, MERCHANT_COMMON_ITEM_IDS, MERCHANT_RARE_ITEM_IDS, RESTOCKED_ITEM_IDS } from '../data/items';
@@ -65,6 +74,9 @@ import {
 import { usePlayerStore } from './usePlayerStore';
 import { BirdWallet, useBirdEconomyStore } from './useBirdEconomyStore';
 import { useGameTimeStore } from './useGameTimeStore';
+import { useQuestStore } from './useQuestStore';
+import { useTownStore } from './useTownStore';
+import { getTownLevel } from '../data/townGrid';
 
 let uidCounter = 0;
 function uid(prefix: string): string {
@@ -179,7 +191,17 @@ function buildInitialWorld(): WorldState {
     };
   });
 
-  return { enemies, miningNodes, treasures, leisureSpots, birds, requests: [], activityLog: [], merchant: null };
+  return {
+    enemies,
+    miningNodes,
+    treasures,
+    leisureSpots,
+    birds,
+    requests: [],
+    activityLog: [],
+    merchant: null,
+    recruitmentEvents: [],
+  };
 }
 
 // Rolls a fresh randomized shelf for a new merchant visit — each slot
@@ -241,6 +263,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     requests: [],
     activityLog: [],
     merchant: null,
+    recruitmentEvents: [],
   },
 
   initWorld: () => set({ world: buildInitialWorld() }),
@@ -411,6 +434,11 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
           m.uid === outcome.miningCollectedUid ? { ...m, collected: true, respawnAt: now + MINING_RESPAWN_MS } : m
         );
         aiWorld.miningNodes = miningNodes;
+        // Haku's recruitment quest — "successfully gather something for the
+        // first time" — covers both free-roam and job gathers, since both
+        // paths set miningCollectedUid. useQuestStore.complete is a no-op
+        // once already done, so this is safe to call every time.
+        useQuestStore.getState().complete(HAKU_QUEST_ID);
       }
       if (outcome.treasureCollectedUid) {
         // Treasure gold goes straight to the finding bird (handled in ai.ts)
@@ -528,6 +556,10 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     );
     for (const kill of combatResult.kills) {
       usePlayerStore.getState().creditHuntToll(kill.feeGold);
+      // Mone's alternate recruitment path — the town's first wolf-tier kill.
+      if (kill.enemyName === WOLF_ENEMY_NAME) {
+        useQuestStore.getState().complete(MONE_WOLF_KILL_MILESTONE_ID);
+      }
       for (const { unitUid, gold } of kill.rewards) {
         const bird = nextBirds.find((b) => b.defId === unitUid);
         if (bird) bird.gold += gold;
@@ -613,6 +645,32 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     const healedBirds = healer ? applyHealing(nextBirds, healer.defId, getEffectiveStats(healer).atk) : nextBirds;
     const finalBirds = separateBirds(healedBirds);
 
+    // Check each not-yet-recruited starter's own trigger — town-level for
+    // Vivi, the one-off quest for Haku, and a chance map encounter (Mone's
+    // has an alternate combat-milestone path too) for Tororo/Mone. Flipping
+    // isRecruited here (on this tick's own BirdState) is enough to persist
+    // it too — the wallet sync below rebuilds every wallet straight from
+    // finalBirds, isRecruited included, so there's no separate recruitBird
+    // call to make.
+    const newRecruitmentEvents: string[] = [];
+    const activeBirdPositions = finalBirds.filter((b) => b.isRecruited).map((b) => ({ x: b.x, y: b.y }));
+    const townLevel = getTownLevel(useTownStore.getState().plots);
+    const quests = useQuestStore.getState();
+    const recruitmentChecks: Record<string, () => boolean> = {
+      vivi: () => checkVivi(townLevel),
+      haku: () => checkHaku(quests.isComplete(HAKU_QUEST_ID)),
+      tororo: () => checkTororoEncounter(activeBirdPositions),
+      mone: () => checkMoneEncounter(activeBirdPositions, quests.isComplete(MONE_WOLF_KILL_MILESTONE_ID)),
+    };
+    for (const bird of finalBirds) {
+      if (bird.isRecruited) continue;
+      const check = recruitmentChecks[bird.defId];
+      if (!check || !check()) continue;
+      bird.isRecruited = true;
+      newRecruitmentEvents.push(bird.defId);
+      newLog.push(makeLogEntry(bird.name, 'recruit', `${bird.name}が仲間になった!`));
+    }
+
     if (Object.keys(materialsToAdd).length > 0) {
       usePlayerStore.getState().addMaterials(materialsToAdd);
     }
@@ -650,6 +708,8 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         requests,
         activityLog,
         merchant,
+        recruitmentEvents:
+          newRecruitmentEvents.length > 0 ? [...world.recruitmentEvents, ...newRecruitmentEvents] : world.recruitmentEvents,
       },
     });
   },

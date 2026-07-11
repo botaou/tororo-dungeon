@@ -1,4 +1,4 @@
-import { BuildingKind, ShopKind, TownPlotDef } from '../types';
+import { BuildingKind, ShopKind, TownPlotDef, TownPlotState } from '../types';
 import { TOWN_X, TOWN_Y } from './world';
 
 // A grid of buildable land around the town hall (the existing 🏘️ marker,
@@ -65,6 +65,20 @@ export const MERCHANT_SPOT = { x: TOWN_X + 0.11, y: TOWN_Y + 0.11 };
 
 export function shopKindForPlot(plotId: string): ShopKind | null {
   return (Object.keys(SHOP_PLOT_IDS) as ShopKind[]).find((k) => SHOP_PLOT_IDS[k] === plotId) ?? null;
+}
+
+// How many player-unlocked (non-default) plots it takes to advance one
+// town level — deliberately light, so the very first couple of land
+// purchases already bump the town hall up a tier (see game/recruitment.ts,
+// which gates Vivi's recruitment on this).
+export const TOWN_LEVEL_PLOT_STEP = 2;
+
+// Derived rather than stored: only counts plots the player actually paid to
+// unlock (the 4 orthogonal ring-1 plots start unlocked "for free" and never
+// get an entry in `plots` until touched, so they don't inflate this).
+export function getTownLevel(plots: Record<string, TownPlotState>): number {
+  const extraUnlocked = Object.values(plots).filter((p) => p.unlocked).length;
+  return 1 + Math.floor(extraUnlocked / TOWN_LEVEL_PLOT_STEP);
 }
 
 export const BUILDING_ICON: Record<BuildingKind, string> = {
