@@ -26,6 +26,7 @@ import {
 } from '../data/world';
 import { rollRandomMood } from '../data/moods';
 import { AiWorld, separateBirds, stepBird } from '../game/ai';
+import { respawnPosition, stepEnemy } from '../game/enemyAi';
 import { AttackAssignment, applyHealing, resolveAttacks } from '../game/combat';
 import { scoreRequestAcceptance, tryAcceptRequest } from '../game/requests';
 import { getEffectiveStats, maybeAutoEquip } from '../game/birdStats';
@@ -86,22 +87,32 @@ function jitterPosition(x: number, y: number): { x: number; y: number } {
 }
 
 function buildInitialWorld(): WorldState {
-  const enemies: EnemyInstance[] = ENEMY_DEFS.map((e) => ({
-    uid: uid('enemy'),
-    defId: e.id,
-    name: e.name,
-    emoji: e.emoji,
-    ...jitterPosition(e.x, e.y),
-    hp: e.hp,
-    maxHp: e.hp,
-    atk: e.atk,
-    goldReward: e.goldReward,
-    expReward: e.expReward,
-    dropTable: e.dropTable ?? [],
-    defeated: false,
-    respawnAt: null,
-    damageLog: {},
-  }));
+  const enemies: EnemyInstance[] = ENEMY_DEFS.map((e) => {
+    const spot = jitterPosition(e.x, e.y);
+    return {
+      uid: uid('enemy'),
+      defId: e.id,
+      name: e.name,
+      emoji: e.emoji,
+      x: spot.x,
+      y: spot.y,
+      hp: e.hp,
+      maxHp: e.hp,
+      atk: e.atk,
+      goldReward: e.goldReward,
+      expReward: e.expReward,
+      dropTable: e.dropTable ?? [],
+      defeated: false,
+      respawnAt: null,
+      damageLog: {},
+      anchorX: spot.x,
+      anchorY: spot.y,
+      roamState: 'patrol',
+      wanderX: null,
+      wanderY: null,
+      chaseTargetId: null,
+    };
+  });
   const miningNodes: MiningNodeInstance[] = MINING_NODE_DEFS.map((m) => ({
     uid: uid('mine'),
     defId: m.id,
@@ -248,6 +259,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       status: 'open',
       acceptedBy: null,
       createdAt: Date.now(),
+      delivered: 0,
     };
     set({ world: { ...get().world, requests: [...get().world.requests, request] } });
     return true;
@@ -265,12 +277,31 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     useGameTimeStore.getState().advanceOnline(TICK_MS);
 
     // Depleted enemies/resources come back once their respawn timer is up,
-    // so the world never runs permanently dry.
-    let enemies = world.enemies.map((e) =>
-      e.defeated && e.respawnAt !== null && now >= e.respawnAt
-        ? { ...e, defeated: false, hp: e.maxHp, respawnAt: null, damageLog: {} }
-        : e
-    );
+    // so the world never runs permanently dry. A respawning enemy also
+    // reappears at a new random spot near its original design-time
+    // position (see enemyAi.ts's respawnPosition) rather than exactly
+    // where it died or fell back to the same pixel every time, and that
+    // becomes its new patrol anchor.
+    let enemies = world.enemies.map((e) => {
+      if (!e.defeated || e.respawnAt === null || now < e.respawnAt) return e;
+      const def = ENEMY_DEFS.find((d) => d.id === e.defId)!;
+      const spot = respawnPosition(def.x, def.y);
+      return {
+        ...e,
+        defeated: false,
+        hp: e.maxHp,
+        respawnAt: null,
+        damageLog: {},
+        x: spot.x,
+        y: spot.y,
+        anchorX: spot.x,
+        anchorY: spot.y,
+        roamState: 'patrol' as const,
+        wanderX: null,
+        wanderY: null,
+        chaseTargetId: null,
+      };
+    });
     let miningNodes = world.miningNodes.map((m) =>
       m.collected && m.respawnAt !== null && now >= m.respawnAt
         ? { ...m, collected: false, respawnAt: null }
@@ -320,6 +351,11 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       }
       return { ...b, satiety, happiness };
     });
+
+    // Enemies patrol/chase/return on their own each tick, independent of
+    // whichever bird might be heading toward them (see enemyAi.ts) — birds
+    // still decide when to actually attack once in range (ai.ts).
+    enemies = enemies.map((e) => (e.defeated ? e : stepEnemy(e, birdsWithMood)));
 
     // Free (jobless) birds occasionally check the request board.
     const openRequests = requests.filter((r) => r.status === 'open');

@@ -18,9 +18,11 @@ import {
   ENCOUNTER_HOLD_TICKS,
   FOOD_PRICE,
   GEAR_SHOP_CHECK_CHANCE,
+  HOME_HEAL_PER_TICK,
   HOME_NEED_TICKS,
   LEISURE_CHANCE,
   LEISURE_DWELL_TICKS,
+  LOW_HP_RETREAT_THRESHOLD_PERCENT,
   MERCHANT_BUY_CHECK_CHANCE,
   MERCHANT_SELL_CHECK_CHANCE,
   MIN_BIRD_DISTANCE,
@@ -37,10 +39,6 @@ import { getShopPosition, MERCHANT_SPOT } from '../data/townGrid';
 import { CONVERTIBLE_ITEM_IDS, ITEM_DEF_MAP, ITEM_DEFS } from '../data/items';
 import { getEffectiveStats, maybeAutoEquip } from './birdStats';
 import { AttackAssignment } from './combat';
-
-// A fainted bird (hp hit 0) rests in place and slowly recovers before
-// resuming any activity, rather than vanishing or teleporting home.
-const FAINT_RECOVERY_PER_TICK = 5;
 
 // Personality doesn't gate any activity outright — it just weights how
 // likely each of the four is to be picked when a bird is free to choose.
@@ -241,12 +239,18 @@ function isStillPursuing(bird: BirdState, category: ActivityCategory, world: AiW
 }
 
 export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutcome {
-  if (bird.hp <= 0) {
-    bird.hp = Math.min(bird.maxHp, bird.hp + FAINT_RECOVERY_PER_TICK);
-    bird.activity = 'resting';
-    bird.targetKind = null;
-    bird.targetRefUid = null;
-    return emptyOutcome();
+  // Survival comes before everything else — a bird that's fainted (hp 0)
+  // or critically low heads straight home to recover, overriding jobs,
+  // carrying, hunger, selling, all of it. Once recovery starts it's
+  // "sticky" (bird.activity stays 'recovering') until HP is completely
+  // full, not just back above the trigger threshold — otherwise a bird
+  // would leave home the instant it ticks over the line and immediately
+  // walk back into the same fight that almost killed it (the old faint
+  // loop: faint → tiny in-place heal → straight back into combat → faint
+  // again).
+  const isRecovering = bird.activity === 'recovering' ? bird.hp < bird.maxHp : bird.hp <= 0 || bird.hp < bird.maxHp * LOW_HP_RETREAT_THRESHOLD_PERCENT;
+  if (isRecovering) {
+    return stepRecover(bird);
   }
 
   if (bird.currentJobId) {
@@ -333,6 +337,23 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
     case 'rest':
       return executeRest(bird, world);
   }
+}
+
+// Critically wounded or fainted → walk home and convalesce until fully
+// healed (see LOW_HP_RETREAT_THRESHOLD_PERCENT/HOME_HEAL_PER_TICK). No
+// in-place instant partial heal, no re-engaging combat halfway recovered —
+// only once HP is completely full does stepBird let normal behavior (and
+// combat) resume.
+function stepRecover(bird: BirdState): AiStepOutcome {
+  const house = getHousePosition(bird.defId);
+  const arrived = moveToward(bird, house.x, house.y);
+  bird.activity = 'recovering';
+  bird.targetKind = null;
+  bird.targetRefUid = null;
+  if (arrived) {
+    bird.hp = Math.min(bird.maxHp, bird.hp + HOME_HEAL_PER_TICK);
+  }
+  return emptyOutcome();
 }
 
 // Sleepy → go home and rest. Once satisfied for HOME_NEED_TICKS the mood
@@ -818,12 +839,21 @@ function stepJob(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutc
     if (bird.workProgress >= ENCOUNTER_HOLD_TICKS) {
       outcome.materialsCollected[node.resource] = (outcome.materialsCollected[node.resource] ?? 0) + node.amount;
       outcome.miningCollectedUid = node.uid;
-      outcome.jobCompletedId = request.id;
-      bird.gold += request.reward; // the player pays this out in the store
-      bird.currentJobId = null;
+      // Progress accumulates across trips (mutated on the shared request
+      // object, same as status/acceptedBy elsewhere) rather than always
+      // completing after a single gather — harmless today since every
+      // preset's amount fits in one node's yield, but correct if that ever
+      // changes (a request needing more than one node's worth used to
+      // complete instantly after the first delivery regardless of amount).
+      request.delivered += node.amount;
       bird.targetKind = null;
       bird.targetRefUid = null;
       bird.workProgress = 0;
+      if (request.delivered >= request.amount) {
+        outcome.jobCompletedId = request.id;
+        bird.gold += request.reward; // the player pays this out in the store
+        bird.currentJobId = null;
+      }
     }
   }
   return outcome;

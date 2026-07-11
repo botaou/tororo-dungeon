@@ -3,6 +3,7 @@ import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { JobRequest, MaterialId } from '../types';
 import { MATERIAL_ICON, MATERIAL_LABEL } from '../data/materials';
+import { getCharacterDef } from '../data/characters';
 import { AnimatedPressable } from './AnimatedPressable';
 import { theme } from '../theme';
 
@@ -75,7 +76,9 @@ export function RequestBoard({ visible, onClose, requests, onPost }: Props) {
                     {MATERIAL_LABEL[r.materialId]} x{r.amount}(報酬{r.reward}G)
                   </Text>
                   <Text style={styles.requestStatus}>
-                    {r.status === 'open' ? '募集中…' : `${r.acceptedBy ?? ''}が対応中`}
+                    {r.status === 'open'
+                      ? '募集中…'
+                      : `${r.acceptedBy ? getCharacterDef(r.acceptedBy).name : ''}が対応中(${r.delivered}/${r.amount})`}
                   </Text>
                 </View>
               </View>

@@ -204,6 +204,11 @@ export interface PlayerState {
 
 // ---- World entities (persistent, ephemeral session state) ----
 
+// An enemy's current movement behavior (see game/enemyAi.ts's stepEnemy):
+// 'patrol' wanders near its anchor point, 'chase' pursues a spotted bird,
+// 'return' walks back to its anchor once the chase is given up.
+export type EnemyRoamState = 'patrol' | 'chase' | 'return';
+
 export interface EnemyInstance {
   uid: string;
   defId: string;
@@ -223,6 +228,17 @@ export interface EnemyInstance {
   // this incarnation of the enemy is alive — used to split the kill reward
   // proportionally. Reset to {} whenever the enemy respawns.
   damageLog: Record<string, number>;
+  // The center of this enemy's patrol territory — set from its EnemyDef
+  // position at spawn, and re-randomized nearby (not reset to the exact
+  // same spot) each time it respawns after being defeated.
+  anchorX: number;
+  anchorY: number;
+  roamState: EnemyRoamState;
+  // Current patrol waypoint, while roamState is 'patrol' — null between legs.
+  wanderX: number | null;
+  wanderY: number | null;
+  // Which bird's currently being chased, while roamState is 'chase'.
+  chaseTargetId: string | null;
 }
 
 export interface MiningNodeInstance {
@@ -286,7 +302,8 @@ export type ActivityKind =
   | 'selling'
   | 'buyingGear'
   | 'merchantSelling'
-  | 'merchantBuying';
+  | 'merchantBuying'
+  | 'recovering';
 
 // A pursuit goal a bird's AI is actively working toward. A job is just a
 // mining/treasure pursuit restricted to a specific request's material and
@@ -368,6 +385,10 @@ export interface JobRequest {
   status: JobStatus;
   acceptedBy: string | null; // bird defId
   createdAt: number;
+  // Cumulative amount delivered so far — a single gather trip may not yield
+  // enough on its own, so progress accumulates across trips until it
+  // reaches `amount` (see stepJob in ai.ts). Starts at 0 when posted.
+  delivered: number;
 }
 
 // A short, human-readable line for the on-screen activity log — "who did

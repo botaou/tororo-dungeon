@@ -321,11 +321,24 @@ function LeisureSprite({ spot, x, y }: { spot: LeisureSpotInstance; x: number; y
 }
 
 function EnemySprite({ enemy, x, y }: { enemy: EnemyInstance; x: number; y: number }) {
+  // Enemies now patrol/chase/return on their own (see game/enemyAi.ts)
+  // instead of sitting still, so — same as BirdSprite — position glides
+  // smoothly over one tick's duration instead of snapping to the new spot.
+  const pos = useRef(new Animated.ValueXY({ x, y })).current;
   const shake = useRef(new Animated.Value(0)).current;
   const flash = useRef(new Animated.Value(0)).current;
   const knockout = useRef(new Animated.Value(enemy.defeated || enemy.hp <= 0 ? 1 : 0)).current;
   const prevHpRef = useRef(enemy.hp);
   const hasKnockedOutRef = useRef(enemy.defeated || enemy.hp <= 0);
+
+  useEffect(() => {
+    Animated.timing(pos, {
+      toValue: { x, y },
+      duration: TICK_MS,
+      easing: Easing.linear,
+      useNativeDriver: true,
+    }).start();
+  }, [x, y, pos]);
 
   useEffect(() => {
     if (enemy.hp < prevHpRef.current && enemy.hp > 0) {
@@ -357,10 +370,9 @@ function EnemySprite({ enemy, x, y }: { enemy: EnemyInstance; x: number; y: numb
       style={[
         styles.sprite,
         {
-          left: x,
-          top: y,
           transform: [
-            { translateX: shake.interpolate({ inputRange: [-1, 1], outputRange: [-6, 6] }) },
+            { translateX: Animated.add(pos.x, shake.interpolate({ inputRange: [-1, 1], outputRange: [-6, 6] })) },
+            { translateY: pos.y },
             { scale: knockout.interpolate({ inputRange: [0, 1], outputRange: [1, 0.85] }) },
           ],
           opacity: knockout.interpolate({ inputRange: [0, 1], outputRange: [1, 0] }),
@@ -440,7 +452,8 @@ function BirdSprite({
     bird.activity === 'fishing' ||
     bird.activity === 'carrying' ||
     bird.activity === 'selling' ||
-    bird.activity === 'merchantSelling';
+    bird.activity === 'merchantSelling' ||
+    bird.activity === 'recovering';
 
   useEffect(() => {
     if (fainted || isPassiveActivity) return;

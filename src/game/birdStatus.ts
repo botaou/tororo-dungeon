@@ -5,6 +5,8 @@ import { BirdState } from '../types';
 export function getBirdStatusLabel(bird: BirdState): string {
   if (bird.hp <= 0) return '気絶中';
   switch (bird.activity) {
+    case 'recovering':
+      return '療養中';
     case 'enemy':
       return '討伐中';
     case 'mining':
@@ -36,7 +38,8 @@ export function getBirdStatusLabel(bird: BirdState): string {
 // Human-readable "現在の目的" — what the bird is trying to accomplish right
 // now, a bit more concrete than the tap-to-see-thought flavor line.
 export function getBirdGoalLabel(bird: BirdState): string {
-  if (bird.hp <= 0) return '回復を待っている';
+  if (bird.hp <= 0) return '家に戻って回復を待っている';
+  if (bird.activity === 'recovering') return '家で療養している';
   if (bird.currentJobId) return '依頼を遂行中';
   switch (bird.targetKind) {
     case 'enemy':

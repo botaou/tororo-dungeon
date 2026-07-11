@@ -18,6 +18,29 @@ export const ARRIVAL_THRESHOLD = 0.035;
 // gently pushed apart so they never visually stack on top of each other.
 export const MIN_BIRD_DISTANCE = 0.05;
 
+// A bird whose HP falls to/below this fraction of its max (or hits 0, i.e.
+// faints) drops everything and heads home to recover — this takes priority
+// over jobs, carrying, hunger, selling, everything (see ai.ts's stepBird).
+// Once triggered it stays in recovery (see the 'recovering' activity) until
+// fully healed, even if HP climbs back above this threshold en route —
+// otherwise a bird would just leave home the moment it ticks back over the
+// line, never actually finishing its recovery.
+export const LOW_HP_RETREAT_THRESHOLD_PERCENT = 0.3;
+// HP restored per tick once actually home and recovering.
+export const HOME_HEAL_PER_TICK = 8;
+
+// Enemies patrol near their spawn point instead of standing still, chase
+// whichever bird wanders within aggro range, and give up (walking back to
+// their patrol anchor) once the target's gone or too far away.
+export const ENEMY_MOVE_SPEED = 0.05; // slower than a bird's MOVE_SPEED
+export const ENEMY_PATROL_RADIUS = 0.06;
+export const ENEMY_AGGRO_RANGE = 0.15;
+export const ENEMY_CHASE_GIVEUP_RANGE = 0.22;
+// How far from its original design-time spot an enemy can land when it
+// respawns after being defeated — keeps it within its own zone (forest,
+// quarry, etc.) rather than relocating anywhere on the map.
+export const ENEMY_RESPAWN_POSITION_RADIUS = 0.06;
+
 // How often (ms) a bird's mood is free to change on its own (moods that get
 // actively resolved — hungry/sleepy — clear sooner via their own need loop).
 export const MOOD_REFRESH_MS = 45_000;

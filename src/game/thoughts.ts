@@ -15,6 +15,7 @@ interface ThoughtLines {
   buyingGear?: string;
   merchantSelling?: string;
   merchantBuying?: string;
+  recovering?: string;
   sleepy?: string;
   happy?: string;
   hungry?: string;
@@ -37,6 +38,7 @@ const LINES: Record<string, ThoughtLines> = {
     buyingGear: '道具屋で何か買おうかな',
     merchantSelling: '商人にこれを見せてみよう',
     merchantBuying: '商人の品揃え、気になるな',
+    recovering: '早く元気にならなきゃ……',
     happy: '外の空気が気持ちいい！',
     wantsMoney: '稼げる依頼はないかな',
   },
@@ -52,6 +54,7 @@ const LINES: Record<string, ThoughtLines> = {
     buyingGear: '新しいの、似合うかな？',
     merchantSelling: 'これ、高く売れるかな？',
     merchantBuying: '商人さん、何持ってきたのかな',
+    recovering: 'いたた……ちょっと休む',
     happy: 'たのしいね！',
     wantsMoney: '依頼、受けてみようかな',
   },
@@ -67,6 +70,7 @@ const LINES: Record<string, ThoughtLines> = {
     buyingGear: '備えあれば憂いなし',
     merchantSelling: '街のためにもなるし、売っておこう',
     merchantBuying: '必要な物だけ見ておこう',
+    recovering: '無理は禁物……ゆっくり治そう',
     happy: 'みんな無事でよかった',
     wantsMoney: '依頼をこなそうかな',
   },
@@ -84,6 +88,7 @@ const LINES: Record<string, ThoughtLines> = {
     buyingGear: 'いい掘り出し物ないかな',
     merchantSelling: 'これ、高く売れそう！',
     merchantBuying: '掘り出し物、あるかな？',
+    recovering: 'むぅ……もうちょっと休む',
     happy: 'いいもの見つけた！',
     wantsMoney: 'お金になるものを探そう',
   },
