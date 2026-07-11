@@ -94,6 +94,7 @@ export function WorldMap({
       {FIELD_ZONE_PATCHES.map((p, i) => (
         <View
           key={i}
+          pointerEvents="none"
           style={[
             styles.fieldZonePatch,
             {
@@ -147,6 +148,7 @@ export function WorldMap({
       {TOWN_DECOR.map((d, i) => (
         <Text
           key={i}
+          pointerEvents="none"
           style={[styles.decor, { left: d.x * fieldWidth - 12, top: d.y * fieldHeight - 12 }]}
         >
           {d.emoji}
@@ -172,6 +174,7 @@ export function WorldMap({
       })}
 
       <View
+        pointerEvents="none"
         style={[styles.town, { left: TOWN_X * fieldWidth - 34, top: TOWN_Y * fieldHeight - 34 }]}
       >
         <Text style={styles.townEmoji}>{townLevelDef.emoji}</Text>
@@ -203,6 +206,7 @@ export function WorldMap({
         return (
           <View
             key={b.defId}
+            pointerEvents="none"
             style={[styles.house, { left: pos.x * fieldWidth - 18, top: pos.y * fieldHeight - 18, borderColor: def.color }]}
           >
             <Text style={styles.houseEmoji}>🏠</Text>
@@ -260,7 +264,7 @@ function ShopkeeperSprite({ x, y }: { x: number; y: number }) {
   const bobY = bob.interpolate({ inputRange: [0, 1], outputRange: [0, -3] });
 
   return (
-    <Animated.View style={[styles.sprite, { left: x, top: y, transform: [{ translateY: bobY }] }]}>
+    <Animated.View pointerEvents="none" style={[styles.sprite, { left: x, top: y, transform: [{ translateY: bobY }] }]}>
       <Text style={styles.emojiLarge}>🧑‍🌾</Text>
       <Text style={styles.nameTag}>店主</Text>
     </Animated.View>
@@ -289,7 +293,7 @@ function EncounterMarker({ x, y }: { x: number; y: number }) {
   const opacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.5, 0.9] });
 
   return (
-    <Animated.View style={[styles.sprite, { left: x, top: y, transform: [{ scale }], opacity }]}>
+    <Animated.View pointerEvents="none" style={[styles.sprite, { left: x, top: y, transform: [{ scale }], opacity }]}>
       <Text style={styles.emojiLarge}>❓</Text>
     </Animated.View>
   );
@@ -354,6 +358,7 @@ function RockSprite({ node, x, y }: { node: MiningNodeInstance; x: number; y: nu
 
   return (
     <Animated.View
+      pointerEvents="none"
       style={[
         styles.sprite,
         {
@@ -385,6 +390,7 @@ function TreasureSprite({ treasure, x, y }: { treasure: TreasureNodeInstance; x:
 
   return (
     <Animated.View
+      pointerEvents="none"
       style={[
         styles.sprite,
         {
@@ -456,7 +462,7 @@ function PlotSprite({
 
 function LeisureSprite({ spot, x, y }: { spot: LeisureSpotInstance; x: number; y: number }) {
   return (
-    <View style={[styles.sprite, styles.leisureSprite, { left: x, top: y }]}>
+    <View pointerEvents="none" style={[styles.sprite, styles.leisureSprite, { left: x, top: y }]}>
       <Text style={styles.emojiLarge}>{spot.emoji}</Text>
     </View>
   );
@@ -509,6 +515,7 @@ function EnemySprite({ enemy, x, y }: { enemy: EnemyInstance; x: number; y: numb
 
   return (
     <Animated.View
+      pointerEvents="none"
       style={[
         styles.sprite,
         {

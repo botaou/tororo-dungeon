@@ -131,18 +131,25 @@ export function getTownLevelDef(level: number): TownLevelDef {
 // see WorldMap) and the radius AI uses to keep town-only wandering
 // (idle "rest" strolls) and field-only wandering (idle "explore") on the
 // correct side of the line — grows with each town-level tier so the zone's
-// footprint visibly keeps pace with however much land is actually
-// reachable at that level (level 1 already comfortably fits ring-2, which
-// has no level gate; level 3+ additionally fits the gated ring-3 outer
-// layer). Purely cosmetic/behavioral past that — nothing stops it from
-// slightly exceeding the field canvas at the highest tiers, since WorldMap
-// clips its own bounds anyway.
+// footprint visibly keeps pace with the town's development.
+//
+// Bounded above by data/world.ts's actual field content, not just by the
+// plot grid: the closest hand-placed enemy (wolf_b, at (0.75, 0.45)) sits
+// only ~0.27 away from town center, so any radius past that would draw the
+// town zone right on top of it — a "monster wandered into town" look, and
+// (since EnemySprite renders without pointerEvents="none") a real tap-
+// blocking risk for whatever it happens to overlap. The always-unlocked
+// ring-1 plots (both real shops included, at 0.1/0.195 from center) still
+// comfortably fit inside even the smallest tier. Ring-2's outer diagonal
+// corners intentionally poke past the drawn edge at every level — the zone
+// is a soft "core of town" suggestion, not a hard requirement that every
+// buildable tile sit inside it.
 const TOWN_ZONE_RADIUS_BY_LEVEL: Record<number, { rx: number; ry: number }> = {
-  1: { rx: 0.43, ry: 0.23 },
-  2: { rx: 0.46, ry: 0.245 },
-  3: { rx: 0.5, ry: 0.26 },
-  4: { rx: 0.53, ry: 0.27 },
-  5: { rx: 0.56, ry: 0.28 },
+  1: { rx: 0.2, ry: 0.108 },
+  2: { rx: 0.22, ry: 0.118 },
+  3: { rx: 0.24, ry: 0.129 },
+  4: { rx: 0.25, ry: 0.134 },
+  5: { rx: 0.26, ry: 0.139 },
 };
 
 export function getTownZoneRadius(townLevel: number): { rx: number; ry: number } {
