@@ -13,7 +13,15 @@ import {
 } from '../types';
 import { getCharacterDef } from '../data/characters';
 import { TOWN_DECOR, TOWN_X, TOWN_Y } from '../data/world';
-import { BUILDING_ICON, getTownLevel, getTownLevelDef, MERCHANT_SPOT, shopKindForPlot, TOWN_PLOT_DEFS } from '../data/townGrid';
+import {
+  BUILDING_ICON,
+  getTownLevel,
+  getTownLevelDef,
+  getTownZoneRadius,
+  MERCHANT_SPOT,
+  shopKindForPlot,
+  TOWN_PLOT_DEFS,
+} from '../data/townGrid';
 import { SHOP_DEFS } from '../data/shops';
 import { HOUSE_POSITIONS } from '../data/houses';
 import { MATERIAL_ICON } from '../data/materials';
@@ -25,6 +33,18 @@ import { MONE_ENCOUNTER_SPOT, TORORO_ENCOUNTER_SPOT } from '../game/recruitment'
 import { cuteShadow, theme } from '../theme';
 
 const HORIZONTAL_PADDING = 24; // matches TownScreen's paddingHorizontal * 2
+
+// Soft, low-opacity background patches suggesting the field's loose zoning
+// (forest / quarry / mushroom patch / lake / ruins) without needing real
+// tile art — matches the natural clusters data/world.ts's enemy/mining defs
+// already sit in, just made visually legible instead of implicit.
+const FIELD_ZONE_PATCHES: { cx: number; cy: number; rx: number; ry: number; color: string }[] = [
+  { cx: 0.22, cy: 0.22, rx: 0.16, ry: 0.13, color: '#bfe0a8' }, // forest, upper-left
+  { cx: 0.75, cy: 0.22, rx: 0.16, ry: 0.14, color: '#d9cdb4' }, // quarry, upper-right
+  { cx: 0.23, cy: 0.76, rx: 0.13, ry: 0.11, color: '#cbb8d9' }, // mushroom patch, lower-left
+  { cx: 0.63, cy: 0.86, rx: 0.2, ry: 0.11, color: '#a8cfe0' }, // lake, south
+  { cx: 0.5, cy: 0.13, rx: 0.14, ry: 0.08, color: '#e0d3a8' }, // ruins, north
+];
 
 interface Props {
   enemies: EnemyInstance[];
@@ -63,10 +83,67 @@ export function WorldMap({
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const fieldWidth = Math.max(240, windowWidth - HORIZONTAL_PADDING);
   const fieldHeight = Math.max(420, windowHeight * 0.72);
-  const townLevelDef = getTownLevelDef(getTownLevel(developmentPoints));
+  const townLevel = getTownLevel(developmentPoints);
+  const townLevelDef = getTownLevelDef(townLevel);
+  const zoneRadius = getTownZoneRadius(townLevel);
+  const zoneWidth = zoneRadius.rx * 2 * fieldWidth;
+  const zoneHeight = zoneRadius.ry * 2 * fieldHeight;
 
   return (
     <View style={[styles.field, { height: fieldHeight }]}>
+      {FIELD_ZONE_PATCHES.map((p, i) => (
+        <View
+          key={i}
+          style={[
+            styles.fieldZonePatch,
+            {
+              left: p.cx * fieldWidth - p.rx * fieldWidth,
+              top: p.cy * fieldHeight - p.ry * fieldHeight,
+              width: p.rx * 2 * fieldWidth,
+              height: p.ry * 2 * fieldHeight,
+              borderRadius: Math.max(p.rx * fieldWidth, p.ry * fieldHeight),
+              backgroundColor: p.color,
+            },
+          ]}
+        />
+      ))}
+
+      {/* The town zone's own backdrop — a warm-toned ellipse (vs. the
+          field's meadow green) that grows with town level, plus a dashed
+          ring marking the boundary between "town" and "adventure field". */}
+      <View
+        pointerEvents="none"
+        style={[
+          styles.townZoneBackdrop,
+          {
+            left: TOWN_X * fieldWidth - zoneWidth / 2,
+            top: TOWN_Y * fieldHeight - zoneHeight / 2,
+            width: zoneWidth,
+            height: zoneHeight,
+            borderRadius: Math.max(zoneWidth, zoneHeight),
+          },
+        ]}
+      />
+      <View
+        pointerEvents="none"
+        style={[
+          styles.townZoneBoundary,
+          {
+            left: TOWN_X * fieldWidth - zoneWidth / 2,
+            top: TOWN_Y * fieldHeight - zoneHeight / 2,
+            width: zoneWidth,
+            height: zoneHeight,
+            borderRadius: Math.max(zoneWidth, zoneHeight),
+          },
+        ]}
+      />
+
+      {/* A simple cross-road motif suggesting the town's plots all connect
+          back to the town hall — not literal pathing, just a quick visual
+          anchor since real road art is a separate, later pass. */}
+      <View pointerEvents="none" style={[styles.roadHorizontal, { top: TOWN_Y * fieldHeight - 3, width: zoneWidth * 0.9, left: TOWN_X * fieldWidth - (zoneWidth * 0.9) / 2 }]} />
+      <View pointerEvents="none" style={[styles.roadVertical, { left: TOWN_X * fieldWidth - 3, height: zoneHeight * 0.9, top: TOWN_Y * fieldHeight - (zoneHeight * 0.9) / 2 }]} />
+
       {TOWN_DECOR.map((d, i) => (
         <Text
           key={i}
@@ -79,12 +156,14 @@ export function WorldMap({
       {TOWN_PLOT_DEFS.map((def) => {
         const shopKind = shopKindForPlot(def.id);
         const state = plotStates[def.id] ?? { id: def.id, unlocked: def.unlockedByDefault, building: null };
+        const levelLocked = !!def.minTownLevel && townLevel < def.minTownLevel;
         return (
           <PlotSprite
             key={def.id}
             def={def}
             state={shopKind ? { ...state, unlocked: true, building: 'shop' } : state}
             shopEmoji={shopKind ? SHOP_DEFS[shopKind].emoji : undefined}
+            levelLocked={levelLocked}
             x={def.x * fieldWidth}
             y={def.y * fieldHeight}
             onPress={() => (shopKind ? onShopPress(shopKind) : onPlotPress(def.id))}
@@ -325,6 +404,7 @@ function PlotSprite({
   def,
   state,
   shopEmoji,
+  levelLocked,
   x,
   y,
   onPress,
@@ -332,19 +412,36 @@ function PlotSprite({
   def: (typeof TOWN_PLOT_DEFS)[number];
   state: TownPlotState;
   shopEmoji?: string;
+  levelLocked: boolean;
   x: number;
   y: number;
   onPress: () => void;
 }) {
   if (!state.unlocked) {
+    // Plots gated behind a town level the player hasn't reached yet read as
+    // untamed, quietly-waiting ground (a soft grass-toned layer, no cost
+    // shown since attempting is pointless right now) rather than the same
+    // "locked, here's the price" look as an affordable-but-unclaimed plot.
     return (
-      <AnimatedPressable style={[styles.plot, styles.plotLocked, { left: x - 12, top: y - 12 }]} onPress={onPress}>
-        <Text style={styles.plotLockIcon}>🔒</Text>
-        {def.unlockCost && (
-          <Text style={styles.plotCostText}>
-            {def.unlockCost.gold}G
-            {def.unlockCost.materialId ? ` ${MATERIAL_ICON[def.unlockCost.materialId]}${def.unlockCost.materialAmount}` : ''}
-          </Text>
+      <AnimatedPressable
+        style={[styles.plot, levelLocked ? styles.plotUntamed : styles.plotLocked, { left: x - 12, top: y - 12 }]}
+        onPress={onPress}
+      >
+        {levelLocked ? (
+          <>
+            <View style={styles.plotUntamedInner} />
+            <Text style={styles.plotLevelReq}>Lv.{def.minTownLevel}</Text>
+          </>
+        ) : (
+          <>
+            <Text style={styles.plotLockIcon}>🔒</Text>
+            {def.unlockCost && (
+              <Text style={styles.plotCostText}>
+                {def.unlockCost.gold}G
+                {def.unlockCost.materialId ? ` ${MATERIAL_ICON[def.unlockCost.materialId]}${def.unlockCost.materialAmount}` : ''}
+              </Text>
+            )}
+          </>
         )}
       </AnimatedPressable>
     );
@@ -601,6 +698,17 @@ const styles = StyleSheet.create({
     borderColor: theme.cardBorder,
     overflow: 'hidden',
   },
+  fieldZonePatch: { position: 'absolute', opacity: 0.35 },
+  townZoneBackdrop: { position: 'absolute', backgroundColor: theme.bgBottom, opacity: 0.9 },
+  townZoneBoundary: {
+    position: 'absolute',
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: theme.gold,
+    opacity: 0.55,
+  },
+  roadHorizontal: { position: 'absolute', height: 6, borderRadius: 3, backgroundColor: theme.cardBorder, opacity: 0.6 },
+  roadVertical: { position: 'absolute', width: 6, borderRadius: 3, backgroundColor: theme.cardBorder, opacity: 0.6 },
   town: {
     position: 'absolute',
     width: 68,
@@ -652,6 +760,19 @@ const styles = StyleSheet.create({
   plotLockIcon: { fontSize: 12 },
   plotCostText: { fontSize: 7, fontWeight: '700', color: theme.textMuted, marginTop: 1 },
   plotBuildingIcon: { fontSize: 16, color: theme.textMuted },
+  plotUntamed: {
+    backgroundColor: 'rgba(107, 189, 110, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(107, 189, 110, 0.3)',
+  },
+  plotUntamedInner: {
+    position: 'absolute',
+    width: 14,
+    height: 14,
+    borderRadius: 5,
+    backgroundColor: 'rgba(107, 189, 110, 0.35)',
+  },
+  plotLevelReq: { fontSize: 7, fontWeight: '800', color: theme.textMuted },
   sprite: { position: 'absolute', alignItems: 'center', width: 56 },
   leisureSprite: { opacity: 0.85 },
   tapArea: { alignItems: 'center' },

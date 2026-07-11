@@ -142,6 +142,11 @@ export interface EnemyDef {
   dropTable?: DropEntry[];
   x: number;
   y: number;
+  // Field-zone content past this town level is excluded from AI targeting
+  // and map rendering entirely (see useWorldStore's tick/WorldMap) — how the
+  // adventure field grows alongside the town's own development. Absent (or
+  // 1) means always available.
+  minTownLevel?: number;
 }
 
 export interface MiningNodeDef {
@@ -156,6 +161,8 @@ export interface MiningNodeDef {
   bonusDropTable?: DropEntry[];
   x: number;
   y: number;
+  // See EnemyDef.minTownLevel — same field-zone level gating.
+  minTownLevel?: number;
 }
 
 export interface TreasureNodeDef {
@@ -239,6 +246,8 @@ export interface EnemyInstance {
   wanderY: number | null;
   // Which bird's currently being chased, while roamState is 'chase'.
   chaseTargetId: string | null;
+  // Copied from EnemyDef.minTownLevel at spawn — see that field's comment.
+  minTownLevel: number;
 }
 
 export interface MiningNodeInstance {
@@ -252,6 +261,8 @@ export interface MiningNodeInstance {
   bonusDropTable: DropEntry[];
   collected: boolean;
   respawnAt: number | null;
+  // Copied from MiningNodeDef.minTownLevel at spawn — see that field's comment.
+  minTownLevel: number;
 }
 
 export interface TreasureNodeInstance {
@@ -484,6 +495,11 @@ export interface TownPlotDef {
   y: number;
   unlockedByDefault: boolean;
   unlockCost: PlotUnlockCost | null; // null when unlockedByDefault
+  // The outer ring can't even be attempted below this town level — the town
+  // zone's own buildable land grows alongside its development stage, same
+  // idea as EnemyDef/MiningNodeDef.minTownLevel for the field. Absent (or 1)
+  // means always attemptable (subject to the usual gold/material cost).
+  minTownLevel?: number;
 }
 
 // Persisted per-plot progress: whether the player has claimed the land yet,

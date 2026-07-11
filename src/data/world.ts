@@ -47,6 +47,23 @@ export const ENEMY_DEFS: EnemyDef[] = [
   { id: 'slime_c', name: 'スライム', emoji: '🟢', hp: 30, atk: 3, goldReward: 8, expReward: 5, dropTable: SLIME_DROPS, x: 0.08, y: 0.23 },
   { id: 'bat_b', name: 'コウモリ', emoji: '🦇', hp: 25, atk: 4, goldReward: 10, expReward: 7, dropTable: BAT_DROPS, x: 0.63, y: 0.19 },
   { id: 'wolf_b', name: 'オオカミ', emoji: '🐺', hp: 45, atk: 6, goldReward: 16, expReward: 10, dropTable: WOLF_DROPS, x: 0.75, y: 0.45 },
+  // A far-corner "deep zone" extension, only reachable once the town's
+  // grown enough to unlock ring-3 land (see townGrid.ts's
+  // OUTER_RING_MIN_TOWN_LEVEL) — the adventure field growing alongside the
+  // town, not just the buildable grid.
+  {
+    id: 'wolf_c',
+    name: 'オオカミ',
+    emoji: '🐺',
+    hp: 65,
+    atk: 8,
+    goldReward: 24,
+    expReward: 14,
+    dropTable: WOLF_DROPS,
+    x: 0.92,
+    y: 0.08,
+    minTownLevel: 3,
+  },
 ];
 
 export const MINING_NODE_DEFS: MiningNodeDef[] = [
@@ -96,6 +113,9 @@ export const MINING_NODE_DEFS: MiningNodeDef[] = [
     x: 0.5,
     y: 0.16,
   },
+  // Same "deep zone" extension as wolf_c above — a bonus magicStone vein
+  // only reachable once the town's ring-3 land is unlocked.
+  { id: 'magicStone_2', name: '魔石', resource: 'magicStone', amount: 3, x: 0.85, y: 0.06, minTownLevel: 3 },
 ];
 
 // Old ruins along the north edge, between the forest and the quarry.

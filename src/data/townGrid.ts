@@ -2,28 +2,44 @@ import { BuildingKind, ShopKind, TownPlotDef } from '../types';
 import { TOWN_X, TOWN_Y } from './world';
 
 // A grid of buildable land around the town hall (the existing 🏘️ marker,
-// which sits on the center cell and isn't a plot itself). Two rings fit —
-// the field's closest enemies/resources were nudged slightly further from
-// town center to make room. The 4 orthogonal (N/S/E/W) ring-1 plots start
-// unlocked; everything else (the 4 ring-1 diagonals, plus the 16 ring-2
-// plots) costs gold + a material to claim, scaling with ring distance, so
-// the town keeps visibly growing well past the first few plots.
+// which sits on the center cell and isn't a plot itself). The inner two
+// rings (rows/cols -2..2) keep their original spacing exactly — nothing
+// hand-placed around them (houses, decor, the merchant spot) needs to move.
+// A 3rd outer ring adds a further 24 plots at a smaller extra step (not a
+// full further CELL unit — the coordinate canvas doesn't have room for
+// that), gated behind minTownLevel so the buildable land visibly grows
+// alongside the town's own development stage (see PHASE-6's zoning pass).
+// The 4 orthogonal (N/S/E/W) ring-1 plots start unlocked; everything else
+// costs gold + a material to claim, scaling with ring distance, so the town
+// keeps visibly growing well past the first few plots.
 const CELL_W = 0.195;
 const CELL_H = 0.1;
+// How far past the ring-2 edge the ring-3 outer layer sits — deliberately
+// less than a full CELL_W/CELL_H step so it still fits within the safe
+// 0..1 canvas instead of running off-screen.
+const OUTER_STEP_X = 0.075;
+const OUTER_STEP_Y = 0.04;
+// Ring-3 plots can't even be attempted until the town reaches this level.
+const OUTER_RING_MIN_TOWN_LEVEL = 3;
+
+function axisOffset(v: number, cell: number, outerStep: number): number {
+  if (Math.abs(v) <= 2) return v * cell;
+  return Math.sign(v) * (2 * cell + outerStep);
+}
 
 function buildPlotDefs(): TownPlotDef[] {
   const defs: TownPlotDef[] = [];
   const materialCycle: Array<'wood' | 'ore' | 'mushroom' | 'berry'> = ['wood', 'ore', 'mushroom', 'berry'];
   let materialIndex = 0;
 
-  for (let row = -2; row <= 2; row++) {
-    for (let col = -2; col <= 2; col++) {
+  for (let row = -3; row <= 3; row++) {
+    for (let col = -3; col <= 3; col++) {
       if (row === 0 && col === 0) continue; // town hall cell, not a plot
 
       const ringDist = Math.max(Math.abs(row), Math.abs(col));
       const unlockedByDefault = ringDist <= 1 && (row === 0 || col === 0); // orthogonal ring-1 neighbors
-      const x = TOWN_X + col * CELL_W;
-      const y = TOWN_Y + row * CELL_H;
+      const x = TOWN_X + axisOffset(col, CELL_W, OUTER_STEP_X);
+      const y = TOWN_Y + axisOffset(row, CELL_H, OUTER_STEP_Y);
 
       let unlockCost: TownPlotDef['unlockCost'] = null;
       if (!unlockedByDefault) {
@@ -32,7 +48,14 @@ function buildPlotDefs(): TownPlotDef[] {
         unlockCost = { gold: 150 * ringDist, materialId, materialAmount: 8 * ringDist };
       }
 
-      defs.push({ id: `plot_${row}_${col}`, x, y, unlockedByDefault, unlockCost });
+      defs.push({
+        id: `plot_${row}_${col}`,
+        x,
+        y,
+        unlockedByDefault,
+        unlockCost,
+        minTownLevel: ringDist >= 3 ? OUTER_RING_MIN_TOWN_LEVEL : undefined,
+      });
     }
   }
   return defs;
@@ -102,6 +125,28 @@ export function getTownLevel(developmentPoints: number): number {
 
 export function getTownLevelDef(level: number): TownLevelDef {
   return TOWN_LEVEL_DEFS.find((d) => d.level === level) ?? TOWN_LEVEL_DEFS[0];
+}
+
+// The town zone's visual backdrop (an ellipse centered on the town hall,
+// see WorldMap) and the radius AI uses to keep town-only wandering
+// (idle "rest" strolls) and field-only wandering (idle "explore") on the
+// correct side of the line — grows with each town-level tier so the zone's
+// footprint visibly keeps pace with however much land is actually
+// reachable at that level (level 1 already comfortably fits ring-2, which
+// has no level gate; level 3+ additionally fits the gated ring-3 outer
+// layer). Purely cosmetic/behavioral past that — nothing stops it from
+// slightly exceeding the field canvas at the highest tiers, since WorldMap
+// clips its own bounds anyway.
+const TOWN_ZONE_RADIUS_BY_LEVEL: Record<number, { rx: number; ry: number }> = {
+  1: { rx: 0.43, ry: 0.23 },
+  2: { rx: 0.46, ry: 0.245 },
+  3: { rx: 0.5, ry: 0.26 },
+  4: { rx: 0.53, ry: 0.27 },
+  5: { rx: 0.56, ry: 0.28 },
+};
+
+export function getTownZoneRadius(townLevel: number): { rx: number; ry: number } {
+  return TOWN_ZONE_RADIUS_BY_LEVEL[townLevel] ?? TOWN_ZONE_RADIUS_BY_LEVEL[1];
 }
 
 export const BUILDING_ICON: Record<BuildingKind, string> = {

@@ -78,7 +78,7 @@ import { BirdWallet, useBirdEconomyStore } from './useBirdEconomyStore';
 import { useGameTimeStore } from './useGameTimeStore';
 import { useQuestStore } from './useQuestStore';
 import { useTownStore } from './useTownStore';
-import { getTownLevel } from '../data/townGrid';
+import { getTownLevel, getTownZoneRadius } from '../data/townGrid';
 
 let uidCounter = 0;
 function uid(prefix: string): string {
@@ -125,6 +125,7 @@ function buildInitialWorld(): WorldState {
       wanderX: null,
       wanderY: null,
       chaseTargetId: null,
+      minTownLevel: e.minTownLevel ?? 1,
     };
   });
   const miningNodes: MiningNodeInstance[] = MINING_NODE_DEFS.map((m) => ({
@@ -137,6 +138,7 @@ function buildInitialWorld(): WorldState {
     bonusDropTable: m.bonusDropTable ?? [],
     collected: false,
     respawnAt: null,
+    minTownLevel: m.minTownLevel ?? 1,
   }));
   const treasures: TreasureNodeInstance[] = TREASURE_DEFS.map((t) => ({
     uid: uid('treasure'),
@@ -394,6 +396,15 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     const now = Date.now();
     const newLog: ActivityLogEntry[] = [];
 
+    // Computed once, up front, since it gates both the enemy-patrol step
+    // below and the AI's view of the field further down — field-zone
+    // content past this level stays fully inert (no patrol/chase, never
+    // targetable) rather than just hidden, so an "invisible" deep-zone
+    // enemy can never ambush a bird that happens to wander near it before
+    // the town's actually reached the required level (see EnemyDef's
+    // minTownLevel).
+    const townLevel = getTownLevel(useTownStore.getState().developmentPoints);
+
     // Advances the cosmetic game calendar in lockstep with this tick — see
     // config.ts's ONLINE_TIME_SCALE and useGameTimeStore.
     useGameTimeStore.getState().advanceOnline(TICK_MS);
@@ -476,8 +487,12 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
 
     // Enemies patrol/chase/return on their own each tick, independent of
     // whichever bird might be heading toward them (see enemyAi.ts) — birds
-    // still decide when to actually attack once in range (ai.ts).
-    enemies = enemies.map((e) => (e.defeated ? e : stepEnemy(e, birdsWithMood)));
+    // still decide when to actually attack once in range (ai.ts). Enemies
+    // past the current town level stay completely inert (no patrol/chase)
+    // rather than just unrendered/untargetable — otherwise a deep-zone
+    // enemy could still "ambush" a bird that wanders near it before the
+    // town's actually unlocked that ground.
+    enemies = enemies.map((e) => (e.defeated || e.minTownLevel > townLevel ? e : stepEnemy(e, birdsWithMood)));
 
     // Free (jobless) birds occasionally check the request board.
     const openRequests = requests.filter((r) => r.status === 'open');
@@ -511,14 +526,20 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     // Each bird now acts fully independently — no personality gets to see
     // another's decision first, since none of them assist/follow anymore.
     const nextBirds = birdsWithMood;
+    // Field-zone content past the current level is left out of aiWorld
+    // entirely — not deleted from `enemies`/`miningNodes` themselves, just
+    // never targetable — so it starts showing up the moment the town
+    // crosses the threshold, no special-case unlock step needed (see
+    // EnemyDef/MiningNodeDef's minTownLevel).
     const aiWorld: AiWorld = {
-      enemies,
-      miningNodes,
+      enemies: enemies.filter((e) => e.minTownLevel <= townLevel),
+      miningNodes: miningNodes.filter((m) => m.minTownLevel <= townLevel),
       treasures,
       leisureSpots: world.leisureSpots,
       requests,
       shopStock: usePlayerStore.getState().shopStock,
       merchant,
+      townZoneRadius: getTownZoneRadius(townLevel),
     };
 
     const allAssignments: AttackAssignment[] = [];
@@ -538,7 +559,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         miningNodes = miningNodes.map((m) =>
           m.uid === outcome.miningCollectedUid ? { ...m, collected: true, respawnAt: now + MINING_RESPAWN_MS } : m
         );
-        aiWorld.miningNodes = miningNodes;
+        aiWorld.miningNodes = miningNodes.filter((m) => m.minTownLevel <= townLevel);
         // Haku's recruitment quest — "successfully gather something for the
         // first time" — covers both free-roam and job gathers, since both
         // paths set miningCollectedUid. useQuestStore.complete is a no-op
@@ -805,7 +826,6 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     // call to make.
     const newRecruitmentEvents: string[] = [];
     const activeBirdPositions = finalBirds.filter((b) => b.isRecruited).map((b) => ({ x: b.x, y: b.y }));
-    const townLevel = getTownLevel(useTownStore.getState().developmentPoints);
     const quests = useQuestStore.getState();
     const recruitmentChecks: Record<string, () => boolean> = {
       vivi: () => checkVivi(townLevel),

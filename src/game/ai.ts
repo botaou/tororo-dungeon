@@ -33,7 +33,7 @@ import {
   SELL_MAX_PER_TRIP,
   STARTING_SATIETY,
 } from './config';
-import { TOWN_RADIUS, TOWN_X, TOWN_Y } from '../data/world';
+import { TOWN_X, TOWN_Y } from '../data/world';
 import { getHousePosition } from '../data/houses';
 import { getShopPosition, MERCHANT_SPOT } from '../data/townGrid';
 import { CONVERTIBLE_ITEM_IDS, ITEM_DEF_MAP, ITEM_DEFS } from '../data/items';
@@ -88,21 +88,28 @@ function nearest<T extends { x: number; y: number }>(items: T[], x: number, y: n
   return best;
 }
 
-function randomPointInField(): { x: number; y: number } {
+// Field points must land outside the town zone (an ellipse, not a circle —
+// see townGrid.ts's getTownZoneRadius) so idle "explore" wandering never
+// drifts into the town's own footprint; town points are scaled to the same
+// ellipse (slightly reined in) so idle "rest" wandering stays proportional
+// to however big the town zone currently is, instead of a fixed radius.
+function randomPointInField(zoneRadius: { rx: number; ry: number }): { x: number; y: number } {
   for (let attempt = 0; attempt < 8; attempt++) {
     const x = 0.1 + Math.random() * 0.8;
     const y = 0.15 + Math.random() * 0.7;
-    if (Math.hypot(x - TOWN_X, y - TOWN_Y) > TOWN_RADIUS * 1.2) return { x, y };
+    const dx = (x - TOWN_X) / zoneRadius.rx;
+    const dy = (y - TOWN_Y) / zoneRadius.ry;
+    if (dx * dx + dy * dy > 1) return { x, y };
   }
   return { x: 0.15, y: 0.2 };
 }
 
-function randomPointNearTown(radius: number): { x: number; y: number } {
+function randomPointNearTown(zoneRadius: { rx: number; ry: number }): { x: number; y: number } {
   const angle = Math.random() * Math.PI * 2;
-  const dist = Math.random() * radius;
+  const scale = Math.random() * 0.85;
   return {
-    x: Math.min(0.92, Math.max(0.08, TOWN_X + Math.cos(angle) * dist)),
-    y: Math.min(0.88, Math.max(0.16, TOWN_Y + Math.sin(angle) * dist)),
+    x: Math.min(0.92, Math.max(0.08, TOWN_X + Math.cos(angle) * zoneRadius.rx * scale)),
+    y: Math.min(0.88, Math.max(0.16, TOWN_Y + Math.sin(angle) * zoneRadius.ry * scale)),
   };
 }
 
@@ -119,6 +126,11 @@ export interface AiWorld {
   // The visiting merchant, if one currently has its stall set up — null
   // between visits. Read-only from the AI's perspective, same as shopStock.
   merchant: MerchantState | null;
+  // The town zone's current footprint (see townGrid.ts's getTownZoneRadius)
+  // — grows with town level, so idle wandering (explore/rest) and the
+  // "waiting around town" job fallbacks all stay proportional to it instead
+  // of a fixed radius.
+  townZoneRadius: { rx: number; ry: number };
 }
 
 export interface AiStepOutcome {
@@ -333,7 +345,7 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
     case 'mining':
       return executeGather(bird, def, world);
     case 'explore':
-      return executeExplore(bird);
+      return executeExplore(bird, world);
     case 'rest':
       return executeRest(bird, world);
   }
@@ -722,10 +734,10 @@ function executeGather(bird: BirdState, def: CharacterDef, world: AiWorld): AiSt
 // Explore: head to a random spot out in the field. Each leg concludes on
 // arrival (clearing targetKind) so the bird reconsiders its next move
 // fresh, rather than wandering forever once picked.
-function executeExplore(bird: BirdState): AiStepOutcome {
+function executeExplore(bird: BirdState, world: AiWorld): AiStepOutcome {
   const hasDest = bird.wanderX !== null && bird.wanderY !== null;
   if (!hasDest) {
-    const dest = randomPointInField();
+    const dest = randomPointInField(world.townZoneRadius);
     bird.wanderX = dest.x;
     bird.wanderY = dest.y;
     bird.targetKind = 'explore';
@@ -787,7 +799,7 @@ function executeRest(bird: BirdState, world: AiWorld): AiStepOutcome {
       return emptyOutcome();
     }
   }
-  const dest = randomPointNearTown(TOWN_RADIUS * 1.6);
+  const dest = randomPointNearTown(world.townZoneRadius);
   bird.wanderX = dest.x;
   bird.wanderY = dest.y;
   bird.targetKind = 'rest';
@@ -823,7 +835,7 @@ function stepJob(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutc
       const hasDest = bird.wanderX !== null && bird.wanderY !== null;
       const arrived = hasDest ? moveToward(bird, bird.wanderX!, bird.wanderY!) : true;
       if (!hasDest || arrived) {
-        const dest = randomPointNearTown(TOWN_RADIUS * 1.6);
+        const dest = randomPointNearTown(world.townZoneRadius);
         bird.wanderX = dest.x;
         bird.wanderY = dest.y;
       }
@@ -885,7 +897,7 @@ function stepHuntJob(bird: BirdState, def: CharacterDef, world: AiWorld, enemyNa
       const hasDest = bird.wanderX !== null && bird.wanderY !== null;
       const arrived = hasDest ? moveToward(bird, bird.wanderX!, bird.wanderY!) : true;
       if (!hasDest || arrived) {
-        const dest = randomPointNearTown(TOWN_RADIUS * 1.6);
+        const dest = randomPointNearTown(world.townZoneRadius);
         bird.wanderX = dest.x;
         bird.wanderY = dest.y;
       }

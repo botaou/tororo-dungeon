@@ -25,8 +25,9 @@ interface TownState {
 
 interface TownActions {
   // Unlocking spends gold/material up front — the caller passes the def's
-  // cost so this store doesn't need to import world data just to look it up.
-  tryUnlockPlot: (plotId: string, cost: PlotUnlockCost) => boolean;
+  // cost (and, for the level-gated outer ring, its minTownLevel) so this
+  // store doesn't need to import world data just to look it up.
+  tryUnlockPlot: (plotId: string, cost: PlotUnlockCost, minTownLevel?: number) => boolean;
   cycleBuilding: (plotId: string) => void;
   addDevelopmentPoints: (amount: number) => void;
   addReputation: (amount: number) => void;
@@ -56,7 +57,8 @@ export const useTownStore = create<TownState & TownActions>()(
       reputation: 0,
       levelUpEvents: [],
 
-      tryUnlockPlot: (plotId, cost) => {
+      tryUnlockPlot: (plotId, cost, minTownLevel) => {
+        if (minTownLevel && getTownLevel(get().developmentPoints) < minTownLevel) return false;
         const player = usePlayerStore.getState();
         if (player.gold < cost.gold) return false;
         if (cost.materialId && cost.materialAmount) {

@@ -68,7 +68,7 @@ export function TownScreen() {
     if (!def) return;
     const state = plots[plotId] ?? { id: plotId, unlocked: def.unlockedByDefault, building: null };
     if (!state.unlocked) {
-      if (def.unlockCost) tryUnlockPlot(plotId, def.unlockCost);
+      if (def.unlockCost) tryUnlockPlot(plotId, def.unlockCost, def.minTownLevel);
       return;
     }
     cycleBuilding(plotId);
