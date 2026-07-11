@@ -14,7 +14,6 @@ export const CRAFTING_RECIPES: CraftingRecipe[] = [
   { id: 'craft_leatherArmor', resultItemId: 'leatherArmor', materialCost: { feather: 4, herb: 3 } },
   { id: 'craft_leatherHat', resultItemId: 'leatherHat', materialCost: { feather: 3, herb: 2 } },
   { id: 'craft_woodenShield', resultItemId: 'woodenShield', materialCost: { wood: 4, ore: 2 } },
-  { id: 'craft_luckyCharm', resultItemId: 'luckyCharm', materialCost: { gem: 2, oldCoin: 3 } },
 
   // Premium feed — shelved at the feed shop once crafted, same as the
   // items above are shelved at the general shop.

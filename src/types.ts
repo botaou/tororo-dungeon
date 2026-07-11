@@ -28,6 +28,11 @@ export type ItemId =
   | 'woodenShield'
   | 'luckyCharm'
   | 'ancientGem'
+  // Convertible-only treasure — never equippable/consumable, never shelved
+  // at a shop; exists purely to be sold to the visiting merchant (see
+  // ItemType).
+  | 'goldBar'
+  | 'royalJewelry'
   // Feed-shop staples — plain commodity food restocked by an NPC supplier
   // (costs the town gold to restock; never crafted, never sits in the
   // player's crafted-goods warehouse).
@@ -47,6 +52,13 @@ export type ItemId =
 // double as the four equipment slots (see EquipSlot) — rare/food are goods,
 // not gear, and can't be equipped.
 export type ItemCategory = 'weapon' | 'armor' | 'hat' | 'shield' | 'rare' | 'food';
+
+// 'craft' items are usable (equippable gear or consumable food) and flow
+// through the normal player warehouse → shop shelf pipeline. 'convertible'
+// items have no gameplay use at all — they exist purely to be sold to the
+// visiting merchant for cash (see MerchantState) and never enter the
+// player's warehouse; a bird sells one straight out of its own inventory.
+export type ItemType = 'craft' | 'convertible';
 
 // The four equipment slots a bird has, one item each. Deliberately the same
 // literal values as their matching ItemCategory so "which slot does this
@@ -107,10 +119,13 @@ export interface CharacterDef {
   materialBonusPercent?: number; // bonus % applied when this bird delivers materials
 }
 
-// One possible drop roll on a kill — independently checked against `chance`
-// (0..1) per entry, so an enemy can drop several things (or nothing) from
-// the same kill. Rolled fresh each kill, awarded to one random participant.
-export type EnemyDropEntry =
+// One possible drop roll on a kill or a gather — independently checked
+// against `chance` (0..1) per entry, so a source can drop several things (or
+// nothing) from the same event. Rolled fresh each time, awarded to one
+// random participant (for enemies, whoever's in damageLog; for mining nodes,
+// the gathering bird). Shared by EnemyDef.dropTable and
+// MiningNodeDef.bonusDropTable.
+export type DropEntry =
   | { kind: 'material'; materialId: MaterialId; amount: number; chance: number }
   | { kind: 'item'; itemId: ItemId; chance: number };
 
@@ -124,7 +139,7 @@ export interface EnemyDef {
   atk: number;
   goldReward: number;
   expReward: number; // flat exp granted to every bird that damaged it
-  dropTable?: EnemyDropEntry[];
+  dropTable?: DropEntry[];
   x: number;
   y: number;
 }
@@ -134,6 +149,11 @@ export interface MiningNodeDef {
   name: string;
   resource: MaterialId;
   amount: number;
+  // Optional low-chance extra rolls on a successful gather, on top of the
+  // guaranteed `resource` — used for the handful of precious nodes that can
+  // also yield convertible treasure (gems, ancient coins) alongside their
+  // normal material.
+  bonusDropTable?: DropEntry[];
   x: number;
   y: number;
 }
@@ -171,6 +191,11 @@ export interface PlayerState {
   // weapons/armor/rare from the general shop) — distinct from tollFromFood,
   // which is only ever the optional payment for the always-free basic ration.
   tollFromShop: number;
+  // The town's 50% cut ("market usage fee") whenever a bird sells a
+  // convertible item to the visiting merchant. Separate from tollFromShop,
+  // which is the town's revenue when birds spend gold *at* a shop, not when
+  // they sell something to one.
+  tollFromMerchant: number;
   // Lifetime cumulative expense (not income) — gold spent restocking the
   // feed shop's commodity staples from the NPC supplier. Only goes up,
   // tracked separately so a future ledger can show costs, not just income.
@@ -191,7 +216,7 @@ export interface EnemyInstance {
   atk: number;
   goldReward: number;
   expReward: number;
-  dropTable: EnemyDropEntry[];
+  dropTable: DropEntry[];
   defeated: boolean;
   respawnAt: number | null; // epoch ms; set when defeated, revives once passed
   // Cumulative damage dealt by each attacking bird (keyed by defId) while
@@ -208,6 +233,7 @@ export interface MiningNodeInstance {
   y: number;
   resource: MaterialId;
   amount: number;
+  bonusDropTable: DropEntry[];
   collected: boolean;
   respawnAt: number | null;
 }
@@ -258,7 +284,9 @@ export type ActivityKind =
   | 'fishing'
   | 'carrying'
   | 'selling'
-  | 'buyingGear';
+  | 'buyingGear'
+  | 'merchantSelling'
+  | 'merchantBuying';
 
 // A pursuit goal a bird's AI is actively working toward. A job is just a
 // mining/treasure pursuit restricted to a specific request's material and
@@ -353,6 +381,23 @@ export interface ActivityLogEntry {
   detail: string; // the actual displayed sentence
 }
 
+// One slot on the visiting merchant's shelf this visit — a fixed random
+// quantity decided when the merchant arrives, decremented as birds buy it.
+export interface MerchantLineupEntry {
+  itemId: ItemId;
+  amount: number;
+}
+
+// A temporary shop-on-legs distinct from the traveler NPC: sets up for a
+// stretch of days, offers a randomized (mostly-normal, rarely-rare) lineup
+// for purchase, and buys convertible items off birds for a 50/50 gold split
+// with the town. Absent (null) between visits.
+export interface MerchantState {
+  arrivedAt: number; // epoch ms
+  departsAt: number; // epoch ms; tick() clears the merchant once passed
+  lineup: MerchantLineupEntry[];
+}
+
 export interface WorldState {
   enemies: EnemyInstance[];
   miningNodes: MiningNodeInstance[];
@@ -361,6 +406,7 @@ export interface WorldState {
   birds: BirdState[];
   requests: JobRequest[];
   activityLog: ActivityLogEntry[];
+  merchant: MerchantState | null;
 }
 
 // ---- Town expansion (land grid) ----

@@ -4,9 +4,12 @@ import {
   ActivityLogEntry,
   BirdState,
   EnemyInstance,
+  ItemId,
   JobRequest,
   LeisureSpotInstance,
   MaterialId,
+  MerchantLineupEntry,
+  MerchantState,
   MiningNodeInstance,
   TreasureNodeInstance,
   WorldState,
@@ -27,7 +30,7 @@ import { AttackAssignment, applyHealing, resolveAttacks } from '../game/combat';
 import { scoreRequestAcceptance, tryAcceptRequest } from '../game/requests';
 import { getEffectiveStats, maybeAutoEquip } from '../game/birdStats';
 import { MATERIAL_LABEL } from '../data/materials';
-import { ITEM_DEF_MAP, RESTOCKED_ITEM_IDS } from '../data/items';
+import { ITEM_DEF_MAP, MERCHANT_COMMON_ITEM_IDS, MERCHANT_RARE_ITEM_IDS, RESTOCKED_ITEM_IDS } from '../data/items';
 import { MATERIAL_SELL_PRICE } from '../data/marketPrices';
 import {
   ACTIVITY_LOG_MAX,
@@ -39,6 +42,14 @@ import {
   LEVEL_UP_DEFENSE_GAIN,
   LEVEL_UP_HP_GAIN,
   LEVEL_UP_SPEED_GAIN,
+  MERCHANT_ARRIVAL_CHECK_CHANCE,
+  MERCHANT_BUYBACK_SPLIT,
+  MERCHANT_ITEM_STOCK_MAX,
+  MERCHANT_ITEM_STOCK_MIN,
+  MERCHANT_LINEUP_SIZE,
+  MERCHANT_RARE_CHANCE,
+  MERCHANT_VISIT_DURATION_MAX_MS,
+  MERCHANT_VISIT_DURATION_MIN_MS,
   MINING_RESPAWN_MS,
   MOOD_REFRESH_MS,
   REQUEST_CHECK_CHANCE,
@@ -96,6 +107,7 @@ function buildInitialWorld(): WorldState {
     ...jitterPosition(m.x, m.y),
     resource: m.resource,
     amount: m.amount,
+    bonusDropTable: m.bonusDropTable ?? [],
     collected: false,
     respawnAt: null,
   }));
@@ -154,7 +166,29 @@ function buildInitialWorld(): WorldState {
     };
   });
 
-  return { enemies, miningNodes, treasures, leisureSpots, birds, requests: [], activityLog: [] };
+  return { enemies, miningNodes, treasures, leisureSpots, birds, requests: [], activityLog: [], merchant: null };
+}
+
+// Rolls a fresh randomized shelf for a new merchant visit — each slot
+// independently drawn from the rare pool at MERCHANT_RARE_CHANCE, otherwise
+// the common pool. Duplicate itemIds across slots are merged into one
+// lineup entry rather than wasting a separate slot.
+function rollMerchantLineup(): MerchantLineupEntry[] {
+  const counts = new Map<ItemId, number>();
+  for (let i = 0; i < MERCHANT_LINEUP_SIZE; i++) {
+    const pool = Math.random() < MERCHANT_RARE_CHANCE ? MERCHANT_RARE_ITEM_IDS : MERCHANT_COMMON_ITEM_IDS;
+    const itemId = pool[Math.floor(Math.random() * pool.length)];
+    const amount =
+      MERCHANT_ITEM_STOCK_MIN + Math.floor(Math.random() * (MERCHANT_ITEM_STOCK_MAX - MERCHANT_ITEM_STOCK_MIN + 1));
+    counts.set(itemId, (counts.get(itemId) ?? 0) + amount);
+  }
+  return Array.from(counts.entries()).map(([itemId, amount]) => ({ itemId, amount }));
+}
+
+function buildMerchantVisit(now: number): MerchantState {
+  const duration =
+    MERCHANT_VISIT_DURATION_MIN_MS + Math.random() * (MERCHANT_VISIT_DURATION_MAX_MS - MERCHANT_VISIT_DURATION_MIN_MS);
+  return { arrivedAt: now, departsAt: now + duration, lineup: rollMerchantLineup() };
 }
 
 // Applies exp to a bird in place, looping through as many level-ups as the
@@ -185,7 +219,16 @@ interface WorldStore {
 }
 
 export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => ({
-  world: { enemies: [], miningNodes: [], treasures: [], leisureSpots: [], birds: [], requests: [], activityLog: [] },
+  world: {
+    enemies: [],
+    miningNodes: [],
+    treasures: [],
+    leisureSpots: [],
+    birds: [],
+    requests: [],
+    activityLog: [],
+    merchant: null,
+  },
 
   initWorld: () => set({ world: buildInitialWorld() }),
 
@@ -233,6 +276,20 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         : t
     );
     let requests = world.requests;
+
+    // The visiting merchant — distinct from the traveler below: it lingers
+    // for a whole visit instead of a single instant, and (unlike the
+    // traveler, which only ever buys from town stock) both sells its own
+    // randomized lineup and buys convertible treasure off birds.
+    let merchant = world.merchant;
+    if (merchant && now >= merchant.departsAt) {
+      newLog.push(makeLogEntry(null, 'merchant', '商人が街を去っていった'));
+      merchant = null;
+    }
+    if (!merchant && Math.random() < MERCHANT_ARRIVAL_CHECK_CHANCE) {
+      merchant = buildMerchantVisit(now);
+      newLog.push(makeLogEntry(null, 'merchant', `商人が街にやってきた!(商品${merchant.lineup.length}種類)`));
+    }
 
     // Satiety always decays and happiness always drifts, regardless of the
     // mood-refresh timer. Once satiety bottoms out, mood is forced to
@@ -291,6 +348,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       leisureSpots: world.leisureSpots,
       requests,
       shopStock: usePlayerStore.getState().shopStock,
+      merchant,
     };
 
     const allAssignments: AttackAssignment[] = [];
@@ -376,6 +434,40 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         maybeAutoEquip(bird, itemId);
         newLog.push(
           makeLogEntry(bird.name, 'buyShop', `${bird.name}が${ITEM_DEF_MAP[itemId].name}を買った(街に+${totalCost}G)`)
+        );
+      }
+      if (outcome.bonusItemFound) {
+        newLog.push(
+          makeLogEntry(bird.name, 'drop', `${bird.name}が採集中に${ITEM_DEF_MAP[outcome.bonusItemFound].name}を見つけた!`)
+        );
+      }
+      if (outcome.merchantSellAttempt) {
+        // The 50/50 "market usage fee" split — separate from the combat
+        // security fee (SECURITY_FEE_RATE), which never touches convertible
+        // items at all (see combat.ts's resolveAttacks).
+        const { itemId, amount } = outcome.merchantSellAttempt;
+        const totalValue = ITEM_DEF_MAP[itemId].buyPrice * amount;
+        const birdShare = Math.round(totalValue * (1 - MERCHANT_BUYBACK_SPLIT));
+        const townShare = totalValue - birdShare;
+        bird.items[itemId] = Math.max(0, (bird.items[itemId] ?? 0) - amount);
+        bird.gold += birdShare;
+        usePlayerStore.getState().creditMerchantToll(townShare);
+        newLog.push(
+          makeLogEntry(
+            bird.name,
+            'merchantSell',
+            `${bird.name}が商人に${ITEM_DEF_MAP[itemId].name}を売った(鳥+${birdShare}G/街+${townShare}G)`
+          )
+        );
+      }
+      if (outcome.merchantBuyAttempt && merchant) {
+        const { itemId, amount, totalCost } = outcome.merchantBuyAttempt;
+        const entry = merchant.lineup.find((l) => l.itemId === itemId);
+        if (entry) entry.amount = Math.max(0, entry.amount - amount);
+        bird.items[itemId] = (bird.items[itemId] ?? 0) + amount;
+        maybeAutoEquip(bird, itemId);
+        newLog.push(
+          makeLogEntry(bird.name, 'merchantBuy', `${bird.name}が商人から${ITEM_DEF_MAP[itemId].name}を買った(-${totalCost}G)`)
         );
       }
     }
@@ -515,6 +607,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         birds: finalBirds,
         requests,
         activityLog,
+        merchant,
       },
     });
   },

@@ -15,6 +15,10 @@ export function getBirdStatusLabel(bird: BirdState): string {
       return '運搬中';
     case 'selling':
       return '売却中';
+    case 'merchantSelling':
+      return '商人に売却中';
+    case 'merchantBuying':
+      return '商人から購入中';
     case 'eating':
       return '購入中';
     case 'resting':
@@ -42,7 +46,10 @@ export function getBirdGoalLabel(bird: BirdState): string {
     case 'treasure':
       return 'お宝を回収中';
     case 'shop':
-      return bird.activity === 'selling' ? '素材を売りに向かっている' : '餌を買いに向かっている';
+      if (bird.activity === 'selling') return '素材を売りに向かっている';
+      if (bird.activity === 'merchantSelling') return '商人に売りに向かっている';
+      if (bird.activity === 'merchantBuying') return '商人の店に向かっている';
+      return '餌を買いに向かっている';
     case 'river':
       return '水浴びしている';
     case 'pond':

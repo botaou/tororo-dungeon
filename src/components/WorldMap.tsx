@@ -5,6 +5,7 @@ import {
   BirdState,
   EnemyInstance,
   LeisureSpotInstance,
+  MerchantState,
   MiningNodeInstance,
   ShopKind,
   TownPlotState,
@@ -12,7 +13,7 @@ import {
 } from '../types';
 import { getCharacterDef } from '../data/characters';
 import { TOWN_DECOR, TOWN_X, TOWN_Y } from '../data/world';
-import { BUILDING_ICON, shopKindForPlot, TOWN_PLOT_DEFS } from '../data/townGrid';
+import { BUILDING_ICON, MERCHANT_SPOT, shopKindForPlot, TOWN_PLOT_DEFS } from '../data/townGrid';
 import { SHOP_DEFS } from '../data/shops';
 import { HOUSE_POSITIONS } from '../data/houses';
 import { MATERIAL_ICON } from '../data/materials';
@@ -30,9 +31,11 @@ interface Props {
   leisureSpots: LeisureSpotInstance[];
   birds: BirdState[];
   plotStates: Record<string, TownPlotState>;
+  merchant: MerchantState | null;
   onBirdPress: (defId: string) => void;
   onPlotPress: (plotId: string) => void;
   onShopPress: (shopKind: ShopKind) => void;
+  onMerchantPress: () => void;
 }
 
 export function WorldMap({
@@ -42,9 +45,11 @@ export function WorldMap({
   leisureSpots,
   birds,
   plotStates,
+  merchant,
   onBirdPress,
   onPlotPress,
   onShopPress,
+  onMerchantPress,
 }: Props) {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const fieldWidth = Math.max(240, windowWidth - HORIZONTAL_PADDING);
@@ -85,6 +90,15 @@ export function WorldMap({
       </View>
 
       <ShopkeeperSprite x={TOWN_X * fieldWidth} y={TOWN_Y * fieldHeight + 44} />
+
+      {merchant && (
+        <MerchantSprite
+          merchant={merchant}
+          x={MERCHANT_SPOT.x * fieldWidth}
+          y={MERCHANT_SPOT.y * fieldHeight}
+          onPress={onMerchantPress}
+        />
+      )}
 
       {birds.map((b) => {
         const pos = HOUSE_POSITIONS[b.defId];
@@ -154,6 +168,48 @@ function ShopkeeperSprite({ x, y }: { x: number; y: number }) {
       <Text style={styles.emojiLarge}>🧑‍🌾</Text>
       <Text style={styles.nameTag}>店主</Text>
     </Animated.View>
+  );
+}
+
+// The visiting merchant's temporary stall — only rendered while
+// world.merchant is non-null (see WorldMap's caller). Tapping it opens a
+// view-only info modal; birds decide for themselves whether to trade here,
+// same as the two permanent shops.
+function MerchantSprite({
+  merchant,
+  x,
+  y,
+  onPress,
+}: {
+  merchant: MerchantState;
+  x: number;
+  y: number;
+  onPress: () => void;
+}) {
+  const bob = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(bob, { toValue: 1, duration: 700, useNativeDriver: true, easing: Easing.inOut(Easing.sin) }),
+        Animated.timing(bob, { toValue: 0, duration: 700, useNativeDriver: true, easing: Easing.inOut(Easing.sin) }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [bob]);
+
+  const bobY = bob.interpolate({ inputRange: [0, 1], outputRange: [0, -3] });
+  const minutesLeft = Math.max(0, Math.ceil((merchant.departsAt - Date.now()) / 60_000));
+
+  return (
+    <AnimatedPressable onPress={onPress} style={[styles.sprite, { left: x, top: y }]}>
+      <Animated.View style={{ transform: [{ translateY: bobY }] }}>
+        <Text style={styles.emojiLarge}>🏕️</Text>
+      </Animated.View>
+      <Text style={styles.nameTag}>商人</Text>
+      <Text style={styles.tag}>残り{minutesLeft}分</Text>
+    </AnimatedPressable>
   );
 }
 
@@ -383,7 +439,8 @@ function BirdSprite({
     bird.activity === 'bathing' ||
     bird.activity === 'fishing' ||
     bird.activity === 'carrying' ||
-    bird.activity === 'selling';
+    bird.activity === 'selling' ||
+    bird.activity === 'merchantSelling';
 
   useEffect(() => {
     if (fainted || isPassiveActivity) return;
@@ -436,7 +493,9 @@ function BirdSprite({
           </Animated.View>
           {showMineSwing && <Text style={styles.pickaxe}>⛏️</Text>}
           {bird.carrying && <Text style={styles.carryBadge}>{MATERIAL_ICON[bird.carrying.materialId]}</Text>}
-          {bird.activity === 'selling' && <Text style={styles.carryBadge}>💰</Text>}
+          {(bird.activity === 'selling' || bird.activity === 'merchantSelling') && (
+            <Text style={styles.carryBadge}>💰</Text>
+          )}
           <Text style={styles.nameTag}>{bird.name}</Text>
           <View style={styles.miniBarTrack}>
             <View style={[styles.miniBarFill, { width: `${ratio * 100}%`, backgroundColor: def.color }]} />

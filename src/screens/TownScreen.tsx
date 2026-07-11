@@ -13,6 +13,7 @@ import { ShopModal } from '../components/ShopModal';
 import { CraftingModal } from '../components/CraftingModal';
 import { PlayerInventoryModal } from '../components/PlayerInventoryModal';
 import { BirdRosterModal } from '../components/BirdRosterModal';
+import { MerchantModal } from '../components/MerchantModal';
 import { ActivityLogPanel } from '../components/ActivityLogPanel';
 import { MaterialId, ShopKind } from '../types';
 import { cuteShadow, theme } from '../theme';
@@ -33,6 +34,7 @@ export function TownScreen() {
   const [inventoryVisible, setInventoryVisible] = useState(false);
   const [rosterVisible, setRosterVisible] = useState(false);
   const [craftingVisible, setCraftingVisible] = useState(false);
+  const [merchantVisible, setMerchantVisible] = useState(false);
 
   useEffect(() => {
     if (world.birds.length === 0) initWorld();
@@ -86,9 +88,11 @@ export function TownScreen() {
           leisureSpots={world.leisureSpots}
           birds={activeBirds}
           plotStates={plots}
+          merchant={world.merchant}
           onBirdPress={() => setRosterVisible(true)}
           onPlotPress={handlePlotPress}
           onShopPress={(kind) => setOpenShop(kind)}
+          onMerchantPress={() => setMerchantVisible(true)}
         />
       </View>
 
@@ -121,6 +125,8 @@ export function TownScreen() {
       />
 
       <BirdRosterModal visible={rosterVisible} onClose={() => setRosterVisible(false)} birds={activeBirds} />
+
+      <MerchantModal visible={merchantVisible} onClose={() => setMerchantVisible(false)} merchant={world.merchant} />
     </SafeAreaView>
   );
 }

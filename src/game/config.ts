@@ -116,6 +116,38 @@ export const ENEMY_RESPAWN_MS = 12_000;
 export const MINING_RESPAWN_MS = 90_000;
 export const TREASURE_RESPAWN_MS = 90_000;
 
+// The visiting merchant — distinct from the traveler above: instead of a
+// single brief in-and-out purchase, the merchant sets up a temporary shop
+// for a stretch of "days" (there's no real day/night cycle yet, so this is
+// expressed directly in ms, on the same order of magnitude as a Home-screen
+// play session) and offers two-way trade. Absent far more often than
+// present, so its arrival reads as a notable event.
+// Average wait between visits while none is present: ~1/chance ticks.
+export const MERCHANT_ARRIVAL_CHECK_CHANCE = 0.003;
+// How long a single visit lasts once the merchant arrives — randomized
+// per-visit within this range to represent "a few days to about a week".
+export const MERCHANT_VISIT_DURATION_MIN_MS = 180_000;
+export const MERCHANT_VISIT_DURATION_MAX_MS = 420_000;
+// How many distinct item slots the merchant's shelf has this visit, and how
+// many units of each — freshly randomized every arrival.
+export const MERCHANT_LINEUP_SIZE = 4;
+export const MERCHANT_ITEM_STOCK_MIN = 2;
+export const MERCHANT_ITEM_STOCK_MAX = 5;
+// Chance any given shelf slot is drawn from the rare pool instead of the
+// common one (see data/items.ts's MERCHANT_RARE_ITEM_IDS).
+export const MERCHANT_RARE_CHANCE = 0.15;
+// The "market usage fee" split when a bird sells a convertible item to the
+// merchant — half the sale price goes to the bird, half to the town.
+export const MERCHANT_BUYBACK_SPLIT = 0.5;
+// Each tick, a free bird holding at least one convertible item has this
+// chance of deciding to make a trip to sell to the merchant (only rolled
+// while a merchant is actually present) — higher than the regular
+// SELL_CHECK_CHANCE_BASE since the merchant won't be there for long.
+export const MERCHANT_SELL_CHECK_CHANCE = 0.05;
+// Each tick, a free bird has this chance of checking the merchant's shelf
+// for something affordable (only rolled while a merchant is present).
+export const MERCHANT_BUY_CHECK_CHANCE = 0.02;
+
 export const STARTING_GOLD = 300;
 export const STARTING_MATERIALS = {
   wood: 0,

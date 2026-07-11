@@ -7,6 +7,7 @@ import {
   JobRequest,
   LeisureSpotInstance,
   MaterialId,
+  MerchantState,
   MiningNodeInstance,
   Personality,
   ShopKind,
@@ -20,6 +21,8 @@ import {
   HOME_NEED_TICKS,
   LEISURE_CHANCE,
   LEISURE_DWELL_TICKS,
+  MERCHANT_BUY_CHECK_CHANCE,
+  MERCHANT_SELL_CHECK_CHANCE,
   MIN_BIRD_DISTANCE,
   MOVE_SPEED,
   SELL_CHECK_CHANCE_BASE,
@@ -30,9 +33,9 @@ import {
 } from './config';
 import { TOWN_RADIUS, TOWN_X, TOWN_Y } from '../data/world';
 import { getHousePosition } from '../data/houses';
-import { getShopPosition } from '../data/townGrid';
-import { ITEM_DEFS } from '../data/items';
-import { getEffectiveStats } from './birdStats';
+import { getShopPosition, MERCHANT_SPOT } from '../data/townGrid';
+import { CONVERTIBLE_ITEM_IDS, ITEM_DEF_MAP, ITEM_DEFS } from '../data/items';
+import { getEffectiveStats, maybeAutoEquip } from './birdStats';
 import { AttackAssignment } from './combat';
 
 // A fainted bird (hp hit 0) rests in place and slowly recovers before
@@ -115,6 +118,9 @@ export interface AiWorld {
   // AI's perspective; the store applies the actual decrement (see
   // AiStepOutcome.shopPurchase).
   shopStock: Record<ShopKind, Partial<Record<ItemId, number>>>;
+  // The visiting merchant, if one currently has its stall set up — null
+  // between visits. Read-only from the AI's perspective, same as shopStock.
+  merchant: MerchantState | null;
 }
 
 export interface AiStepOutcome {
@@ -138,6 +144,19 @@ export interface AiStepOutcome {
   // instead of the free ration, or a weapon/armor from the general shop.
   // The store applies the shelf decrement + item transfer + shop toll.
   shopPurchase: { shopKind: ShopKind; itemId: ItemId; amount: number; totalCost: number } | null;
+  // Set when a bird finishes selling a convertible item to the visiting
+  // merchant — the store looks up the item's value and splits it 50/50
+  // between the bird and the town (see MERCHANT_BUYBACK_SPLIT).
+  merchantSellAttempt: { itemId: ItemId; amount: number } | null;
+  // Set when a bird finishes buying something off the merchant's randomized
+  // shelf — the store decrements that lineup slot and charges the bird
+  // (this gold leaves the game entirely; unlike the town's own shops, the
+  // merchant isn't part of the town's economy).
+  merchantBuyAttempt: { itemId: ItemId; amount: number; totalCost: number } | null;
+  // Set when a gather roll hits a mining node's bonusDropTable — purely for
+  // the activity log; the item itself is already credited to the bird
+  // in-place (see executeGather).
+  bonusItemFound: ItemId | null;
 }
 
 function emptyOutcome(): AiStepOutcome {
@@ -151,6 +170,9 @@ function emptyOutcome(): AiStepOutcome {
     deliveredMaterial: null,
     foodPurchase: 0,
     shopPurchase: null,
+    merchantSellAttempt: null,
+    merchantBuyAttempt: null,
+    bonusItemFound: null,
   };
 }
 
@@ -267,6 +289,30 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
     bird.activity = 'buyingGear';
     bird.workProgress = 0;
     return executeGearShopTrip(bird, world);
+  }
+
+  // The merchant's stall only exists to interact with while it's actually
+  // set up — both triggers below are no-ops whenever world.merchant is null.
+  if (world.merchant) {
+    if (bird.targetKind === 'shop' && bird.activity === 'merchantSelling') {
+      return executeMerchantSellTrip(bird);
+    }
+    if (hasConvertibleItems(bird) && Math.random() < MERCHANT_SELL_CHECK_CHANCE) {
+      bird.targetKind = 'shop';
+      bird.activity = 'merchantSelling';
+      bird.workProgress = 0;
+      return executeMerchantSellTrip(bird);
+    }
+
+    if (bird.targetKind === 'shop' && bird.activity === 'merchantBuying') {
+      return executeMerchantBuyTrip(bird, world);
+    }
+    if (Math.random() < MERCHANT_BUY_CHECK_CHANCE && pickMerchantBuyOffer(bird, world)) {
+      bird.targetKind = 'shop';
+      bird.activity = 'merchantBuying';
+      bird.workProgress = 0;
+      return executeMerchantBuyTrip(bird, world);
+    }
   }
 
   let category = categoryOf(bird.targetKind);
@@ -464,6 +510,80 @@ function executeGearShopTrip(bird: BirdState, world: AiWorld): AiStepOutcome {
   return outcome;
 }
 
+function hasConvertibleItems(bird: BirdState): boolean {
+  return CONVERTIBLE_ITEM_IDS.some((id) => (bird.items[id] ?? 0) > 0);
+}
+
+// Picks the single most-plentiful convertible item the bird is holding to
+// offer the merchant this trip — same one-item-at-a-time shape as
+// pickSellOffer, so a bird never empties its whole treasure stash in one go.
+function pickMerchantSellOffer(bird: BirdState): { itemId: ItemId; amount: number } | null {
+  let bestId: ItemId | null = null;
+  let bestAmount = 0;
+  for (const id of CONVERTIBLE_ITEM_IDS) {
+    const amount = bird.items[id] ?? 0;
+    if (amount > bestAmount) {
+      bestAmount = amount;
+      bestId = id;
+    }
+  }
+  if (!bestId) return null;
+  return { itemId: bestId, amount: bestAmount };
+}
+
+// A bird holding convertible treasure walks to the merchant's stall and
+// sells off its best-stocked item — the store looks up the value and
+// applies the 50/50 split (see MERCHANT_BUYBACK_SPLIT).
+function executeMerchantSellTrip(bird: BirdState): AiStepOutcome {
+  const outcome = emptyOutcome();
+  const arrived = moveToward(bird, MERCHANT_SPOT.x, MERCHANT_SPOT.y);
+  bird.activity = 'merchantSelling';
+  if (arrived) {
+    bird.workProgress += 1;
+    if (bird.workProgress >= SELL_DWELL_TICKS) {
+      const offer = pickMerchantSellOffer(bird);
+      if (offer) outcome.merchantSellAttempt = offer;
+      bird.targetKind = null;
+      bird.workProgress = 0;
+    }
+  }
+  return outcome;
+}
+
+// Picks one affordable, in-stock slot off the merchant's randomized shelf.
+function pickMerchantBuyOffer(bird: BirdState, world: AiWorld): { itemId: ItemId; price: number } | null {
+  if (!world.merchant) return null;
+  const candidates = world.merchant.lineup.filter(
+    (l) => l.amount > 0 && ITEM_DEF_MAP[l.itemId].buyPrice <= bird.gold
+  );
+  if (candidates.length === 0) return null;
+  const pick = candidates[Math.floor(Math.random() * candidates.length)];
+  return { itemId: pick.itemId, price: ITEM_DEF_MAP[pick.itemId].buyPrice };
+}
+
+// Walks to the merchant's stall and, once there, buys whichever slot
+// pickMerchantBuyOffer settled on. If the shelf/affordability changed since
+// the trip was committed to (someone else bought the last one), the trip
+// just concludes with nothing bought.
+function executeMerchantBuyTrip(bird: BirdState, world: AiWorld): AiStepOutcome {
+  const outcome = emptyOutcome();
+  const arrived = moveToward(bird, MERCHANT_SPOT.x, MERCHANT_SPOT.y);
+  bird.activity = 'merchantBuying';
+  if (arrived) {
+    bird.workProgress += 1;
+    if (bird.workProgress >= SELL_DWELL_TICKS) {
+      const offer = pickMerchantBuyOffer(bird, world);
+      if (offer) {
+        bird.gold -= offer.price;
+        outcome.merchantBuyAttempt = { itemId: offer.itemId, amount: 1, totalCost: offer.price };
+      }
+      bird.targetKind = null;
+      bird.workProgress = 0;
+    }
+  }
+  return outcome;
+}
+
 // Any bird that rolls combat fights whichever enemy is nearest to it.
 function executeCombat(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutcome {
   const outcome = emptyOutcome();
@@ -532,6 +652,21 @@ function executeGather(bird: BirdState, def: CharacterDef, world: AiWorld): AiSt
         if (bird.workProgress >= ENCOUNTER_HOLD_TICKS) {
           bird.carrying = { materialId: node.resource, amount: node.amount };
           outcome.miningCollectedUid = node.uid;
+          // A few precious nodes have a low-chance bonus roll on top of the
+          // guaranteed resource — credited straight to the bird (unlike the
+          // main haul, it doesn't need carrying home) since it's a rare
+          // windfall, not the point of the trip.
+          for (const entry of node.bonusDropTable ?? []) {
+            if (Math.random() >= entry.chance) continue;
+            if (entry.kind === 'item') {
+              bird.items[entry.itemId] = (bird.items[entry.itemId] ?? 0) + 1;
+              maybeAutoEquip(bird, entry.itemId);
+              outcome.bonusItemFound = entry.itemId;
+            } else {
+              bird.inventory[entry.materialId] = (bird.inventory[entry.materialId] ?? 0) + entry.amount;
+            }
+            break;
+          }
           bird.targetKind = null;
           bird.targetRefUid = null;
           bird.workProgress = 0;

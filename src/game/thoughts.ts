@@ -13,6 +13,8 @@ interface ThoughtLines {
   carrying?: string;
   selling?: string;
   buyingGear?: string;
+  merchantSelling?: string;
+  merchantBuying?: string;
   sleepy?: string;
   happy?: string;
   hungry?: string;
@@ -33,6 +35,8 @@ const LINES: Record<string, ThoughtLines> = {
     carrying: 'これを街まで持って帰るぞ！',
     selling: '今日の分を売りに行こう',
     buyingGear: '道具屋で何か買おうかな',
+    merchantSelling: '商人にこれを見せてみよう',
+    merchantBuying: '商人の品揃え、気になるな',
     happy: '外の空気が気持ちいい！',
     wantsMoney: '稼げる依頼はないかな',
   },
@@ -46,6 +50,8 @@ const LINES: Record<string, ThoughtLines> = {
     carrying: 'よいしょ、よいしょ',
     selling: 'これ売ったら何を買おうかな',
     buyingGear: '新しいの、似合うかな？',
+    merchantSelling: 'これ、高く売れるかな？',
+    merchantBuying: '商人さん、何持ってきたのかな',
     happy: 'たのしいね！',
     wantsMoney: '依頼、受けてみようかな',
   },
@@ -59,6 +65,8 @@ const LINES: Record<string, ThoughtLines> = {
     carrying: '落とさないように気をつけよう',
     selling: '貯めたぶん、売っておこう',
     buyingGear: '備えあれば憂いなし',
+    merchantSelling: '街のためにもなるし、売っておこう',
+    merchantBuying: '必要な物だけ見ておこう',
     happy: 'みんな無事でよかった',
     wantsMoney: '依頼をこなそうかな',
   },
@@ -74,6 +82,8 @@ const LINES: Record<string, ThoughtLines> = {
     carrying: 'いっぱい持って帰るぞ！',
     selling: 'いい値がつくといいな！',
     buyingGear: 'いい掘り出し物ないかな',
+    merchantSelling: 'これ、高く売れそう！',
+    merchantBuying: '掘り出し物、あるかな？',
     happy: 'いいもの見つけた！',
     wantsMoney: 'お金になるものを探そう',
   },

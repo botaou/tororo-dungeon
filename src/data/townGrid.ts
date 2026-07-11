@@ -57,6 +57,12 @@ export function getShopPosition(kind: ShopKind): { x: number; y: number } {
   return { x: def.x, y: def.y };
 }
 
+// Where the visiting merchant sets up — a fixed spot off the buildable
+// grid's diagonal plots, southeast of the town hall, clear of both
+// permanent shops (which sit on the N/S axis). Not a real plot: nothing
+// is ever built here, it's just where the temporary stall appears/vanishes.
+export const MERCHANT_SPOT = { x: TOWN_X + 0.11, y: TOWN_Y + 0.11 };
+
 export function shopKindForPlot(plotId: string): ShopKind | null {
   return (Object.keys(SHOP_PLOT_IDS) as ShopKind[]).find((k) => SHOP_PLOT_IDS[k] === plotId) ?? null;
 }

@@ -16,6 +16,9 @@ interface PlayerActions {
   creditFoodToll: (amount: number) => void;
   creditTravelerToll: (amount: number) => void;
   creditShopToll: (amount: number) => void;
+  // The town's 50% cut of a bird's convertible-item sale to the visiting
+  // merchant (the "market usage fee").
+  creditMerchantToll: (amount: number) => void;
   // The player's main hands-on action: spend the recipe's material cost
   // out of the town warehouse to produce one crafted item. Returns false
   // (no state change) if the town doesn't have enough of any material.
@@ -42,6 +45,7 @@ const initialState: PlayerState = {
   tollFromFood: 0,
   tollFromTraveler: 0,
   tollFromShop: 0,
+  tollFromMerchant: 0,
   expenseFeedRestock: 0,
 };
 
@@ -73,6 +77,8 @@ export const usePlayerStore = create<PlayerStore>()(
       creditTravelerToll: (amount) =>
         set((s) => ({ gold: s.gold + amount, tollFromTraveler: s.tollFromTraveler + amount })),
       creditShopToll: (amount) => set((s) => ({ gold: s.gold + amount, tollFromShop: s.tollFromShop + amount })),
+      creditMerchantToll: (amount) =>
+        set((s) => ({ gold: s.gold + amount, tollFromMerchant: s.tollFromMerchant + amount })),
 
       craftItem: (recipeId) => {
         const recipe = CRAFTING_RECIPES.find((r) => r.id === recipeId);
