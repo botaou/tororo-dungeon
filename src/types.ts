@@ -381,7 +381,18 @@ export interface JobRequest {
   id: string;
   materialId: MaterialId;
   amount: number;
-  reward: number; // gold
+  reward: number; // gold, paid to the completing bird
+  // Granted to the completing bird alongside the gold reward (see grantExp
+  // in useWorldStore) — jobs previously gave no exp at all, unlike combat.
+  expReward: number;
+  // Added to the town's developmentPoints on completion (see useTownStore) —
+  // a separate currency from reward/expReward that drives townLevel up
+  // through its named tiers (data/townGrid.ts's TOWN_LEVEL_DEFS).
+  developmentPoints: number;
+  // Added to the town's reputation on completion (see useTownStore) —
+  // tracked independently from developmentPoints on purpose; nothing reads
+  // it yet (future museum/merchant-frequency hooks), it just accumulates.
+  reputationPoints: number;
   status: JobStatus;
   acceptedBy: string | null; // bird defId
   createdAt: number;

@@ -15,8 +15,10 @@ import { PlayerInventoryModal } from '../components/PlayerInventoryModal';
 import { BirdRosterModal } from '../components/BirdRosterModal';
 import { MerchantModal } from '../components/MerchantModal';
 import { RecruitmentModal } from '../components/RecruitmentModal';
+import { TownLevelUpModal } from '../components/TownLevelUpModal';
 import { ActivityLogPanel } from '../components/ActivityLogPanel';
-import { MaterialId, ShopKind } from '../types';
+import { JobPreset } from '../data/jobPresets';
+import { ShopKind } from '../types';
 import { cuteShadow, theme } from '../theme';
 
 export function TownScreen() {
@@ -27,6 +29,8 @@ export function TownScreen() {
   const initWorld = useWorldStore((s) => s.initWorld);
   const postRequest = useWorldStore((s) => s.postRequest);
   const plots = useTownStore((s) => s.plots);
+  const developmentPoints = useTownStore((s) => s.developmentPoints);
+  const levelUpEvents = useTownStore((s) => s.levelUpEvents);
   const tryUnlockPlot = useTownStore((s) => s.tryUnlockPlot);
   const cycleBuilding = useTownStore((s) => s.cycleBuilding);
 
@@ -40,6 +44,8 @@ export function TownScreen() {
   // the array only ever grows, so anything past this index is new (see
   // useWorldStore's recruitment-trigger checks).
   const [shownRecruitCount, setShownRecruitCount] = useState(0);
+  // Same pattern for useTownStore's ever-growing levelUpEvents.
+  const [shownLevelUpCount, setShownLevelUpCount] = useState(0);
 
   useEffect(() => {
     if (world.birds.length === 0) initWorld();
@@ -50,9 +56,10 @@ export function TownScreen() {
   const activeBirds = world.birds.filter((b) => b.isRecruited);
   const dormantDefIds = world.birds.filter((b) => !b.isRecruited).map((b) => b.defId);
   const pendingRecruit = world.recruitmentEvents[shownRecruitCount] ?? null;
+  const pendingLevelUp = levelUpEvents[shownLevelUpCount] ?? null;
 
-  const handlePost = (materialId: MaterialId, amount: number, reward: number) => {
-    postRequest(materialId, amount, reward);
+  const handlePost = (preset: JobPreset) => {
+    postRequest(preset);
   };
 
   const handlePlotPress = (plotId: string) => {
@@ -96,6 +103,7 @@ export function TownScreen() {
           birds={activeBirds}
           dormantDefIds={dormantDefIds}
           plotStates={plots}
+          developmentPoints={developmentPoints}
           merchant={world.merchant}
           onBirdPress={() => setRosterVisible(true)}
           onPlotPress={handlePlotPress}
@@ -137,6 +145,8 @@ export function TownScreen() {
       <MerchantModal visible={merchantVisible} onClose={() => setMerchantVisible(false)} merchant={world.merchant} />
 
       <RecruitmentModal defId={pendingRecruit} onClose={() => setShownRecruitCount((c) => c + 1)} />
+
+      <TownLevelUpModal level={pendingLevelUp} onClose={() => setShownLevelUpCount((c) => c + 1)} />
     </SafeAreaView>
   );
 }

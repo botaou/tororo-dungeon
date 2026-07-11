@@ -49,6 +49,12 @@ export const MOOD_REFRESH_MS = 45_000;
 // request board (scaled by its personal acceptance score for each request).
 export const REQUEST_CHECK_CHANCE = 0.35;
 
+// The board never holds more than this many not-yet-done requests at once
+// (postRequest rejects beyond it) — completing one immediately rolls a
+// fresh random replacement (see useWorldStore's tick) so the board stays a
+// steady, bounded pool instead of growing forever.
+export const MAX_ACTIVE_REQUESTS = 3;
+
 // How long a bird spends at home satisfying hunger/sleepiness before the
 // need is resolved and its mood returns to normal.
 export const HOME_NEED_TICKS = 4;

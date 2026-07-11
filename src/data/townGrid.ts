@@ -1,4 +1,4 @@
-import { BuildingKind, ShopKind, TownPlotDef, TownPlotState } from '../types';
+import { BuildingKind, ShopKind, TownPlotDef } from '../types';
 import { TOWN_X, TOWN_Y } from './world';
 
 // A grid of buildable land around the town hall (the existing 🏘️ marker,
@@ -67,18 +67,41 @@ export function shopKindForPlot(plotId: string): ShopKind | null {
   return (Object.keys(SHOP_PLOT_IDS) as ShopKind[]).find((k) => SHOP_PLOT_IDS[k] === plotId) ?? null;
 }
 
-// How many player-unlocked (non-default) plots it takes to advance one
-// town level — deliberately light, so the very first couple of land
-// purchases already bump the town hall up a tier (see game/recruitment.ts,
-// which gates Vivi's recruitment on this).
-export const TOWN_LEVEL_PLOT_STEP = 2;
+// Unlocking a plot still grows the town — it just does so by granting
+// developmentPoints (see useTownStore) rather than town level being derived
+// straight from plot count. Deliberately light, so the very first land
+// purchase already contributes meaningfully toward the next tier.
+export const PLOT_UNLOCK_DEVELOPMENT_POINTS = 30;
 
-// Derived rather than stored: only counts plots the player actually paid to
-// unlock (the 4 orthogonal ring-1 plots start unlocked "for free" and never
-// get an entry in `plots` until touched, so they don't inflate this).
-export function getTownLevel(plots: Record<string, TownPlotState>): number {
-  const extraUnlocked = Object.values(plots).filter((p) => p.unlocked).length;
-  return 1 + Math.floor(extraUnlocked / TOWN_LEVEL_PLOT_STEP);
+// The role field's growth path — five named stages, each unlocked once
+// cumulative developmentPoints (from unlocking land and from completing
+// job-board requests, see useTownStore) reaches its threshold. Thresholds
+// are deliberately light/round; balance is expected to change later.
+export interface TownLevelDef {
+  level: number;
+  name: string;
+  emoji: string;
+  threshold: number;
+}
+
+export const TOWN_LEVEL_DEFS: TownLevelDef[] = [
+  { level: 1, name: 'ボロ役場', emoji: '🛖', threshold: 0 },
+  { level: 2, name: '村役場', emoji: '🏘️', threshold: 60 },
+  { level: 3, name: '町役場', emoji: '🏛️', threshold: 180 },
+  { level: 4, name: '自然保護局', emoji: '🌲', threshold: 400 },
+  { level: 5, name: 'トロロ自然保護本部', emoji: '🏯', threshold: 800 },
+];
+
+export function getTownLevel(developmentPoints: number): number {
+  let level = 1;
+  for (const def of TOWN_LEVEL_DEFS) {
+    if (developmentPoints >= def.threshold) level = def.level;
+  }
+  return level;
+}
+
+export function getTownLevelDef(level: number): TownLevelDef {
+  return TOWN_LEVEL_DEFS.find((d) => d.level === level) ?? TOWN_LEVEL_DEFS[0];
 }
 
 export const BUILDING_ICON: Record<BuildingKind, string> = {

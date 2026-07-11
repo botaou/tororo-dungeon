@@ -1,39 +1,24 @@
 import React from 'react';
 import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { JobRequest, MaterialId } from '../types';
+import { JobRequest } from '../types';
 import { MATERIAL_ICON, MATERIAL_LABEL } from '../data/materials';
 import { getCharacterDef } from '../data/characters';
+import { JOB_PRESETS, JobPreset } from '../data/jobPresets';
+import { MAX_ACTIVE_REQUESTS } from '../game/config';
 import { AnimatedPressable } from './AnimatedPressable';
 import { theme } from '../theme';
-
-// Preset requests to post — keeps this a tap instead of a number-entry form.
-const PRESETS: { materialId: MaterialId; amount: number; reward: number }[] = [
-  { materialId: 'wood', amount: 5, reward: 20 },
-  { materialId: 'ore', amount: 5, reward: 30 },
-  { materialId: 'mushroom', amount: 5, reward: 25 },
-  { materialId: 'berry', amount: 5, reward: 22 },
-  { materialId: 'herb', amount: 4, reward: 28 },
-  { materialId: 'feather', amount: 3, reward: 26 },
-  { materialId: 'gem', amount: 3, reward: 45 },
-  { materialId: 'coal', amount: 5, reward: 24 },
-  { materialId: 'fish', amount: 5, reward: 24 },
-  { materialId: 'pearl', amount: 2, reward: 50 },
-  { materialId: 'waterweed', amount: 4, reward: 20 },
-  { materialId: 'relic', amount: 2, reward: 55 },
-  { materialId: 'magicStone', amount: 2, reward: 60 },
-  { materialId: 'oldCoin', amount: 4, reward: 35 },
-];
 
 interface Props {
   visible: boolean;
   onClose: () => void;
   requests: JobRequest[];
-  onPost: (materialId: MaterialId, amount: number, reward: number) => void;
+  onPost: (preset: JobPreset) => void;
 }
 
 export function RequestBoard({ visible, onClose, requests, onPost }: Props) {
   const activeRequests = requests.filter((r) => r.status !== 'done').slice().reverse();
+  const isBoardFull = activeRequests.length >= MAX_ACTIVE_REQUESTS;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -46,26 +31,28 @@ export function RequestBoard({ visible, onClose, requests, onPost }: Props) {
             </AnimatedPressable>
           </View>
 
-          <Text style={styles.sectionLabel}>依頼を出す</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.presetScroll}>
-            <View style={styles.presetRow}>
-              {PRESETS.map((p) => (
-                <AnimatedPressable
-                  key={p.materialId}
-                  style={styles.presetButton}
-                  onPress={() => onPost(p.materialId, p.amount, p.reward)}
-                >
-                  <Text style={styles.presetIcon}>{MATERIAL_ICON[p.materialId]}</Text>
-                  <Text style={styles.presetText}>
-                    {MATERIAL_LABEL[p.materialId]} x{p.amount}
-                  </Text>
-                  <Text style={styles.presetReward}>報酬 {p.reward}G</Text>
-                </AnimatedPressable>
-              ))}
-            </View>
-          </ScrollView>
+          <Text style={styles.sectionLabel}>
+            依頼を出す{isBoardFull ? `(満員 ${activeRequests.length}/${MAX_ACTIVE_REQUESTS})` : ''}
+          </Text>
+          {isBoardFull ? (
+            <Text style={styles.fullText}>掲示板がいっぱいです。依頼が達成されるまでお待ちください。</Text>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.presetScroll}>
+              <View style={styles.presetRow}>
+                {JOB_PRESETS.map((p) => (
+                  <AnimatedPressable key={p.materialId} style={styles.presetButton} onPress={() => onPost(p)}>
+                    <Text style={styles.presetIcon}>{MATERIAL_ICON[p.materialId]}</Text>
+                    <Text style={styles.presetText}>
+                      {MATERIAL_LABEL[p.materialId]} x{p.amount}
+                    </Text>
+                    <Text style={styles.presetReward}>報酬 {p.reward}G</Text>
+                  </AnimatedPressable>
+                ))}
+              </View>
+            </ScrollView>
+          )}
 
-          <Text style={styles.sectionLabel}>現在の依頼</Text>
+          <Text style={styles.sectionLabel}>現在の依頼({activeRequests.length}/{MAX_ACTIVE_REQUESTS})</Text>
           <ScrollView style={styles.list}>
             {activeRequests.length === 0 && <Text style={styles.emptyText}>依頼はまだありません</Text>}
             {activeRequests.map((r) => (
@@ -112,6 +99,7 @@ const styles = StyleSheet.create({
   closeButtonText: { color: theme.blue, fontWeight: '700', fontSize: 13 },
   sectionLabel: { fontSize: 12, fontWeight: '700', color: theme.textMuted, marginBottom: 8, marginTop: 4 },
   presetScroll: { marginBottom: 12 },
+  fullText: { color: theme.textMuted, fontSize: 12, marginBottom: 12 },
   presetRow: { flexDirection: 'row', gap: 8 },
   presetButton: {
     width: 92,

@@ -13,7 +13,7 @@ import {
 } from '../types';
 import { getCharacterDef } from '../data/characters';
 import { TOWN_DECOR, TOWN_X, TOWN_Y } from '../data/world';
-import { BUILDING_ICON, getTownLevel, MERCHANT_SPOT, shopKindForPlot, TOWN_PLOT_DEFS } from '../data/townGrid';
+import { BUILDING_ICON, getTownLevel, getTownLevelDef, MERCHANT_SPOT, shopKindForPlot, TOWN_PLOT_DEFS } from '../data/townGrid';
 import { SHOP_DEFS } from '../data/shops';
 import { HOUSE_POSITIONS } from '../data/houses';
 import { MATERIAL_ICON } from '../data/materials';
@@ -37,6 +37,7 @@ interface Props {
   // game/recruitment.ts); dormant birds otherwise have no map presence.
   dormantDefIds: string[];
   plotStates: Record<string, TownPlotState>;
+  developmentPoints: number;
   merchant: MerchantState | null;
   onBirdPress: (defId: string) => void;
   onPlotPress: (plotId: string) => void;
@@ -52,6 +53,7 @@ export function WorldMap({
   birds,
   dormantDefIds,
   plotStates,
+  developmentPoints,
   merchant,
   onBirdPress,
   onPlotPress,
@@ -61,7 +63,7 @@ export function WorldMap({
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const fieldWidth = Math.max(240, windowWidth - HORIZONTAL_PADDING);
   const fieldHeight = Math.max(420, windowHeight * 0.72);
-  const townLevel = getTownLevel(plotStates);
+  const townLevelDef = getTownLevelDef(getTownLevel(developmentPoints));
 
   return (
     <View style={[styles.field, { height: fieldHeight }]}>
@@ -93,8 +95,8 @@ export function WorldMap({
       <View
         style={[styles.town, { left: TOWN_X * fieldWidth - 34, top: TOWN_Y * fieldHeight - 34 }]}
       >
-        <Text style={styles.townEmoji}>{townLevel <= 1 ? '🛖' : '🏘️'}</Text>
-        <Text style={styles.townLabel}>{townLevel <= 1 ? 'ボロ役場' : '村役場'}</Text>
+        <Text style={styles.townEmoji}>{townLevelDef.emoji}</Text>
+        <Text style={styles.townLabel}>{townLevelDef.name}</Text>
       </View>
 
       <ShopkeeperSprite x={TOWN_X * fieldWidth} y={TOWN_Y * fieldHeight + 44} />

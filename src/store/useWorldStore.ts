@@ -40,6 +40,7 @@ import {
 } from '../game/recruitment';
 import { getEffectiveStats, maybeAutoEquip } from '../game/birdStats';
 import { MATERIAL_LABEL } from '../data/materials';
+import { JOB_PRESETS, JobPreset } from '../data/jobPresets';
 import { ITEM_DEF_MAP, MERCHANT_COMMON_ITEM_IDS, MERCHANT_RARE_ITEM_IDS, RESTOCKED_ITEM_IDS } from '../data/items';
 import { MATERIAL_SELL_PRICE } from '../data/marketPrices';
 import {
@@ -52,6 +53,7 @@ import {
   LEVEL_UP_DEFENSE_GAIN,
   LEVEL_UP_HP_GAIN,
   LEVEL_UP_SPEED_GAIN,
+  MAX_ACTIVE_REQUESTS,
   MERCHANT_ARRIVAL_CHECK_CHANCE,
   MERCHANT_BUYBACK_SPLIT,
   MERCHANT_ITEM_STOCK_MAX,
@@ -243,10 +245,28 @@ function grantExp(bird: BirdState, amount: number, log: ActivityLogEntry[]) {
   }
 }
 
+// Shared by postRequest (manual posting) and tick's auto-refill (a completed
+// slot rolls a fresh random preset) so both build the same shape of request.
+function buildRequestFromPreset(preset: JobPreset): JobRequest {
+  return {
+    id: uid('job'),
+    materialId: preset.materialId,
+    amount: preset.amount,
+    reward: preset.reward,
+    expReward: preset.expReward,
+    developmentPoints: preset.developmentPoints,
+    reputationPoints: preset.reputationPoints,
+    status: 'open',
+    acceptedBy: null,
+    createdAt: Date.now(),
+    delivered: 0,
+  };
+}
+
 interface WorldActions {
   initWorld: () => void;
   tick: () => void;
-  postRequest: (materialId: MaterialId, amount: number, reward: number) => boolean;
+  postRequest: (preset: JobPreset) => boolean;
 }
 
 interface WorldStore {
@@ -268,22 +288,15 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
 
   initWorld: () => set({ world: buildInitialWorld() }),
 
-  postRequest: (materialId, amount, reward) => {
+  postRequest: (preset) => {
     // Posting itself is free; the reward is only paid out on completion.
     // We just check affordability up front so the player can't stack up
     // more promises than they could ever pay.
-    if (usePlayerStore.getState().gold < reward) return false;
+    if (usePlayerStore.getState().gold < preset.reward) return false;
+    const activeCount = get().world.requests.filter((r) => r.status !== 'done').length;
+    if (activeCount >= MAX_ACTIVE_REQUESTS) return false;
 
-    const request: JobRequest = {
-      id: uid('job'),
-      materialId,
-      amount,
-      reward,
-      status: 'open',
-      acceptedBy: null,
-      createdAt: Date.now(),
-      delivered: 0,
-    };
+    const request = buildRequestFromPreset(preset);
     set({ world: { ...get().world, requests: [...get().world.requests, request] } });
     return true;
   },
@@ -462,11 +475,14 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         completedJobIds.add(outcome.jobCompletedId);
         const request = requests.find((r) => r.id === outcome.jobCompletedId);
         if (request) {
+          grantExp(bird, request.expReward, newLog);
+          useTownStore.getState().addDevelopmentPoints(request.developmentPoints);
+          useTownStore.getState().addReputation(request.reputationPoints);
           newLog.push(
             makeLogEntry(
               bird.name,
               'job',
-              `${bird.name}が依頼(${MATERIAL_LABEL[request.materialId]}${request.amount}個)を達成した!(報酬${request.reward}G)`
+              `${bird.name}が依頼(${MATERIAL_LABEL[request.materialId]}${request.amount}個)を達成した!(報酬${request.reward}G/経験値${request.expReward})`
             )
           );
         }
@@ -548,6 +564,15 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         goldToAdd -= r.reward; // paid out below alongside the gathered material's own gold-neutral value
         return { ...r, status: 'done' as const };
       });
+      // Refill 1:1 for each slot that just freed up, capped at
+      // MAX_ACTIVE_REQUESTS — keeps the board a steady, bounded pool without
+      // overriding the player's own choice of which presets to post.
+      let activeCount = requests.filter((r) => r.status !== 'done').length;
+      for (let i = 0; i < completedJobIds.size && activeCount < MAX_ACTIVE_REQUESTS; i++) {
+        const preset = JOB_PRESETS[Math.floor(Math.random() * JOB_PRESETS.length)];
+        requests = [...requests, buildRequestFromPreset(preset)];
+        activeCount += 1;
+      }
     }
 
     const combatResult = resolveAttacks(enemies, allAssignments);
@@ -654,7 +679,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     // call to make.
     const newRecruitmentEvents: string[] = [];
     const activeBirdPositions = finalBirds.filter((b) => b.isRecruited).map((b) => ({ x: b.x, y: b.y }));
-    const townLevel = getTownLevel(useTownStore.getState().plots);
+    const townLevel = getTownLevel(useTownStore.getState().developmentPoints);
     const quests = useQuestStore.getState();
     const recruitmentChecks: Record<string, () => boolean> = {
       vivi: () => checkVivi(townLevel),
