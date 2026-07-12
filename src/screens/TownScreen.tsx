@@ -45,10 +45,18 @@ export function TownScreen() {
   const [merchantVisible, setMerchantVisible] = useState(false);
   // How many of world.recruitmentEvents we've already shown a modal for —
   // the array only ever grows, so anything past this index is new (see
-  // useWorldStore's recruitment-trigger checks).
+  // useWorldStore's recruitment-trigger checks). world itself isn't
+  // persisted (initWorld() rebuilds it fresh each launch), so starting at 0
+  // is correct here — there's never a stale backlog to skip.
   const [shownRecruitCount, setShownRecruitCount] = useState(0);
-  // Same pattern for useTownStore's ever-growing levelUpEvents.
-  const [shownLevelUpCount, setShownLevelUpCount] = useState(0);
+  // Same queued-event pattern for useTownStore's ever-growing levelUpEvents
+  // — but that store IS persisted across app restarts, so starting this at
+  // 0 would replay every town level-up the player already saw in a past
+  // session, one "やった!" tap at a time, before the map underneath ever
+  // becomes reachable again. Seeding from the current length treats
+  // anything already on disk at mount time as already-seen; only level-ups
+  // reached during *this* session (after mount) still queue a fresh popup.
+  const [shownLevelUpCount, setShownLevelUpCount] = useState(() => useTownStore.getState().levelUpEvents.length);
 
   useEffect(() => {
     if (world.birds.length === 0) initWorld();
