@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { CONSTRUCTION_DEVELOPMENT_POINTS, getTownLevel, PLOT_UNLOCK_DEVELOPMENT_POINTS } from '../data/townGrid';
+import { CONSTRUCTION_DEVELOPMENT_POINTS, getTownLevel, PLOT_UNLOCK_DEVELOPMENT_POINTS, TOWN_PLOT_DEFS } from '../data/townGrid';
 import { BUILDING_OPTIONS } from '../data/buildingOptions';
 import { PlotUnlockCost, TownPlotState } from '../types';
 import { usePlayerStore } from './usePlayerStore';
@@ -90,8 +90,16 @@ export const useTownStore = create<TownState & TownActions>()(
       constructBuilding: (plotId, optionId) => {
         const option = BUILDING_OPTIONS.find((o) => o.id === optionId);
         if (!option) return false;
-        const existing = get().plots[plotId];
-        if (!existing || !existing.unlocked || existing.building) return false;
+        // The 4 orthogonal ring-1 plots start unlocked by default and may
+        // never have been written to `plots` (only tryUnlockPlot/
+        // constructBuilding itself ever create an entry) — falling back to
+        // `get().plots[plotId]` alone made building on one of those a
+        // silent no-op, since `existing` was undefined and this bailed out
+        // before ever charging or setting anything (real-device report).
+        const def = TOWN_PLOT_DEFS.find((d) => d.id === plotId);
+        if (!def) return false;
+        const existing = ensurePlot(get().plots, plotId, def.unlockedByDefault);
+        if (!existing.unlocked || existing.building) return false;
 
         const player = usePlayerStore.getState();
         if (player.gold < option.cost.gold) return false;

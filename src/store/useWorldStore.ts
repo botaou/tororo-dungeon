@@ -544,7 +544,10 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     // rather than just unrendered/untargetable — otherwise a deep-zone
     // enemy could still "ambush" a bird that wanders near it before the
     // town's actually unlocked that ground.
-    enemies = enemies.map((e) => (e.defeated || e.minTownLevel > townLevel ? e : stepEnemy(e, birdsWithMood)));
+    const currentTownZoneRadius = getTownZoneRadius(townLevel);
+    enemies = enemies.map((e) =>
+      e.defeated || e.minTownLevel > townLevel ? e : stepEnemy(e, birdsWithMood, currentTownZoneRadius)
+    );
 
     // Free (jobless) birds occasionally check the request board.
     const openRequests = requests.filter((r) => r.status === 'open');
@@ -592,7 +595,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       shopStock: usePlayerStore.getState().shopStock,
       shopPositions: getAllShopPositions(useTownStore.getState().plots),
       merchant,
-      townZoneRadius: getTownZoneRadius(townLevel),
+      townZoneRadius: currentTownZoneRadius,
     };
 
     const allAssignments: AttackAssignment[] = [];

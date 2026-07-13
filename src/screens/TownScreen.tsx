@@ -22,6 +22,7 @@ import { TownLevelUpModal } from '../components/TownLevelUpModal';
 import { PlotUnlockModal } from '../components/PlotUnlockModal';
 import { ConstructionModal } from '../components/ConstructionModal';
 import { RecipeUnlockModal } from '../components/RecipeUnlockModal';
+import { TownStatusModal } from '../components/TownStatusModal';
 import { ActivityLogPanel } from '../components/ActivityLogPanel';
 import { JobPreset } from '../data/jobPresets';
 import { PlotUnlockCost, ShopKind } from '../types';
@@ -48,6 +49,7 @@ export function TownScreen() {
   const [rosterVisible, setRosterVisible] = useState(false);
   const [craftingVisible, setCraftingVisible] = useState(false);
   const [merchantVisible, setMerchantVisible] = useState(false);
+  const [townStatusVisible, setTownStatusVisible] = useState(false);
   // Locked-but-affordable plot currently showing its cost breakdown (see
   // PlotUnlockModal) — null when closed.
   const [unlockTarget, setUnlockTarget] = useState<{ plotId: string; cost: PlotUnlockCost } | null>(null);
@@ -81,9 +83,33 @@ export function TownScreen() {
   // (see useWorldStore) but never shown on the map or in the roster.
   const activeBirds = world.birds.filter((b) => b.isRecruited);
   const dormantDefIds = world.birds.filter((b) => !b.isRecruited).map((b) => b.defId);
-  const pendingRecruit = world.recruitmentEvents[shownRecruitCount] ?? null;
-  const pendingLevelUp = levelUpEvents[shownLevelUpCount] ?? null;
-  const pendingRecipeUnlock = world.recipeUnlockEvents[shownRecipeUnlockCount] ?? null;
+
+  // RecruitmentModal/TownLevelUpModal/RecipeUnlockModal each render their own
+  // <Modal> the instant their queued event is non-null, completely
+  // independent of whatever the player currently has open — a request-board
+  // check, a shop, a construction menu, etc. A background world tick can
+  // queue one of these at any moment, so without this guard it could pop
+  // open *while* another <Modal> is already visible, presenting two native
+  // iOS modals at once. That's a known react-native/iOS fragility (real-
+  // device report: taps go dead after navigating between screens, fixed
+  // only by a full app restart) — so these three are only allowed to
+  // actually show once nothing else is open, in a fixed priority order.
+  // Nothing is lost by delaying them: the underlying arrays/counters are
+  // untouched, so each still shows exactly once, just possibly a beat later.
+  const anyOtherModalOpen =
+    boardVisible ||
+    openShop !== null ||
+    inventoryVisible ||
+    rosterVisible ||
+    craftingVisible ||
+    merchantVisible ||
+    townStatusVisible ||
+    unlockTarget !== null ||
+    constructionTarget !== null;
+  const pendingRecruit = anyOtherModalOpen ? null : world.recruitmentEvents[shownRecruitCount] ?? null;
+  const pendingLevelUp = anyOtherModalOpen || pendingRecruit ? null : levelUpEvents[shownLevelUpCount] ?? null;
+  const pendingRecipeUnlock =
+    anyOtherModalOpen || pendingRecruit || pendingLevelUp ? null : world.recipeUnlockEvents[shownRecipeUnlockCount] ?? null;
 
   const handlePost = (preset: JobPreset) => {
     postRequest(preset);
@@ -164,6 +190,7 @@ export function TownScreen() {
             onPlotPress={handlePlotPress}
             onShopPress={(kind) => setOpenShop(kind)}
             onMerchantPress={() => setMerchantVisible(true)}
+            onTownHallPress={() => setTownStatusVisible(true)}
           />
         </PannableMap>
       </View>
@@ -200,6 +227,12 @@ export function TownScreen() {
       />
 
       <BirdRosterModal visible={rosterVisible} onClose={() => setRosterVisible(false)} birds={activeBirds} />
+
+      <TownStatusModal
+        visible={townStatusVisible}
+        developmentPoints={developmentPoints}
+        onClose={() => setTownStatusVisible(false)}
+      />
 
       <MerchantModal
         visible={merchantVisible}

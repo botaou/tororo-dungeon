@@ -24,6 +24,7 @@ export function TownLevelUpModal({ level, onClose }: Props) {
           <Text style={styles.title}>🎊 街が発展した!</Text>
           <Text style={styles.emoji}>{def.emoji}</Text>
           <Text style={styles.name}>{def.name}</Text>
+          <Text style={styles.reasonText}>発展ポイントが{def.threshold}に到達しました</Text>
           <AnimatedPressable style={styles.closeButton} onPress={onClose}>
             <Text style={styles.closeButtonText}>やった!</Text>
           </AnimatedPressable>
@@ -48,6 +49,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: '800', color: theme.gold, marginBottom: 12 },
   emoji: { fontSize: 56, marginTop: 4 },
   name: { fontSize: 20, fontWeight: '800', color: theme.textPrimary, marginTop: 10 },
+  reasonText: { fontSize: 12, color: theme.textSecondary, marginTop: 6 },
   closeButton: {
     marginTop: 18,
     borderRadius: 999,

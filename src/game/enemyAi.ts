@@ -7,6 +7,7 @@
 // this module never touches hp/damage.
 
 import { BirdState, EnemyInstance } from '../types';
+import { TOWN_X, TOWN_Y } from '../data/world';
 import {
   ARRIVAL_THRESHOLD,
   ENEMY_AGGRO_RANGE,
@@ -15,6 +16,19 @@ import {
   ENEMY_PATROL_RADIUS,
   ENEMY_RESPAWN_POSITION_RADIUS,
 } from './config';
+
+// Whether a point has crossed into the town's "core" ellipse (see
+// townGrid.ts's getTownZoneRadius) — used only to keep a chasing enemy from
+// following a fleeing bird all the way into town. Static enemy anchors are
+// already verified to sit outside this at every town level (see
+// data/townGrid.ts's TOWN_ZONE_RADIUS_BY_LEVEL comment), but that check says
+// nothing about where a *chase* can wander, since chasing just walks
+// straight at the target's live position with no boundary awareness.
+function isInsideTownZone(x: number, y: number, zoneRadius: { rx: number; ry: number }): boolean {
+  const dx = (x - TOWN_X) / zoneRadius.rx;
+  const dy = (y - TOWN_Y) / zoneRadius.ry;
+  return dx * dx + dy * dy <= 1;
+}
 
 function moveToward(e: EnemyInstance, tx: number, ty: number): boolean {
   const dx = tx - e.x;
@@ -39,10 +53,13 @@ function randomPointNear(anchorX: number, anchorY: number, radius: number): { x:
 // One enemy's movement for this tick. Priority: keep chasing its current
 // target if still in range → notice and start chasing a newly-nearby bird
 // → walk back to its anchor if it just gave up a chase → wander near its
-// anchor otherwise.
-export function stepEnemy(enemy: EnemyInstance, birds: BirdState[]): EnemyInstance {
+// anchor otherwise. `zoneRadius` is the town's current core ellipse (see
+// townGrid.ts's getTownZoneRadius) — a bird that's inside it is treated as
+// "safe home turf" and dropped from consideration entirely, so an enemy
+// never starts (or continues) chasing into town.
+export function stepEnemy(enemy: EnemyInstance, birds: BirdState[], zoneRadius: { rx: number; ry: number }): EnemyInstance {
   const next = { ...enemy };
-  const aliveBirds = birds.filter((b) => b.isRecruited && b.hp > 0);
+  const aliveBirds = birds.filter((b) => b.isRecruited && b.hp > 0 && !isInsideTownZone(b.x, b.y, zoneRadius));
 
   if (next.roamState === 'chase') {
     const target = aliveBirds.find((b) => b.defId === next.chaseTargetId);
@@ -51,8 +68,20 @@ export function stepEnemy(enemy: EnemyInstance, birds: BirdState[]): EnemyInstan
       next.roamState = 'return';
       next.chaseTargetId = null;
     } else {
+      const prevX = next.x;
+      const prevY = next.y;
       moveToward(next, target.x, target.y);
-      return next;
+      if (isInsideTownZone(next.x, next.y, zoneRadius)) {
+        // The straight-line path toward the target clipped the town zone
+        // even though the target itself is just outside it — stop right
+        // here instead of stepping in, and give up the chase.
+        next.x = prevX;
+        next.y = prevY;
+        next.roamState = 'return';
+        next.chaseTargetId = null;
+      } else {
+        return next;
+      }
     }
   }
 

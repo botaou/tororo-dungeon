@@ -147,6 +147,7 @@ interface Props {
   onPlotPress: (plotId: string) => void;
   onShopPress: (shopKind: ShopKind) => void;
   onMerchantPress: () => void;
+  onTownHallPress: () => void;
 }
 
 export function WorldMap({
@@ -163,6 +164,7 @@ export function WorldMap({
   onPlotPress,
   onShopPress,
   onMerchantPress,
+  onTownHallPress,
 }: Props) {
   const fieldWidth = WORLD_CANVAS_WIDTH;
   const fieldHeight = WORLD_CANVAS_HEIGHT;
@@ -295,13 +297,13 @@ export function WorldMap({
         );
       })}
 
-      <View
-        pointerEvents="none"
+      <AnimatedPressable
+        onPress={onTownHallPress}
         style={[styles.town, { left: TOWN_X * fieldWidth - 34, top: TOWN_Y * fieldHeight - 34 }]}
       >
         <Text style={styles.townEmoji}>{townLevelDef.emoji}</Text>
         <Text style={styles.townLabel}>{townLevelDef.name}</Text>
-      </View>
+      </AnimatedPressable>
 
       <ShopkeeperSprite x={TOWN_X * fieldWidth} y={TOWN_Y * fieldHeight + 44} />
 
