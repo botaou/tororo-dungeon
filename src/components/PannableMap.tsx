@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { LayoutChangeEvent, ScrollView, StyleSheet, View } from 'react-native';
 
 import { theme } from '../theme';
@@ -12,42 +12,41 @@ interface Props {
   children: React.ReactNode;
 }
 
-// Wraps the map in a plain, pan-only ScrollView — both axes scroll because
-// contentContainerStyle is given the map's real (larger-than-viewport) size
-// explicitly, which is enough for 2D dragging without the `horizontal` prop.
+// Wraps the map in native iOS pinch-zoom-and-pan (UIScrollView's own
+// minimumZoomScale/maximumZoomScale/bouncesZoom), rather than a third-party
+// gesture library — the app is iOS-only already, and this needs zero new
+// native dependencies. minimumZoomScale is computed from the actual
+// viewport size so "zoomed all the way out" always shows the whole map;
+// the first layout pass scrolls to center initialFocus (the town hall)
+// without animating.
 //
-// This used to also offer pinch-zoom via the ScrollView's own
-// minimumZoomScale/maximumZoomScale (an iOS-only, zero-extra-dependency
-// UIScrollView feature — see git history). It had to come back out: on a
-// real device, every tap on the map (birds, buildings, the town hall) and
-// even plain dragging stopped responding, from the very first frame, the
-// moment zoom was enabled. Two likely contributors, either of which would
-// explain a same-device regression that a background-rendering fix (see
-// WorldMap.tsx's TiledBackground) did not touch: (1) a zoomable
-// UIScrollView on iOS is known to sometimes swallow touches meant for
-// nested Pressable/TouchableWithoutFeedback children before they can
-// register at all, and (2) this component used to update
-// `minimumZoomScale` from state right after the first layout pass —
-// mutating a zoom-affecting prop on an already-mounted native scroll view
-// can leave its gesture recognizers stuck. Since basic tap-and-drag is the
-// actual must-have and pinch-zoom was the nice-to-have, zoom is dropped for
-// now; reintroducing it should go through a purpose-built gesture library
-// (e.g. react-native-gesture-handler's PinchGestureHandler) rather than
-// ScrollView's own zoom, which appears not to coexist safely with nested
-// touchables here.
+// This was pulled out once already after a real-device report of every tap
+// and drag going dead from the first frame — but that turned out to be an
+// unrelated bug (TownScreen was replaying a backlog of already-seen
+// "town leveled up!" popups on every launch, which blocked the map
+// underneath; see TownScreen.tsx's shownLevelUpCount). With that fixed and
+// confirmed on-device, zoom is back.
 export function PannableMap({ contentWidth, contentHeight, initialFocus, children }: Props) {
   const scrollRef = useRef<ScrollView>(null);
+  const [minZoom, setMinZoom] = useState(0.4);
   const hasCenteredRef = useRef(false);
 
   const handleLayout = useCallback(
     (e: LayoutChangeEvent) => {
       const { width, height } = e.nativeEvent.layout;
-      if (width <= 0 || height <= 0 || hasCenteredRef.current) return;
-      hasCenteredRef.current = true;
-      const x = Math.max(0, initialFocus.x * contentWidth - width / 2);
-      const y = Math.max(0, initialFocus.y * contentHeight - height / 2);
-      // No animation — this is the initial framing, not a user-triggered jump.
-      requestAnimationFrame(() => scrollRef.current?.scrollTo({ x, y, animated: false }));
+      if (width <= 0 || height <= 0) return;
+      // A little slack so "zoomed all the way out" still leaves a sliver of
+      // breathing room at the map's own edges instead of cropping flush.
+      const fitScale = Math.min(width / contentWidth, height / contentHeight) * 0.92;
+      setMinZoom(Math.min(1, Math.max(0.15, fitScale)));
+
+      if (!hasCenteredRef.current) {
+        hasCenteredRef.current = true;
+        const x = Math.max(0, initialFocus.x * contentWidth - width / 2);
+        const y = Math.max(0, initialFocus.y * contentHeight - height / 2);
+        // No animation — this is the initial framing, not a user-triggered jump.
+        requestAnimationFrame(() => scrollRef.current?.scrollTo({ x, y, animated: false }));
+      }
     },
     [contentWidth, contentHeight, initialFocus.x, initialFocus.y]
   );
@@ -58,6 +57,10 @@ export function PannableMap({ contentWidth, contentHeight, initialFocus, childre
         ref={scrollRef}
         style={styles.scroll}
         contentContainerStyle={{ width: contentWidth, height: contentHeight }}
+        minimumZoomScale={minZoom}
+        maximumZoomScale={2.2}
+        bouncesZoom
+        centerContent
         showsHorizontalScrollIndicator={false}
         showsVerticalScrollIndicator={false}
       >
