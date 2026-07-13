@@ -63,6 +63,9 @@ interface BirdEconomyActions {
   // persisted (e.g. level/exp) still come back populated instead of
   // undefined.
   getWallet: (defId: string) => BirdWallet;
+  // Same as getWallet, but for every known bird at once — see its own
+  // comment for why this exists instead of just reading `.wallets` raw.
+  getAllWallets: () => Record<string, BirdWallet>;
   // Called once per tick with every bird's current gold/inventory/level/exp
   // — a single batched write instead of one per bird per mutation.
   syncAll: (wallets: Record<string, BirdWallet>) => void;
@@ -93,11 +96,35 @@ export const useBirdEconomyStore = create<BirdEconomyState & BirdEconomyActions>
         // level-1 attack/HP). Backfill proportional to the level already
         // reached instead of resetting to base, so existing saves get
         // retroactive credit once, then keep growing normally afterward.
+        // Also re-heals NaN specifically: catchUpOffline used to read
+        // `wallets` directly (bypassing this backfill entirely), so a
+        // returning player whose offline birds leveled up before this fix
+        // landed got `undefined + gain` baked in as a permanent NaN — this
+        // check catches that already-corrupted state too, not just the
+        // missing-field case, since NaN !== undefined would otherwise skip
+        // right past a plain `=== undefined` guard forever.
         const def = getCharacterDef(defId);
         const level = merged.level;
-        if (!saved || saved.atk === undefined) merged.atk = def.baseAtk + (level - 1) * LEVEL_UP_ATK_GAIN;
-        if (!saved || saved.maxHp === undefined) merged.maxHp = def.baseHp + (level - 1) * LEVEL_UP_HP_GAIN;
+        if (!saved || saved.atk === undefined || Number.isNaN(saved.atk)) {
+          merged.atk = def.baseAtk + (level - 1) * LEVEL_UP_ATK_GAIN;
+        }
+        if (!saved || saved.maxHp === undefined || Number.isNaN(saved.maxHp)) {
+          merged.maxHp = def.baseHp + (level - 1) * LEVEL_UP_HP_GAIN;
+        }
         return merged;
+      },
+
+      // Every known wallet, each passed through getWallet's backfill/NaN-
+      // healing — plain `get().wallets` skips that entirely, which is
+      // exactly what let catchUpOffline corrupt atk/maxHp to NaN in the
+      // first place (see getWallet's comment). Anything that needs more
+      // than one wallet at once (today: only the offline catch-up) should
+      // use this instead of reading the raw `wallets` record.
+      getAllWallets: () => {
+        const raw = get().wallets;
+        const result: Record<string, BirdWallet> = {};
+        for (const defId of Object.keys(raw)) result[defId] = get().getWallet(defId);
+        return result;
       },
 
       syncAll: (wallets) => set({ wallets }),

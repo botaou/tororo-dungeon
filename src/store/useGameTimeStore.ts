@@ -57,7 +57,12 @@ export const useGameTimeStore = create<GameTimeState & GameTimeActions>()(
         }
 
         const cappedRealElapsedMs = Math.min(realElapsedMs, OFFLINE_PROGRESS_CAP_MS);
-        const wallets = useBirdEconomyStore.getState().wallets;
+        // getAllWallets (not the raw `.wallets` record) so a save from
+        // before atk/maxHp existed gets backfilled before the simulation
+        // ever does arithmetic on it — reading raw here is exactly what let
+        // an `undefined + gain` level-up bake in a permanent NaN before this
+        // fix (real-device report).
+        const wallets = useBirdEconomyStore.getState().getAllWallets();
         const hasRecruited = Object.values(wallets).some((w) => w.isRecruited);
 
         // Nobody's joined the town yet — nothing to simulate, but the
