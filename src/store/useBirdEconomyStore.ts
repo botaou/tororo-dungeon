@@ -109,12 +109,25 @@ export const useBirdEconomyStore = create<BirdEconomyState & BirdEconomyActions>
         // exactly that null-coerced-to-0-plus-a-few-gains math. Checking
         // `Number.isFinite` instead catches undefined/null/NaN/Infinity in
         // one go, so nothing coerces silently again.
+        // A real-device report showed one specific bird (level 86) stuck
+        // with atk/maxHp *below even its own level-1 base* — lower than
+        // Number.isFinite alone would ever flag, so it must have been
+        // healed once already from some now-untraceable intermediate broken
+        // state (several fix attempts landed in quick succession) rather
+        // than being undefined/null/NaN itself. atk/maxHp only ever grow via
+        // grantExp's `+=`, the same loop that grew defense/speed correctly
+        // for that same bird — so "below this character's own base" is a
+        // simple, mechanism-independent proof of corruption, not just the
+        // undefined/null/NaN/Infinity cases above. Re-healing on that
+        // invariant instead of trying to enumerate every way it could have
+        // broken means any future recurrence of this bug class self-heals
+        // the same way, without needing another special-cased check.
         const def = getCharacterDef(defId);
         const level = merged.level;
-        if (!Number.isFinite(saved?.atk)) {
+        if (!Number.isFinite(saved?.atk) || saved!.atk < def.baseAtk) {
           merged.atk = def.baseAtk + (level - 1) * LEVEL_UP_ATK_GAIN;
         }
-        if (!Number.isFinite(saved?.maxHp)) {
+        if (!Number.isFinite(saved?.maxHp) || saved!.maxHp < def.baseHp) {
           merged.maxHp = def.baseHp + (level - 1) * LEVEL_UP_HP_GAIN;
         }
         return merged;
