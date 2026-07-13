@@ -2,7 +2,8 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { BUILDING_CYCLE, getTownLevel, PLOT_UNLOCK_DEVELOPMENT_POINTS } from '../data/townGrid';
+import { CONSTRUCTION_DEVELOPMENT_POINTS, getTownLevel, PLOT_UNLOCK_DEVELOPMENT_POINTS } from '../data/townGrid';
+import { BUILDING_OPTIONS } from '../data/buildingOptions';
 import { PlotUnlockCost, TownPlotState } from '../types';
 import { usePlayerStore } from './usePlayerStore';
 
@@ -28,13 +29,16 @@ interface TownActions {
   // cost (and, for the level-gated outer ring, its minTownLevel) so this
   // store doesn't need to import world data just to look it up.
   tryUnlockPlot: (plotId: string, cost: PlotUnlockCost, minTownLevel?: number) => boolean;
-  cycleBuilding: (plotId: string) => void;
+  // Spends a BuildingOption's cost (gold + one material) to place it on an
+  // unlocked, still-empty plot. False (no charge taken) if the plot isn't
+  // eligible or the cost isn't fully covered.
+  constructBuilding: (plotId: string, optionId: string) => boolean;
   addDevelopmentPoints: (amount: number) => void;
   addReputation: (amount: number) => void;
 }
 
 function ensurePlot(plots: Record<string, TownPlotState>, plotId: string, unlockedByDefault: boolean): TownPlotState {
-  return plots[plotId] ?? { id: plotId, unlocked: unlockedByDefault, building: null };
+  return plots[plotId] ?? { id: plotId, unlocked: unlockedByDefault, building: null, constructedBuildingId: null };
 }
 
 // Shared by tryUnlockPlot and addDevelopmentPoints: applies the point gain
@@ -83,14 +87,29 @@ export const useTownStore = create<TownState & TownActions>()(
         return true;
       },
 
-      cycleBuilding: (plotId) => {
+      constructBuilding: (plotId, optionId) => {
+        const option = BUILDING_OPTIONS.find((o) => o.id === optionId);
+        if (!option) return false;
+        const existing = get().plots[plotId];
+        if (!existing || !existing.unlocked || existing.building) return false;
+
+        const player = usePlayerStore.getState();
+        if (player.gold < option.cost.gold) return false;
+        const owned = player.materials[option.cost.materialId] ?? 0;
+        if (owned < option.cost.materialAmount) return false;
+
+        player.trySpendGold(option.cost.gold);
+        player.addMaterials({ [option.cost.materialId]: -option.cost.materialAmount });
+
         const plots = { ...get().plots };
-        const existing = plots[plotId];
-        if (!existing || !existing.unlocked) return;
-        const currentIndex = BUILDING_CYCLE.indexOf(existing.building);
-        const next = BUILDING_CYCLE[(currentIndex + 1) % BUILDING_CYCLE.length];
-        plots[plotId] = { ...existing, building: next };
-        set({ plots });
+        plots[plotId] = { ...existing, building: option.buildingKind, constructedBuildingId: option.id };
+        const { nextPoints, crossedLevels } = applyPoints(get().developmentPoints, CONSTRUCTION_DEVELOPMENT_POINTS);
+        set({
+          plots,
+          developmentPoints: nextPoints,
+          levelUpEvents: crossedLevels.length > 0 ? [...get().levelUpEvents, ...crossedLevels] : get().levelUpEvents,
+        });
+        return true;
       },
 
       addDevelopmentPoints: (amount) => {
@@ -111,5 +130,5 @@ export const useTownStore = create<TownState & TownActions>()(
 );
 
 export function getPlotState(plots: Record<string, TownPlotState>, plotId: string, unlockedByDefault: boolean): TownPlotState {
-  return plots[plotId] ?? { id: plotId, unlocked: unlockedByDefault, building: null };
+  return plots[plotId] ?? { id: plotId, unlocked: unlockedByDefault, building: null, constructedBuildingId: null };
 }

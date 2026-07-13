@@ -5,7 +5,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useWorldStore } from '../store/useWorldStore';
 import { useTownStore } from '../store/useTownStore';
-import { TOWN_PLOT_DEFS } from '../data/townGrid';
+import { getTownLevel, TOWN_PLOT_DEFS } from '../data/townGrid';
+import { getBuildingOption } from '../data/buildingOptions';
 import { WorldMap, WORLD_CANVAS_HEIGHT, WORLD_CANVAS_WIDTH } from '../components/WorldMap';
 import { PannableMap } from '../components/PannableMap';
 import { TOWN_X, TOWN_Y } from '../data/world';
@@ -18,9 +19,11 @@ import { BirdRosterModal } from '../components/BirdRosterModal';
 import { MerchantModal } from '../components/MerchantModal';
 import { RecruitmentModal } from '../components/RecruitmentModal';
 import { TownLevelUpModal } from '../components/TownLevelUpModal';
+import { PlotUnlockModal } from '../components/PlotUnlockModal';
+import { ConstructionModal } from '../components/ConstructionModal';
 import { ActivityLogPanel } from '../components/ActivityLogPanel';
 import { JobPreset } from '../data/jobPresets';
-import { ShopKind } from '../types';
+import { PlotUnlockCost, ShopKind } from '../types';
 import { cuteShadow, theme } from '../theme';
 
 export function TownScreen() {
@@ -35,7 +38,7 @@ export function TownScreen() {
   const developmentPoints = useTownStore((s) => s.developmentPoints);
   const levelUpEvents = useTownStore((s) => s.levelUpEvents);
   const tryUnlockPlot = useTownStore((s) => s.tryUnlockPlot);
-  const cycleBuilding = useTownStore((s) => s.cycleBuilding);
+  const constructBuilding = useTownStore((s) => s.constructBuilding);
 
   const [boardVisible, setBoardVisible] = useState(false);
   const [openShop, setOpenShop] = useState<ShopKind | null>(null);
@@ -43,6 +46,12 @@ export function TownScreen() {
   const [rosterVisible, setRosterVisible] = useState(false);
   const [craftingVisible, setCraftingVisible] = useState(false);
   const [merchantVisible, setMerchantVisible] = useState(false);
+  // Locked-but-affordable plot currently showing its cost breakdown (see
+  // PlotUnlockModal) — null when closed.
+  const [unlockTarget, setUnlockTarget] = useState<{ plotId: string; cost: PlotUnlockCost } | null>(null);
+  // Unlocked, still-empty plot currently showing the construction menu (see
+  // ConstructionModal) — null when closed.
+  const [constructionTarget, setConstructionTarget] = useState<string | null>(null);
   // How many of world.recruitmentEvents we've already shown a modal for —
   // the array only ever grows, so anything past this index is new (see
   // useWorldStore's recruitment-trigger checks). world itself isn't
@@ -76,12 +85,39 @@ export function TownScreen() {
   const handlePlotPress = (plotId: string) => {
     const def = TOWN_PLOT_DEFS.find((p) => p.id === plotId);
     if (!def) return;
-    const state = plots[plotId] ?? { id: plotId, unlocked: def.unlockedByDefault, building: null };
+    const state = plots[plotId] ?? { id: plotId, unlocked: def.unlockedByDefault, building: null, constructedBuildingId: null };
     if (!state.unlocked) {
-      if (def.unlockCost) tryUnlockPlot(plotId, def.unlockCost, def.minTownLevel);
+      // Level-gated plots already show a "Lv.X" badge right on the map —
+      // nothing to tap into yet, since attempting is pointless until the
+      // town's actually reached that level.
+      if (def.minTownLevel && getTownLevel(developmentPoints) < def.minTownLevel) return;
+      if (def.unlockCost) setUnlockTarget({ plotId, cost: def.unlockCost });
       return;
     }
-    cycleBuilding(plotId);
+    if (state.building) {
+      // Already built — a shop-kind building reopens its (shared-stock)
+      // shop modal; a decorative building (e.g. the garden) has nothing
+      // further to show.
+      const option = getBuildingOption(state.constructedBuildingId);
+      if (option?.shopKind) setOpenShop(option.shopKind);
+      return;
+    }
+    setConstructionTarget(plotId);
+  };
+
+  const handleUnlock = () => {
+    if (!unlockTarget) return;
+    const def = TOWN_PLOT_DEFS.find((p) => p.id === unlockTarget.plotId);
+    if (tryUnlockPlot(unlockTarget.plotId, unlockTarget.cost, def?.minTownLevel)) {
+      setUnlockTarget(null);
+    }
+  };
+
+  const handleBuild = (optionId: string) => {
+    if (!constructionTarget) return;
+    if (constructBuilding(constructionTarget, optionId)) {
+      setConstructionTarget(null);
+    }
   };
 
   return (
@@ -163,6 +199,23 @@ export function TownScreen() {
       <RecruitmentModal defId={pendingRecruit} onClose={() => setShownRecruitCount((c) => c + 1)} />
 
       <TownLevelUpModal level={pendingLevelUp} onClose={() => setShownLevelUpCount((c) => c + 1)} />
+
+      <PlotUnlockModal
+        visible={unlockTarget !== null}
+        cost={unlockTarget?.cost ?? null}
+        gold={gold}
+        materials={materials}
+        onUnlock={handleUnlock}
+        onClose={() => setUnlockTarget(null)}
+      />
+
+      <ConstructionModal
+        visible={constructionTarget !== null}
+        gold={gold}
+        materials={materials}
+        onBuild={handleBuild}
+        onClose={() => setConstructionTarget(null)}
+      />
     </SafeAreaView>
   );
 }

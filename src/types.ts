@@ -478,9 +478,11 @@ export interface WorldState {
 
 // ---- Town expansion (land grid) ----
 
-// Purely cosmetic placeholders until a crafting/shop economy exists —
-// placing one just makes the town look more developed.
-export type BuildingKind = 'workshop' | 'shop' | 'warehouse';
+// What a constructed building looks like on the map. 'workshop' and
+// 'warehouse' remain purely cosmetic leftovers with no construction option
+// pointing at them yet; 'shop' and 'garden' are real, buildable outcomes
+// (see data/buildingOptions.ts).
+export type BuildingKind = 'workshop' | 'shop' | 'warehouse' | 'garden';
 
 export interface PlotUnlockCost {
   gold: number;
@@ -508,4 +510,11 @@ export interface TownPlotState {
   id: string;
   unlocked: boolean;
   building: BuildingKind | null;
+  // Which data/buildingOptions.ts entry was actually constructed here, if
+  // any — needed because `building` alone (a BuildingKind) can't tell two
+  // same-kind options apart (e.g. the general-goods shop branch vs the feed
+  // shop branch are both just 'shop'). Null for the always-present shop
+  // plots (SHOP_PLOT_IDS) and for anything left over from the old
+  // cosmetic-only cycleBuilding tap (pre-construction-system saves).
+  constructedBuildingId: string | null;
 }

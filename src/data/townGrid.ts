@@ -22,6 +22,18 @@ const OUTER_STEP_Y = 0.04;
 // Ring-3 plots can't even be attempted until the town reaches this level.
 const OUTER_RING_MIN_TOWN_LEVEL = 3;
 
+// The two permanent shops (SHOP_PLOT_ID/FEED_SHOP_PLOT_ID below) sit on
+// ring-1's N/S axis (row ±1, col 0). The plain ring-1 offset (CELL_H, 0.1)
+// left them uncomfortably close to the town zone's smallest ellipse (town
+// level 1's ry is 0.108 — under 10% margin, and the shop sprite's own
+// rendered footprint eats into that further), so real devices showed them
+// visibly poking past the drawn boundary. Pulling them in to this smaller,
+// dedicated offset keeps them safely inside at every town level — the zone
+// only ever grows from level 1, never shrinks, so "safe at the smallest
+// tier" is enough to guarantee "safe forever" without any level-aware
+// shop-repositioning logic.
+const SHOP_AXIS_OFFSET = 0.075;
+
 function axisOffset(v: number, cell: number, outerStep: number): number {
   if (Math.abs(v) <= 2) return v * cell;
   return Math.sign(v) * (2 * cell + outerStep);
@@ -38,8 +50,9 @@ function buildPlotDefs(): TownPlotDef[] {
 
       const ringDist = Math.max(Math.abs(row), Math.abs(col));
       const unlockedByDefault = ringDist <= 1 && (row === 0 || col === 0); // orthogonal ring-1 neighbors
+      const isShopCell = col === 0 && Math.abs(row) === 1;
       const x = TOWN_X + axisOffset(col, CELL_W, OUTER_STEP_X);
-      const y = TOWN_Y + axisOffset(row, CELL_H, OUTER_STEP_Y);
+      const y = isShopCell ? TOWN_Y + Math.sign(row) * SHOP_AXIS_OFFSET : TOWN_Y + axisOffset(row, CELL_H, OUTER_STEP_Y);
 
       let unlockCost: TownPlotDef['unlockCost'] = null;
       if (!unlockedByDefault) {
@@ -95,6 +108,11 @@ export function shopKindForPlot(plotId: string): ShopKind | null {
 // straight from plot count. Deliberately light, so the very first land
 // purchase already contributes meaningfully toward the next tier.
 export const PLOT_UNLOCK_DEVELOPMENT_POINTS = 30;
+
+// Constructing a building (see data/buildingOptions.ts, useTownStore's
+// constructBuilding) is a further meaningful step past just unlocking the
+// land, so it earns its own (smaller) development bump.
+export const CONSTRUCTION_DEVELOPMENT_POINTS = 20;
 
 // The role field's growth path — five named stages, each unlocked once
 // cumulative developmentPoints (from unlocking land and from completing
@@ -156,11 +174,17 @@ export function getTownZoneRadius(townLevel: number): { rx: number; ry: number }
   return TOWN_ZONE_RADIUS_BY_LEVEL[townLevel] ?? TOWN_ZONE_RADIUS_BY_LEVEL[1];
 }
 
+// Generic fallback icon per building kind — used when a plot has a
+// `building` set but no matching data/buildingOptions.ts entry (either a
+// kind with no construction option yet, like 'workshop'/'warehouse', or a
+// save from before the construction system existed). Constructed plots
+// normally show their specific BuildingOption's own emoji instead (see
+// WorldMap's PlotSprite), which is more specific than this table (e.g. the
+// general-goods branch and the feed branch are both kind 'shop' here, but
+// render as 🛠️/🌾 respectively once matched to their option).
 export const BUILDING_ICON: Record<BuildingKind, string> = {
   workshop: '🛠️',
   shop: '🏪',
   warehouse: '📦',
+  garden: '🌷',
 };
-
-// Cycle order when tapping an empty/occupied unlocked plot.
-export const BUILDING_CYCLE: (BuildingKind | null)[] = [null, 'workshop', 'shop', 'warehouse'];

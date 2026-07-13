@@ -26,6 +26,7 @@ import { SHOP_DEFS } from '../data/shops';
 import { HOUSE_POSITIONS } from '../data/houses';
 import { MATERIAL_ICON } from '../data/materials';
 import { TILE_IMAGES, TILE_REPEAT_IMAGES } from '../data/tileImages';
+import { getBuildingOption } from '../data/buildingOptions';
 import { CharacterAvatar } from './CharacterAvatar';
 import { AnimatedPressable } from './AnimatedPressable';
 import { TICK_MS } from '../game/config';
@@ -48,12 +49,21 @@ export const WORLD_CANVAS_HEIGHT = 1400;
 // natural clusters data/world.ts's enemy/mining defs already sit in, now
 // made visually legible with actual hand-painted ground art (see
 // data/tileImages.ts's TILE_REPEAT_IMAGES) instead of a flat color fill.
-const FIELD_ZONE_PATCHES: { cx: number; cy: number; rx: number; ry: number; texture: keyof typeof TILE_REPEAT_IMAGES }[] = [
-  { cx: 0.22, cy: 0.22, rx: 0.16, ry: 0.13, texture: 'forest' }, // upper-left
-  { cx: 0.75, cy: 0.22, rx: 0.16, ry: 0.14, texture: 'quarry' }, // upper-right
-  { cx: 0.23, cy: 0.76, rx: 0.13, ry: 0.11, texture: 'mushroom' }, // lower-left
-  { cx: 0.63, cy: 0.86, rx: 0.2, ry: 0.11, texture: 'lake' }, // south
-  { cx: 0.5, cy: 0.13, rx: 0.14, ry: 0.08, texture: 'ruins' }, // north
+// Each also carries a small label so the zone reads as "a place" rather
+// than an unexplained patch of color.
+const FIELD_ZONE_PATCHES: {
+  cx: number;
+  cy: number;
+  rx: number;
+  ry: number;
+  texture: keyof typeof TILE_REPEAT_IMAGES;
+  label: string;
+}[] = [
+  { cx: 0.22, cy: 0.22, rx: 0.16, ry: 0.13, texture: 'forest', label: '🌲 森' }, // upper-left
+  { cx: 0.75, cy: 0.22, rx: 0.16, ry: 0.14, texture: 'quarry', label: '⛏️ 鉱山' }, // upper-right
+  { cx: 0.23, cy: 0.76, rx: 0.13, ry: 0.11, texture: 'mushroom', label: '🍄 キノコ畑' }, // lower-left
+  { cx: 0.63, cy: 0.86, rx: 0.2, ry: 0.11, texture: 'lake', label: '🌊 湖' }, // south
+  { cx: 0.5, cy: 0.13, rx: 0.14, ry: 0.08, texture: 'ruins', label: '🏛️ 遺跡' }, // north
 ];
 
 // Displayed size of one repeating ground tile in the background patches
@@ -67,35 +77,51 @@ const FIELD_ZONE_PATCHES: { cx: number; cy: number; rx: number; ry: number; text
 // tick.
 const GROUND_TILE_SIZE = 60;
 
+// A quick, seedable pseudo-random 0..1 generator (mulberry32) — used so each
+// cell's tile-variant pick is deterministic (stable across re-renders once
+// memoized) without needing to store the choice anywhere.
+function pseudoRandom(seed: number): number {
+  let t = (seed += 0x6d2b79f5);
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+}
+
 // A memoized grid of repeating ground-tile cells filling a width x height
 // box. Wrapped in React.memo + useMemo so re-renders of the (frequently
 // ticking) WorldMap component don't re-layout or re-create this potentially
 // large list of Image elements unless the box's own size actually changes.
+// Cells mix between the given source variants (deterministically, keyed on
+// each cell's own grid position) rather than all repeating the same image,
+// so the tiling reads as loose texture instead of an obviously stamped grid.
 const TiledBackground = React.memo(function TiledBackground({
   width,
   height,
-  source,
+  sources,
 }: {
   width: number;
   height: number;
-  source: number;
+  sources: readonly number[];
 }) {
   const cells = useMemo(() => {
     const cols = Math.ceil(width / GROUND_TILE_SIZE) + 1;
     const rows = Math.ceil(height / GROUND_TILE_SIZE) + 1;
-    const list: { left: number; top: number }[] = [];
+    const list: { left: number; top: number; variant: number }[] = [];
     for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) list.push({ left: c * GROUND_TILE_SIZE, top: r * GROUND_TILE_SIZE });
+      for (let c = 0; c < cols; c++) {
+        const variant = Math.floor(pseudoRandom(r * 1000 + c) * sources.length);
+        list.push({ left: c * GROUND_TILE_SIZE, top: r * GROUND_TILE_SIZE, variant });
+      }
     }
     return list;
-  }, [width, height]);
+  }, [width, height, sources.length]);
 
   return (
     <>
       {cells.map((cell, i) => (
         <Image
           key={i}
-          source={source}
+          source={sources[cell.variant]}
           resizeMode="cover"
           style={[styles.tileCell, { left: cell.left, top: cell.top }]}
         />
@@ -174,7 +200,10 @@ export function WorldMap({
               },
             ]}
           >
-            <TiledBackground width={w} height={h} source={TILE_REPEAT_IMAGES[p.texture]} />
+            <TiledBackground width={w} height={h} sources={TILE_REPEAT_IMAGES[p.texture]} />
+            <View style={styles.fieldZoneLabelWrap}>
+              <Text style={styles.fieldZoneLabel}>{p.label}</Text>
+            </View>
           </View>
         );
       }),
@@ -204,7 +233,7 @@ export function WorldMap({
           ]}
         >
           <View style={styles.townZoneTextureLayer}>
-            <TiledBackground width={zoneWidth} height={zoneHeight} source={TILE_REPEAT_IMAGES.town} />
+            <TiledBackground width={zoneWidth} height={zoneHeight} sources={TILE_REPEAT_IMAGES.town} />
           </View>
           <View style={styles.townZoneTint} />
         </View>
@@ -547,9 +576,16 @@ function PlotSprite({
     );
   }
 
+  // A constructed plot's own BuildingOption (see data/buildingOptions.ts)
+  // has a more specific emoji than the generic per-BuildingKind fallback —
+  // e.g. the general-goods branch and the feed branch are both kind 'shop'
+  // but render as 🛠️/🌾 respectively once matched back to their option.
+  const constructedOption = getBuildingOption(state.constructedBuildingId);
+  const buildingIcon = constructedOption?.emoji ?? (state.building ? BUILDING_ICON[state.building] : '·');
+
   return (
     <AnimatedPressable style={[styles.plot, styles.plotOpen, { left: x - 12, top: y - 12 }]} onPress={onPress}>
-      <Text style={styles.plotBuildingIcon}>{shopEmoji ?? (state.building ? BUILDING_ICON[state.building] : '·')}</Text>
+      <Text style={styles.plotBuildingIcon}>{shopEmoji ?? buildingIcon}</Text>
     </AnimatedPressable>
   );
 }
@@ -798,10 +834,26 @@ const styles = StyleSheet.create({
   field: {
     backgroundColor: theme.ground,
   },
-  fieldZonePatch: { position: 'absolute', opacity: 0.45, overflow: 'hidden' },
+  // Softer than before (was 0.45) so the patch blends into the surrounding
+  // field green instead of reading as a hard-edged circle of color.
+  fieldZonePatch: { position: 'absolute', opacity: 0.32, overflow: 'hidden' },
   // Each ground-tile cell in a TiledBackground grid — absolute-positioned by
   // the grid's own computed left/top, sized by GROUND_TILE_SIZE.
   tileCell: { position: 'absolute', width: GROUND_TILE_SIZE, height: GROUND_TILE_SIZE },
+  // A small "what is this zone" label centered on each field patch — a
+  // semi-transparent pill so it stays legible over any of the tile mixes.
+  fieldZoneLabelWrap: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: [{ translateX: -40 }, { translateY: -11 }],
+    width: 80,
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.55)',
+    borderRadius: 999,
+    paddingVertical: 3,
+  },
+  fieldZoneLabel: { fontSize: 10, fontWeight: '800', color: theme.textPrimary },
   townZoneBackdrop: { position: 'absolute', overflow: 'hidden' },
   townZoneTextureLayer: { position: 'absolute', width: '100%', height: '100%', opacity: 0.4 },
   townZoneTint: { position: 'absolute', width: '100%', height: '100%', backgroundColor: theme.bgBottom, opacity: 0.6 },
@@ -881,7 +933,16 @@ const styles = StyleSheet.create({
   rockAccent: { position: 'absolute', width: 40, height: 40, top: -6, left: 8, opacity: 0.55 },
   leisureSprite: { opacity: 0.85 },
   tapArea: { alignItems: 'center' },
-  emojiLarge: { fontSize: 26 },
+  // A soft shadow helps flat-shaded icons (mining nodes, treasure, etc.)
+  // sit on top of the tiled ground art instead of looking pasted flat onto
+  // it — subtle enough not to change the look anywhere the icon is over
+  // plain color (e.g. locked plots, most of the field's own base green).
+  emojiLarge: {
+    fontSize: 26,
+    textShadowColor: 'rgba(0,0,0,0.18)',
+    textShadowOffset: { width: 0, height: 1.5 },
+    textShadowRadius: 2,
+  },
   pickaxe: { position: 'absolute', top: -8, right: 0, fontSize: 14 },
   carryBadge: { position: 'absolute', top: -10, right: -4, fontSize: 15 },
   sulkBadge: { position: 'absolute', top: -10, left: -4, fontSize: 14 },

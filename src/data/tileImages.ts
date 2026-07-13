@@ -23,11 +23,15 @@ export const TILE_IMAGES = {
 
 // Seamless repeat-fill textures for the field's loose zone patches (see
 // WorldMap's FIELD_ZONE_PATCHES) and the town zone's own subtle backdrop.
+// Each zone lists 2 variants rather than 1 — TiledBackground mixes them
+// pseudo-randomly per cell so the repeating grid reads as a loose texture
+// instead of one tile obviously stamped over and over (most noticeable
+// before this on the rocky quarry zone).
 export const TILE_REPEAT_IMAGES = {
-  forest: require('../../assets/tiles/grass_dark_flowers_tile.png'),
-  quarry: require('../../assets/tiles/grass_rocks_tile.png'),
-  mushroom: require('../../assets/tiles/clover_dense_tile.png'),
-  lake: require('../../assets/tiles/grass_blue_flowers_tile.png'),
-  ruins: require('../../assets/tiles/dirt_full_tile.png'),
-  town: require('../../assets/tiles/grass_plain_1_tile.png'),
+  forest: [require('../../assets/tiles/grass_dark_flowers_tile.png'), require('../../assets/tiles/grass_clover_tile.png')],
+  quarry: [require('../../assets/tiles/grass_rocks_tile.png'), require('../../assets/tiles/dirt_gravel_sparse_tile.png')],
+  mushroom: [require('../../assets/tiles/clover_dense_tile.png'), require('../../assets/tiles/grass_white_tufts_tile.png')],
+  lake: [require('../../assets/tiles/grass_blue_flowers_tile.png'), require('../../assets/tiles/grass_white_yellow_tile.png')],
+  ruins: [require('../../assets/tiles/dirt_full_tile.png'), require('../../assets/tiles/dirt_patch_irregular_tile.png')],
+  town: [require('../../assets/tiles/grass_plain_1_tile.png'), require('../../assets/tiles/grass_plain_2_tile.png')],
 } as const;
