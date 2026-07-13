@@ -96,19 +96,25 @@ export const useBirdEconomyStore = create<BirdEconomyState & BirdEconomyActions>
         // level-1 attack/HP). Backfill proportional to the level already
         // reached instead of resetting to base, so existing saves get
         // retroactive credit once, then keep growing normally afterward.
-        // Also re-heals NaN specifically: catchUpOffline used to read
+        // Also re-heals already-corrupted saves: catchUpOffline used to read
         // `wallets` directly (bypassing this backfill entirely), so a
         // returning player whose offline birds leveled up before this fix
-        // landed got `undefined + gain` baked in as a permanent NaN — this
-        // check catches that already-corrupted state too, not just the
-        // missing-field case, since NaN !== undefined would otherwise skip
-        // right past a plain `=== undefined` guard forever.
+        // landed got `undefined + gain` baked in as a permanent NaN. A first
+        // attempt at healing that only checked `Number.isNaN` missed it on
+        // the *next* reload though — `JSON.stringify(NaN)` serializes to
+        // `null` (not NaN), so AsyncStorage round-trips a NaN into `null`,
+        // and `null + gain` coerces to a small *finite* number (`null` reads
+        // as 0 in arithmetic) instead of staying obviously broken — real-
+        // device report: stats "went very weak" instead of showing NaN, from
+        // exactly that null-coerced-to-0-plus-a-few-gains math. Checking
+        // `Number.isFinite` instead catches undefined/null/NaN/Infinity in
+        // one go, so nothing coerces silently again.
         const def = getCharacterDef(defId);
         const level = merged.level;
-        if (!saved || saved.atk === undefined || Number.isNaN(saved.atk)) {
+        if (!Number.isFinite(saved?.atk)) {
           merged.atk = def.baseAtk + (level - 1) * LEVEL_UP_ATK_GAIN;
         }
-        if (!saved || saved.maxHp === undefined || Number.isNaN(saved.maxHp)) {
+        if (!Number.isFinite(saved?.maxHp)) {
           merged.maxHp = def.baseHp + (level - 1) * LEVEL_UP_HP_GAIN;
         }
         return merged;
