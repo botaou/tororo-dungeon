@@ -4,7 +4,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { EquipSlot, ItemId, MaterialId } from '../types';
 import { getCharacterDef } from '../data/characters';
-import { STARTING_HAPPINESS, STARTING_MATERIALS, STARTING_SATIETY } from '../game/config';
+import {
+  LEVEL_UP_ATK_GAIN,
+  LEVEL_UP_HP_GAIN,
+  STARTING_HAPPINESS,
+  STARTING_MATERIALS,
+  STARTING_SATIETY,
+} from '../game/config';
 
 export interface BirdWallet {
   gold: number;
@@ -13,6 +19,8 @@ export interface BirdWallet {
   equipment: Record<EquipSlot, ItemId | null>;
   level: number;
   exp: number;
+  atk: number;
+  maxHp: number;
   defense: number;
   speed: number;
   luck: number;
@@ -33,6 +41,8 @@ function defaultWallet(defId: string): BirdWallet {
     equipment: { weapon: null, armor: null, hat: null, shield: null },
     level: 1,
     exp: 0,
+    atk: def.baseAtk,
+    maxHp: def.baseHp,
     defense: def.baseDefense,
     speed: def.baseSpeed,
     luck: def.baseLuck,
@@ -69,7 +79,26 @@ export const useBirdEconomyStore = create<BirdEconomyState & BirdEconomyActions>
     (set, get) => ({
       wallets: {},
 
-      getWallet: (defId) => ({ ...defaultWallet(defId), ...(get().wallets[defId] ?? {}) }),
+      getWallet: (defId) => {
+        const base = defaultWallet(defId);
+        const saved = get().wallets[defId];
+        const merged = { ...base, ...(saved ?? {}) };
+        // atk/maxHp were added after level-up growth already existed (see
+        // useWorldStore's grantExp, which was bumping bird.atk/bird.maxHp on
+        // the in-memory session state the whole time but had nowhere
+        // persisted to put the gain) — a save from before this field existed
+        // would otherwise fall back to defaultWallet's flat level-1 base
+        // every single launch, silently discarding every level's worth of
+        // atk/HP growth (real-device report: a level-82 bird still showing
+        // level-1 attack/HP). Backfill proportional to the level already
+        // reached instead of resetting to base, so existing saves get
+        // retroactive credit once, then keep growing normally afterward.
+        const def = getCharacterDef(defId);
+        const level = merged.level;
+        if (!saved || saved.atk === undefined) merged.atk = def.baseAtk + (level - 1) * LEVEL_UP_ATK_GAIN;
+        if (!saved || saved.maxHp === undefined) merged.maxHp = def.baseHp + (level - 1) * LEVEL_UP_HP_GAIN;
+        return merged;
+      },
 
       syncAll: (wallets) => set({ wallets }),
 

@@ -36,7 +36,9 @@ import { ENEMY_DEFS, MINING_NODE_DEFS } from '../data/world';
 import { MATERIAL_SELL_PRICE } from '../data/marketPrices';
 import {
   expToNextLevel,
+  LEVEL_UP_ATK_GAIN,
   LEVEL_UP_DEFENSE_GAIN,
+  LEVEL_UP_HP_GAIN,
   LEVEL_UP_SPEED_GAIN,
   OFFLINE_TICKS_PER_GATHER,
   OFFLINE_TICKS_PER_KILL,
@@ -141,20 +143,22 @@ export function simulateOfflineProgress(
       }
     }
 
-    // Leveling follows the same curve as the online path (grantExp in
-    // useWorldStore), applied to the wallet fields that actually persist
-    // across sessions — atk/hp aren't tracked in BirdWallet even during
-    // normal play (they're rebuilt from the character def each session),
-    // so leaving them alone here doesn't regress anything.
+    // Leveling follows the same curve and gains as the online path
+    // (grantExp in useWorldStore) — all 4 growable stats, matching
+    // BirdWallet's atk/maxHp/defense/speed fields.
     let level = wallet.level;
     let exp = wallet.exp + expGained;
     let levelsGained = 0;
+    let atk = wallet.atk;
+    let maxHp = wallet.maxHp;
     let defense = wallet.defense;
     let speed = wallet.speed;
     while (exp >= expToNextLevel(level)) {
       exp -= expToNextLevel(level);
       level += 1;
       levelsGained += 1;
+      atk += LEVEL_UP_ATK_GAIN;
+      maxHp += LEVEL_UP_HP_GAIN;
       defense += LEVEL_UP_DEFENSE_GAIN;
       speed += LEVEL_UP_SPEED_GAIN;
     }
@@ -207,6 +211,8 @@ export function simulateOfflineProgress(
       items: nextItems,
       level,
       exp,
+      atk,
+      maxHp,
       defense,
       speed,
       // Free food is always available, so a bird is never actually stuck
