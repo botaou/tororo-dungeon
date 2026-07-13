@@ -322,7 +322,7 @@ export type ActivityKind =
 // A pursuit goal a bird's AI is actively working toward. A job is just a
 // mining/treasure pursuit restricted to a specific request's material and
 // tagged with which request it fulfills (see BirdState.currentJobId).
-export type TargetKind = 'enemy' | 'mining' | 'treasure' | 'river' | 'pond' | 'explore' | 'rest' | 'shop';
+export type TargetKind = 'enemy' | 'mining' | 'treasure' | 'river' | 'pond' | 'explore' | 'rest' | 'shop' | 'townHall';
 
 // The four things every bird can choose to do — personality only weights
 // how likely each one is to be picked, it never rules one out entirely.
@@ -357,6 +357,13 @@ export interface BirdState {
   workProgress: number;
   activity: ActivityKind;
   currentJobId: string | null;
+  // A job's own 3-leg errand, separate from targetKind (which just tracks
+  // *where* the bird is currently walking): visit the town hall to take
+  // the job on, do the actual gathering/hunting, then visit the town hall
+  // again to hand it in and collect the reward — real-device request so
+  // accepting/completing a job reads as an actual errand rather than an
+  // instantaneous status flip. null whenever currentJobId is null.
+  jobStage: 'toAccept' | 'working' | 'toDeliver' | null;
   // Set the moment a free-roaming (non-job) bird finishes gathering a
   // mining node; cleared once it carries the haul back to its own house
   // and the material is credited to its personal inventory.

@@ -43,7 +43,11 @@ export function getBirdStatusLabel(bird: BirdState): string {
 export function getBirdGoalLabel(bird: BirdState): string {
   if (bird.hp <= 0) return '家に戻って回復を待っている';
   if (bird.activity === 'recovering') return '家で療養している';
-  if (bird.currentJobId) return '依頼を遂行中';
+  if (bird.currentJobId) {
+    if (bird.jobStage === 'toAccept') return '役場へ依頼を受けに向かっている';
+    if (bird.jobStage === 'toDeliver') return '役場へ納品に向かっている';
+    return '依頼を遂行中';
+  }
   switch (bird.targetKind) {
     case 'enemy':
       return '敵と交戦中';

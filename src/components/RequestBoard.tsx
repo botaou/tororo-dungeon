@@ -75,6 +75,8 @@ export function RequestBoard({ visible, onClose, requests, merchant, playerItems
                     <Text style={styles.requestStatus}>
                       {r.status === 'open'
                         ? '募集中…'
+                        : (r.kind === 'gather' || r.kind === 'hunt') && r.delivered >= r.amount
+                        ? `${r.acceptedBy ? getCharacterDef(r.acceptedBy).name : ''}が役場へ納品に向かっている`
                         : `${r.acceptedBy ? getCharacterDef(r.acceptedBy).name : ''}が対応中(${r.delivered}/${r.amount})`}
                     </Text>
                     {isMerchantDeliver && r.status === 'inProgress' && !merchant && (

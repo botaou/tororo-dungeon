@@ -41,7 +41,7 @@ import {
 } from '../game/recruitment';
 import { getEffectiveStats, maybeAutoEquip } from '../game/birdStats';
 import { MATERIAL_LABEL } from '../data/materials';
-import { JobPreset } from '../data/jobPresets';
+import { describeJobTarget, JOB_KIND_UNIT_LABEL, JobPreset } from '../data/jobPresets';
 import { ITEM_DEF_MAP, MERCHANT_COMMON_ITEM_IDS, MERCHANT_RARE_ITEM_IDS, RESTOCKED_ITEM_IDS } from '../data/items';
 import { MATERIAL_SELL_PRICE } from '../data/marketPrices';
 import {
@@ -191,6 +191,7 @@ function buildInitialWorld(): WorldState {
       workProgress: 0,
       activity: 'idle',
       currentJobId: null,
+      jobStage: null,
       carrying: null,
       gold: wallet.gold,
       inventory: { ...wallet.inventory },
@@ -565,6 +566,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
           // it stays free to act normally instead of getting tied up.
           if (accepted.kind === 'gather' || accepted.kind === 'hunt') {
             bird.currentJobId = accepted.id;
+            bird.jobStage = 'toAccept';
             bird.targetKind = null;
             bird.targetRefUid = null;
             bird.workProgress = 0;
@@ -656,19 +658,24 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         );
       }
       if (outcome.jobCompletedId) {
+        // Raised by ai.ts's stepJob only once the bird's actually walked
+        // back to the town hall with the job done (gather's own inventory-
+        // /node-delivery and hunt's kill-count both just flip jobStage to
+        // 'toDeliver' and let this shared arrival path grant everything —
+        // see stepJob's and the kills loop's comments).
         completedJobIds.add(outcome.jobCompletedId);
         const request = requests.find((r) => r.id === outcome.jobCompletedId);
         if (request) {
           grantExp(bird, request.expReward, newLog);
           useTownStore.getState().addDevelopmentPoints(request.developmentPoints);
           useTownStore.getState().addReputation(request.reputationPoints);
-          // Only 'gather' jobs ever set outcome.jobCompletedId — 'hunt'
-          // completions are detected later, in the kills loop below.
+          bird.gold += request.reward;
+          const { label } = describeJobTarget(request);
           newLog.push(
             makeLogEntry(
               bird.name,
               'job',
-              `${bird.name}が依頼(${MATERIAL_LABEL[request.materialId!]}${request.amount}個)を達成した!(報酬${request.reward}G/経験値${request.expReward})`
+              `${bird.name}が依頼(${label}${request.amount}${JOB_KIND_UNIT_LABEL[request.kind]})を達成した!(報酬${request.reward}G/経験値${request.expReward})`
             )
           );
           // Recipe-unlock route 3 ("依頼掲示板の報酬").
@@ -773,24 +780,14 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       if (huntRequest) {
         huntRequest.delivered += 1;
         if (huntRequest.delivered >= huntRequest.amount) {
-          completedJobIds.add(huntRequest.id);
+          // Don't grant anything yet — the accepting bird still has to walk
+          // back to the town hall to hand the job in (real-device request).
+          // ai.ts's stepJob drives that walk once jobStage flips to
+          // 'toDeliver', and only raises outcome.jobCompletedId on arrival —
+          // that shared path (see below) is what actually grants gold/exp/
+          // dev/reputation and logs the completion, same as gather jobs.
           const bird = nextBirds.find((b) => b.defId === huntRequest.acceptedBy);
-          if (bird) {
-            grantExp(bird, huntRequest.expReward, newLog);
-            useTownStore.getState().addDevelopmentPoints(huntRequest.developmentPoints);
-            useTownStore.getState().addReputation(huntRequest.reputationPoints);
-            bird.gold += huntRequest.reward;
-            bird.currentJobId = null;
-            newLog.push(
-              makeLogEntry(
-                bird.name,
-                'job',
-                `${bird.name}が依頼(${huntRequest.enemyName}${huntRequest.amount}体討伐)を達成した!(報酬${huntRequest.reward}G/経験値${huntRequest.expReward})`
-              )
-            );
-            // Recipe-unlock route 3 ("依頼掲示板の報酬").
-            tryRecipeUnlock(RECIPE_QUEST_CHANCE, 'quest', bird.name);
-          }
+          if (bird) bird.jobStage = 'toDeliver';
         }
       }
       for (const { unitUid, gold } of kill.rewards) {

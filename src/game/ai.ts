@@ -828,6 +828,15 @@ function executeRest(bird: BirdState, world: AiWorld): AiStepOutcome {
 // up here (see useWorldStore's acceptance loop): 'craft'/'merchantDeliver'
 // jobs are player actions, so an accepting bird for those never gets
 // currentJobId set at all and just keeps acting normally.
+//
+// A job is a 3-leg errand tracked by bird.jobStage, not just an instant
+// status flip (real-device request): 'toAccept' walks to the town hall
+// before any work starts, 'working' is the actual gather/hunt pursuit
+// (unchanged below), and 'toDeliver' walks back to the town hall once the
+// quota's met — only then does the reward/exp/log actually land (see
+// useWorldStore's outcome.jobCompletedId handling and the hunt-completion
+// branch of its kills loop, both of which now just flip jobStage to
+// 'toDeliver' instead of granting anything immediately).
 function stepJob(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutcome {
   const outcome = emptyOutcome();
   const request = world.requests.find((r) => r.id === bird.currentJobId);
@@ -835,11 +844,53 @@ function stepJob(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutc
     bird.currentJobId = null;
     bird.targetKind = null;
     bird.targetRefUid = null;
+    bird.jobStage = null;
+    return outcome;
+  }
+
+  if (bird.jobStage === 'toAccept' || bird.jobStage === null) {
+    bird.targetKind = 'townHall';
+    bird.targetRefUid = null;
+    bird.activity = 'idle';
+    if (moveToward(bird, TOWN_X, TOWN_Y)) {
+      bird.jobStage = 'working';
+      bird.targetKind = null;
+    }
+    return outcome;
+  }
+
+  if (bird.jobStage === 'toDeliver') {
+    bird.targetKind = 'townHall';
+    bird.targetRefUid = null;
+    bird.activity = 'idle';
+    if (moveToward(bird, TOWN_X, TOWN_Y)) {
+      outcome.jobCompletedId = request.id;
+      bird.currentJobId = null;
+      bird.jobStage = null;
+      bird.targetKind = null;
+    }
     return outcome;
   }
 
   if (request.kind === 'hunt') {
     return stepHuntJob(bird, def, world, request.enemyName!);
+  }
+
+  // Gather, jobStage === 'working': use whatever the bird's already
+  // personally carrying first — a real-device request, since a bird
+  // sitting on a big personal stash of a material shouldn't have to fetch
+  // 5 more of it from a field node before the job counts it. Only travels
+  // to a node if the bird's own stock isn't already enough by itself.
+  const materialId = request.materialId!;
+  const owned = bird.inventory[materialId] ?? 0;
+  if (owned > 0 && request.delivered < request.amount) {
+    const used = Math.min(owned, request.amount - request.delivered);
+    bird.inventory[materialId] = owned - used;
+    request.delivered += used;
+  }
+  if (request.delivered >= request.amount) {
+    bird.jobStage = 'toDeliver';
+    return outcome;
   }
 
   const matching = world.miningNodes.filter((m) => !m.collected && m.resource === request.materialId);
@@ -884,9 +935,7 @@ function stepJob(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutc
       bird.targetRefUid = null;
       bird.workProgress = 0;
       if (request.delivered >= request.amount) {
-        outcome.jobCompletedId = request.id;
-        bird.gold += request.reward; // the player pays this out in the store
-        bird.currentJobId = null;
+        bird.jobStage = 'toDeliver';
       }
     }
   }
