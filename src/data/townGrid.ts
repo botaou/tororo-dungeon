@@ -205,6 +205,20 @@ export function getTownZoneRadius(townLevel: number): { rx: number; ry: number }
   return TOWN_ZONE_RADIUS_BY_LEVEL[townLevel] ?? TOWN_ZONE_RADIUS_BY_LEVEL[1];
 }
 
+// Whether a point falls inside the town's current core ellipse. Used to
+// keep constructed buildings feeling like part of a cohesive town rather
+// than scattered across the whole 48-plot grid — land can still be
+// unlocked out at the level-gated outer rings (a real-device request:
+// "街を街として固めたい"/keep the town looking like one town), but
+// ConstructionModal only opens for a plot once the zone has actually grown
+// to include it, rather than letting a shop get built somewhere the zone
+// backdrop doesn't even draw yet.
+export function isInsideTownZone(x: number, y: number, zoneRadius: { rx: number; ry: number }): boolean {
+  const dx = (x - TOWN_X) / zoneRadius.rx;
+  const dy = (y - TOWN_Y) / zoneRadius.ry;
+  return dx * dx + dy * dy <= 1;
+}
+
 // Generic fallback icon per building kind — used when a plot has a
 // `building` set but no matching data/buildingOptions.ts entry (either a
 // kind with no construction option yet, like 'workshop'/'warehouse', or a
