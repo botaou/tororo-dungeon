@@ -1,9 +1,11 @@
 import React from 'react';
 import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { MerchantState } from '../types';
+import { MaterialId, MerchantState } from '../types';
 import { ITEM_DEF_MAP } from '../data/items';
 import { CRAFTING_RECIPES } from '../data/recipes';
+import { MATERIAL_ICON, MATERIAL_LABEL } from '../data/materials';
+import { MATERIAL_SELL_PRICE } from '../data/marketPrices';
 import { AnimatedPressable } from './AnimatedPressable';
 import { theme } from '../theme';
 
@@ -12,23 +14,31 @@ interface Props {
   onClose: () => void;
   merchant: MerchantState | null;
   gold: number;
+  materials: Partial<Record<MaterialId, number>>;
   // Recipe-unlock route 1 ("商人が売りに来る") — the only merchant
   // interaction the player does directly rather than birds handling it
   // autonomously, since a recipe is player knowledge, not something a bird
   // carries. Returns false if the offer's gone or gold's insufficient.
   onBuyRecipe: () => boolean;
+  // Player-initiated sale of the town warehouse's entire stock of one
+  // material — a real-device request for a way to offload warehouse
+  // material that wasn't tied to the random traveler or to birds selling
+  // their own gathered stock.
+  onSellMaterial: (materialId: MaterialId) => void;
 }
 
-// View-only, like the rest of the game's shops from the player's side —
-// birds decide for themselves whether to buy from the shelf or sell their
-// convertible treasure here (see game/ai.ts's executeMerchantSellTrip /
-// executeMerchantBuyTrip). This just shows what's on offer and how long
-// the visit has left.
-export function MerchantModal({ visible, onClose, merchant, gold, onBuyRecipe }: Props) {
+// Mostly view-only, like the rest of the game's shops from the player's
+// side — birds decide for themselves whether to buy from the shelf or sell
+// their convertible treasure here (see game/ai.ts's executeMerchantSellTrip
+// / executeMerchantBuyTrip). The one exception besides the recipe offer is
+// selling warehouse material, which is squarely the player's own call (it's
+// the town's shared stock, not a bird's personal find).
+export function MerchantModal({ visible, onClose, merchant, gold, materials, onBuyRecipe, onSellMaterial }: Props) {
   const minutesLeft = merchant ? Math.max(0, Math.ceil((merchant.departsAt - Date.now()) / 60_000)) : 0;
   const recipeOffer = merchant?.recipeOffer ?? null;
   const offerRecipe = recipeOffer ? CRAFTING_RECIPES.find((r) => r.id === recipeOffer.recipeId) : null;
   const offerItemDef = offerRecipe ? ITEM_DEF_MAP[offerRecipe.resultItemId] : null;
+  const sellableMaterials = (Object.keys(materials) as MaterialId[]).filter((id) => (materials[id] ?? 0) > 0);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -83,6 +93,32 @@ export function MerchantModal({ visible, onClose, merchant, gold, onBuyRecipe }:
                       <Text style={styles.recipeBuyButtonText}>{recipeOffer!.price}Gで購入</Text>
                     </AnimatedPressable>
                   </View>
+                </>
+              )}
+
+              {sellableMaterials.length > 0 && (
+                <>
+                  <Text style={styles.sectionLabel}>🎒 倉庫の素材を売る</Text>
+                  <ScrollView style={styles.sellList}>
+                    {sellableMaterials.map((materialId) => {
+                      const amount = materials[materialId] ?? 0;
+                      const unitPrice = MATERIAL_SELL_PRICE[materialId];
+                      return (
+                        <View style={styles.sellRow} key={materialId}>
+                          <Text style={styles.itemIcon}>{MATERIAL_ICON[materialId]}</Text>
+                          <View style={styles.sellRowTextWrap}>
+                            <Text style={styles.itemLabel}>{MATERIAL_LABEL[materialId]}</Text>
+                            <Text style={styles.recipeOfferSub}>
+                              {amount}個 × {unitPrice}G
+                            </Text>
+                          </View>
+                          <AnimatedPressable style={styles.sellButton} onPress={() => onSellMaterial(materialId)}>
+                            <Text style={styles.sellButtonText}>{amount * unitPrice}Gで売る</Text>
+                          </AnimatedPressable>
+                        </View>
+                      );
+                    })}
+                  </ScrollView>
                 </>
               )}
 
@@ -154,4 +190,22 @@ const styles = StyleSheet.create({
   },
   recipeBuyButtonDisabled: { backgroundColor: theme.disabled },
   recipeBuyButtonText: { color: '#fff', fontWeight: '700', fontSize: 12 },
+  sellList: { maxHeight: 180 },
+  sellRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: theme.cardAlt,
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 8,
+  },
+  sellRowTextWrap: { flex: 1 },
+  sellButton: {
+    backgroundColor: theme.gold,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  sellButtonText: { color: '#fff', fontWeight: '700', fontSize: 12 },
 });

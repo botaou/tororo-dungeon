@@ -32,6 +32,7 @@ export function TownScreen() {
   const gold = usePlayerStore((s) => s.gold);
   const materials = usePlayerStore((s) => s.materials);
   const items = usePlayerStore((s) => s.items);
+  const sellMaterialToMerchant = usePlayerStore((s) => s.sellMaterialToMerchant);
   const world = useWorldStore((s) => s.world);
   const initWorld = useWorldStore((s) => s.initWorld);
   const postRequest = useWorldStore((s) => s.postRequest);
@@ -239,7 +240,9 @@ export function TownScreen() {
         onClose={() => setMerchantVisible(false)}
         merchant={world.merchant}
         gold={gold}
+        materials={materials}
         onBuyRecipe={buyMerchantRecipe}
+        onSellMaterial={sellMaterialToMerchant}
       />
 
       <RecruitmentModal defId={pendingRecruit} onClose={() => setShownRecruitCount((c) => c + 1)} />

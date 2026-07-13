@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ItemId, MaterialId, PlayerState, ShopKind } from '../types';
 import { STARTING_GOLD, STARTING_MATERIALS } from '../game/config';
 import { CRAFTING_RECIPES } from '../data/recipes';
+import { MATERIAL_SELL_PRICE } from '../data/marketPrices';
 import { useRecipeStore } from './useRecipeStore';
 
 interface PlayerActions {
@@ -17,9 +18,18 @@ interface PlayerActions {
   creditFoodToll: (amount: number) => void;
   creditTravelerToll: (amount: number) => void;
   creditShopToll: (amount: number) => void;
-  // The town's 50% cut of a bird's convertible-item sale to the visiting
-  // merchant (the "market usage fee").
+  // Merchant-related income: the town's 50% cut of a bird's convertible-item
+  // sale (the "market usage fee"), and — since sellMaterialToMerchant below
+  // credits through the same action — the player's own warehouse-material
+  // sales to a visiting merchant too.
   creditMerchantToll: (amount: number) => void;
+  // Player-initiated: sell the town warehouse's entire current stock of one
+  // material to the visiting merchant, at the same flat rate the traveler
+  // and bird-to-shop sales use (MATERIAL_SELL_PRICE) — a real-device request
+  // for a way to offload warehouse material for gold that wasn't tied to
+  // the random traveler or to birds selling their own gathered stock.
+  // Returns the gold earned (0 if there was nothing to sell).
+  sellMaterialToMerchant: (materialId: MaterialId) => number;
   // The player's main hands-on action: spend the recipe's material cost
   // out of the town warehouse to produce one crafted item. Returns false
   // (no state change) if the town doesn't have enough of any material.
@@ -85,6 +95,19 @@ export const usePlayerStore = create<PlayerStore>()(
       creditShopToll: (amount) => set((s) => ({ gold: s.gold + amount, tollFromShop: s.tollFromShop + amount })),
       creditMerchantToll: (amount) =>
         set((s) => ({ gold: s.gold + amount, tollFromMerchant: s.tollFromMerchant + amount })),
+
+      sellMaterialToMerchant: (materialId) => {
+        const { materials } = get();
+        const amount = materials[materialId] ?? 0;
+        if (amount <= 0) return 0;
+        const revenue = amount * MATERIAL_SELL_PRICE[materialId];
+        set((s) => ({
+          materials: { ...s.materials, [materialId]: 0 },
+          gold: s.gold + revenue,
+          tollFromMerchant: s.tollFromMerchant + revenue,
+        }));
+        return revenue;
+      },
 
       craftItem: (recipeId) => {
         const recipe = CRAFTING_RECIPES.find((r) => r.id === recipeId);
