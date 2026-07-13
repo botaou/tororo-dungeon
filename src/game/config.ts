@@ -167,6 +167,17 @@ export const MERCHANT_ITEM_STOCK_MAX = 5;
 // Chance any given shelf slot is drawn from the rare pool instead of the
 // common one (see data/items.ts's MERCHANT_RARE_ITEM_IDS).
 export const MERCHANT_RARE_CHANCE = 0.15;
+// Chance a merchant visit also comes with an offer to teach the player a
+// still-locked recipe for gold (see game/recipeUnlocks.ts) — separate from,
+// and rolled independently of, the regular item lineup above.
+export const MERCHANT_RECIPE_OFFER_CHANCE = 0.35;
+// Recipe-unlock routes 2/3/4 (see game/recipeUnlocks.ts): a small per-event
+// chance to unlock a random still-locked recipe. Job-board completions
+// (rarer, more deliberate than an ordinary gather/kill) get a noticeably
+// higher chance than the two ambient rolls.
+export const RECIPE_GIFT_CHANCE = 0.04; // per gather completion
+export const RECIPE_COMBAT_CHANCE = 0.04; // per enemy kill
+export const RECIPE_QUEST_CHANCE = 0.2; // per job-board request completed
 // The "market usage fee" split when a bird sells a convertible item to the
 // merchant — half the sale price goes to the bird, half to the town.
 export const MERCHANT_BUYBACK_SPLIT = 0.5;

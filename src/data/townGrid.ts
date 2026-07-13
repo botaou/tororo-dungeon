@@ -1,5 +1,6 @@
-import { BuildingKind, ShopKind, TownPlotDef } from '../types';
+import { BuildingKind, ShopKind, TownPlotDef, TownPlotState } from '../types';
 import { TOWN_X, TOWN_Y } from './world';
+import { getBuildingOption } from './buildingOptions';
 
 // A grid of buildable land around the town hall (the existing 🏘️ marker,
 // which sits on the center cell and isn't a plot itself). The inner two
@@ -83,14 +84,44 @@ export const TOWN_PLOT_DEFS: TownPlotDef[] = buildPlotDefs();
 export const SHOP_PLOT_ID = 'plot_1_0'; // south — general goods (道具屋)
 export const FEED_SHOP_PLOT_ID = 'plot_-1_0'; // north — feed shop (餌屋)
 
-export const SHOP_PLOT_IDS: Record<ShopKind, string> = {
+// Only 'general'/'feed' have a fixed plot — 'weapon'/'armor' have none at
+// all until the player constructs one (see getAllShopPositions below), so
+// this deliberately isn't a full Record<ShopKind, string>.
+export const SHOP_PLOT_IDS: Partial<Record<ShopKind, string>> = {
   general: SHOP_PLOT_ID,
   feed: FEED_SHOP_PLOT_ID,
 };
 
+// 'general' and 'feed' always resolve (they're the two always-present
+// shops) — this is only ever called for those two, so the non-null
+// assertion is safe here.
 export function getShopPosition(kind: ShopKind): { x: number; y: number } {
   const def = TOWN_PLOT_DEFS.find((d) => d.id === SHOP_PLOT_IDS[kind])!;
   return { x: def.x, y: def.y };
+}
+
+// Every shop the AI can currently visit, fixed or constructed: the two
+// always-present shops (general/feed) plus whichever of weapon/armor/repeat
+// branches the player has actually built somewhere (see
+// data/buildingOptions.ts) — birds otherwise have no way to know a
+// weapon/armor shop exists at all, since those don't sit on a fixed plot.
+// If more than one plot builds the same shopKind, the first one found wins
+// (arbitrary but stable — they all share the same stock anyway).
+export function getAllShopPositions(plots: Record<string, TownPlotState>): Partial<Record<ShopKind, { x: number; y: number }>> {
+  const result: Partial<Record<ShopKind, { x: number; y: number }>> = {};
+  for (const kind of Object.keys(SHOP_PLOT_IDS) as ShopKind[]) {
+    const plotId = SHOP_PLOT_IDS[kind];
+    const def = plotId ? TOWN_PLOT_DEFS.find((d) => d.id === plotId) : undefined;
+    if (def) result[kind] = { x: def.x, y: def.y };
+  }
+  for (const def of TOWN_PLOT_DEFS) {
+    const state = plots[def.id];
+    const option = getBuildingOption(state?.constructedBuildingId ?? null);
+    if (option?.shopKind && !result[option.shopKind]) {
+      result[option.shopKind] = { x: def.x, y: def.y };
+    }
+  }
+  return result;
 }
 
 // Where the visiting merchant sets up — a fixed spot off the buildable

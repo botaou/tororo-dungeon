@@ -65,9 +65,12 @@ export type ItemType = 'craft' | 'convertible';
 // item go in" never needs a separate lookup table.
 export type EquipSlot = 'weapon' | 'armor' | 'hat' | 'shield';
 
-// Which physical shop building this is. Just two for now; adding a third
-// kind later is only a new SHOP_DEFS entry plus a town plot to place it on.
-export type ShopKind = 'general' | 'feed';
+// Which physical shop building this is. 'general' (hats/shields) and 'feed'
+// always exist on a fixed town plot from the start; 'weapon'/'armor' don't
+// have a fixed plot at all — they only come into being once the player
+// constructs one (see data/buildingOptions.ts), so they start the game
+// completely unavailable rather than merely locked-and-visible.
+export type ShopKind = 'general' | 'feed' | 'weapon' | 'armor';
 
 // Forward-looking, currently-unused bonus hooks a food item could carry —
 // present purely as data so a later pass can wire actual effects (HP
@@ -458,6 +461,11 @@ export interface MerchantState {
   arrivedAt: number; // epoch ms
   departsAt: number; // epoch ms; tick() clears the merchant once passed
   lineup: MerchantLineupEntry[];
+  // A recipe the merchant is willing to teach for gold this visit — one of
+  // the 4 recipe-unlock routes (see game/recipeUnlocks.ts), player-
+  // initiated rather than bird-autonomous (see useWorldStore's
+  // buyMerchantRecipe). Null if no offer was rolled, or after it's bought.
+  recipeOffer: { recipeId: string; price: number } | null;
 }
 
 export interface WorldState {
@@ -474,7 +482,17 @@ export interface WorldState {
   // one exactly once (see TownScreen), without needing to guess whether a
   // given event has already been shown.
   recruitmentEvents: string[];
+  // Same queued-event pattern as recruitmentEvents, for newly-unlocked
+  // recipes (see game/recipeUnlocks.ts) — deliberately NOT persisted (world
+  // itself is rebuilt fresh each launch via initWorld), so there's never a
+  // backlog of already-seen unlocks to replay on a later session.
+  recipeUnlockEvents: { recipeId: string; source: RecipeSource }[];
 }
+
+// Which of the 4 routes (see game/recipeUnlocks.ts) taught the player a
+// given recipe — recorded purely for potential future display (e.g. "found
+// via combat"), not read by any gameplay logic yet.
+export type RecipeSource = 'merchant' | 'gift' | 'quest' | 'combat';
 
 // ---- Town expansion (land grid) ----
 

@@ -21,6 +21,7 @@ import { RecruitmentModal } from '../components/RecruitmentModal';
 import { TownLevelUpModal } from '../components/TownLevelUpModal';
 import { PlotUnlockModal } from '../components/PlotUnlockModal';
 import { ConstructionModal } from '../components/ConstructionModal';
+import { RecipeUnlockModal } from '../components/RecipeUnlockModal';
 import { ActivityLogPanel } from '../components/ActivityLogPanel';
 import { JobPreset } from '../data/jobPresets';
 import { PlotUnlockCost, ShopKind } from '../types';
@@ -34,6 +35,7 @@ export function TownScreen() {
   const initWorld = useWorldStore((s) => s.initWorld);
   const postRequest = useWorldStore((s) => s.postRequest);
   const deliverToMerchant = useWorldStore((s) => s.deliverToMerchant);
+  const buyMerchantRecipe = useWorldStore((s) => s.buyMerchantRecipe);
   const plots = useTownStore((s) => s.plots);
   const developmentPoints = useTownStore((s) => s.developmentPoints);
   const levelUpEvents = useTownStore((s) => s.levelUpEvents);
@@ -66,6 +68,10 @@ export function TownScreen() {
   // anything already on disk at mount time as already-seen; only level-ups
   // reached during *this* session (after mount) still queue a fresh popup.
   const [shownLevelUpCount, setShownLevelUpCount] = useState(() => useTownStore.getState().levelUpEvents.length);
+  // Same safe pattern as shownRecruitCount (not levelUpEvents' buggy one) —
+  // world.recipeUnlockEvents isn't persisted either, so starting at 0 never
+  // replays a stale backlog.
+  const [shownRecipeUnlockCount, setShownRecipeUnlockCount] = useState(0);
 
   useEffect(() => {
     if (world.birds.length === 0) initWorld();
@@ -77,6 +83,7 @@ export function TownScreen() {
   const dormantDefIds = world.birds.filter((b) => !b.isRecruited).map((b) => b.defId);
   const pendingRecruit = world.recruitmentEvents[shownRecruitCount] ?? null;
   const pendingLevelUp = levelUpEvents[shownLevelUpCount] ?? null;
+  const pendingRecipeUnlock = world.recipeUnlockEvents[shownRecipeUnlockCount] ?? null;
 
   const handlePost = (preset: JobPreset) => {
     postRequest(preset);
@@ -194,7 +201,13 @@ export function TownScreen() {
 
       <BirdRosterModal visible={rosterVisible} onClose={() => setRosterVisible(false)} birds={activeBirds} />
 
-      <MerchantModal visible={merchantVisible} onClose={() => setMerchantVisible(false)} merchant={world.merchant} />
+      <MerchantModal
+        visible={merchantVisible}
+        onClose={() => setMerchantVisible(false)}
+        merchant={world.merchant}
+        gold={gold}
+        onBuyRecipe={buyMerchantRecipe}
+      />
 
       <RecruitmentModal defId={pendingRecruit} onClose={() => setShownRecruitCount((c) => c + 1)} />
 
@@ -216,6 +229,8 @@ export function TownScreen() {
         onBuild={handleBuild}
         onClose={() => setConstructionTarget(null)}
       />
+
+      <RecipeUnlockModal event={pendingRecipeUnlock} onClose={() => setShownRecipeUnlockCount((c) => c + 1)} />
     </SafeAreaView>
   );
 }

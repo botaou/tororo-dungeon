@@ -7,6 +7,7 @@ import { ITEM_DEF_MAP } from '../data/items';
 import { MATERIAL_ICON, MATERIAL_LABEL } from '../data/materials';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useWorldStore } from '../store/useWorldStore';
+import { useRecipeStore } from '../store/useRecipeStore';
 import { AnimatedPressable } from './AnimatedPressable';
 import { theme } from '../theme';
 
@@ -25,10 +26,11 @@ export function CraftingPanel({ categoryFilter }: Props) {
   const items = usePlayerStore((s) => s.items);
   const craftItem = usePlayerStore((s) => s.craftItem);
   const reportCraftCompleted = useWorldStore((s) => s.reportCraftCompleted);
+  const unlockedRecipeIds = useRecipeStore((s) => s.unlockedRecipeIds);
 
-  const recipes = categoryFilter
-    ? CRAFTING_RECIPES.filter((r) => categoryFilter.includes(ITEM_DEF_MAP[r.resultItemId].category))
-    : CRAFTING_RECIPES;
+  const recipes = CRAFTING_RECIPES.filter((r) => unlockedRecipeIds.includes(r.id)).filter((r) =>
+    categoryFilter ? categoryFilter.includes(ITEM_DEF_MAP[r.resultItemId].category) : true
+  );
 
   return (
     <ScrollView style={styles.list}>
@@ -71,7 +73,11 @@ export function CraftingPanel({ categoryFilter }: Props) {
           </View>
         );
       })}
-      {recipes.length === 0 && <Text style={styles.emptyText}>このお店で加工できるレシピはまだありません。</Text>}
+      {recipes.length === 0 && (
+        <Text style={styles.emptyText}>
+          このお店で加工できるレシピはまだありません。商人・依頼報酬・討伐・鳥からのプレゼントで新しいレシピを見つけましょう。
+        </Text>
+      )}
     </ScrollView>
   );
 }

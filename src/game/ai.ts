@@ -36,6 +36,7 @@ import {
 import { TOWN_X, TOWN_Y } from '../data/world';
 import { getHousePosition } from '../data/houses';
 import { getShopPosition, MERCHANT_SPOT } from '../data/townGrid';
+import { SHOP_DEFS } from '../data/shops';
 import { CONVERTIBLE_ITEM_IDS, ITEM_DEF_MAP, ITEM_DEFS } from '../data/items';
 import { getEffectiveStats, maybeAutoEquip } from './birdStats';
 import { AttackAssignment } from './combat';
@@ -123,6 +124,11 @@ export interface AiWorld {
   // AI's perspective; the store applies the actual decrement (see
   // AiStepOutcome.shopPurchase).
   shopStock: Record<ShopKind, Partial<Record<ItemId, number>>>;
+  // Where each currently-reachable shop actually is — the two fixed shops
+  // (general/feed) plus whichever of weapon/armor/branch options the player
+  // has constructed somewhere (see data/townGrid.ts's getAllShopPositions).
+  // A kind absent here means no such shop exists yet.
+  shopPositions: Partial<Record<ShopKind, { x: number; y: number }>>;
   // The visiting merchant, if one currently has its stall set up — null
   // between visits. Read-only from the AI's perspective, same as shopStock.
   merchant: MerchantState | null;
@@ -501,41 +507,51 @@ function executeSellTrip(bird: BirdState): AiStepOutcome {
   return outcome;
 }
 
-// A bird missing any of its four equipment slots checks the general shop's
-// shelf, in slot priority order (weapon > armor > hat > shield). Owning one
-// of a category is "enough" for now (no stacking/upgrading loop), keeping
-// this a one-time self-equip rather than something birds keep doing forever.
-function pickGearOffer(bird: BirdState, world: AiWorld): { itemId: ItemId; price: number } | null {
-  const shelf = world.shopStock.general;
+// A bird missing any of its four equipment slots checks whichever shop
+// carries that category, in slot priority order (weapon > armor > hat >
+// shield) — weapon/armor only have a shelf (and a shopPositions entry) at
+// all once the player's actually constructed one (see data/townGrid.ts's
+// getAllShopPositions), so those categories are silently skipped until
+// then. Owning one of a category is "enough" for now (no stacking/
+// upgrading loop), keeping this a one-time self-equip rather than
+// something birds keep doing forever.
+function pickGearOffer(bird: BirdState, world: AiWorld): { itemId: ItemId; price: number; shopKind: ShopKind } | null {
   for (const category of ['weapon', 'armor', 'hat', 'shield'] as const) {
     if (bird.equipment[category]) continue;
+    const shopKind = (Object.keys(SHOP_DEFS) as ShopKind[]).find((k) => SHOP_DEFS[k].categories.includes(category));
+    if (!shopKind || !world.shopPositions[shopKind]) continue;
+    const shelf = world.shopStock[shopKind];
     const candidates = ITEM_DEFS.filter(
       (d) => d.category === category && (shelf[d.id] ?? 0) > 0 && d.buyPrice <= bird.gold
     );
     if (candidates.length > 0) {
       const pick = candidates[Math.floor(Math.random() * candidates.length)];
-      return { itemId: pick.id, price: pick.buyPrice };
+      return { itemId: pick.id, price: pick.buyPrice, shopKind };
     }
   }
   return null;
 }
 
-// Walks to the general shop and, once there, buys whichever weapon/armor
-// pickGearOffer settled on. If stock/affordability changed since the trip
-// was committed to, the trip just concludes with nothing bought.
+// Walks to whichever shop pickGearOffer settled on and, once there, buys
+// it. If stock/affordability (or the offer's shop itself) changed since the
+// trip was committed to, the trip just concludes with nothing bought.
 function executeGearShopTrip(bird: BirdState, world: AiWorld): AiStepOutcome {
   const outcome = emptyOutcome();
-  const shop = getShopPosition('general');
+  const offer = pickGearOffer(bird, world);
+  if (!offer) {
+    bird.targetKind = null;
+    bird.activity = 'idle';
+    bird.workProgress = 0;
+    return outcome;
+  }
+  const shop = world.shopPositions[offer.shopKind]!;
   const arrived = moveToward(bird, shop.x, shop.y);
   bird.activity = 'buyingGear';
   if (arrived) {
     bird.workProgress += 1;
     if (bird.workProgress >= SELL_DWELL_TICKS) {
-      const offer = pickGearOffer(bird, world);
-      if (offer) {
-        bird.gold -= offer.price;
-        outcome.shopPurchase = { shopKind: 'general', itemId: offer.itemId, amount: 1, totalCost: offer.price };
-      }
+      bird.gold -= offer.price;
+      outcome.shopPurchase = { shopKind: offer.shopKind, itemId: offer.itemId, amount: 1, totalCost: offer.price };
       bird.targetKind = null;
       bird.workProgress = 0;
     }

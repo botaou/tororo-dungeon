@@ -279,7 +279,7 @@ export function WorldMap({
 
       {TOWN_PLOT_DEFS.map((def) => {
         const shopKind = shopKindForPlot(def.id);
-        const state = plotStates[def.id] ?? { id: def.id, unlocked: def.unlockedByDefault, building: null };
+        const state = plotStates[def.id] ?? { id: def.id, unlocked: def.unlockedByDefault, building: null, constructedBuildingId: null };
         const levelLocked = !!def.minTownLevel && townLevel < def.minTownLevel;
         return (
           <PlotSprite

@@ -3,6 +3,7 @@ import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { MerchantState } from '../types';
 import { ITEM_DEF_MAP } from '../data/items';
+import { CRAFTING_RECIPES } from '../data/recipes';
 import { AnimatedPressable } from './AnimatedPressable';
 import { theme } from '../theme';
 
@@ -10,6 +11,12 @@ interface Props {
   visible: boolean;
   onClose: () => void;
   merchant: MerchantState | null;
+  gold: number;
+  // Recipe-unlock route 1 ("商人が売りに来る") — the only merchant
+  // interaction the player does directly rather than birds handling it
+  // autonomously, since a recipe is player knowledge, not something a bird
+  // carries. Returns false if the offer's gone or gold's insufficient.
+  onBuyRecipe: () => boolean;
 }
 
 // View-only, like the rest of the game's shops from the player's side —
@@ -17,8 +24,11 @@ interface Props {
 // convertible treasure here (see game/ai.ts's executeMerchantSellTrip /
 // executeMerchantBuyTrip). This just shows what's on offer and how long
 // the visit has left.
-export function MerchantModal({ visible, onClose, merchant }: Props) {
+export function MerchantModal({ visible, onClose, merchant, gold, onBuyRecipe }: Props) {
   const minutesLeft = merchant ? Math.max(0, Math.ceil((merchant.departsAt - Date.now()) / 60_000)) : 0;
+  const recipeOffer = merchant?.recipeOffer ?? null;
+  const offerRecipe = recipeOffer ? CRAFTING_RECIPES.find((r) => r.id === recipeOffer.recipeId) : null;
+  const offerItemDef = offerRecipe ? ITEM_DEF_MAP[offerRecipe.resultItemId] : null;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -55,6 +65,27 @@ export function MerchantModal({ visible, onClose, merchant }: Props) {
                   })}
                 </View>
               </ScrollView>
+
+              {offerRecipe && offerItemDef && (
+                <>
+                  <Text style={styles.sectionLabel}>📜 レシピの提供</Text>
+                  <View style={styles.recipeOfferCard}>
+                    <Text style={styles.itemIcon}>{offerItemDef.emoji}</Text>
+                    <View style={styles.recipeOfferTextWrap}>
+                      <Text style={styles.itemLabel}>{offerItemDef.name}</Text>
+                      <Text style={styles.recipeOfferSub}>まだ持っていないレシピを教えてくれます</Text>
+                    </View>
+                    <AnimatedPressable
+                      style={[styles.recipeBuyButton, gold < recipeOffer!.price && styles.recipeBuyButtonDisabled]}
+                      onPress={gold >= recipeOffer!.price ? onBuyRecipe : undefined}
+                      disabled={gold < recipeOffer!.price}
+                    >
+                      <Text style={styles.recipeBuyButtonText}>{recipeOffer!.price}Gで購入</Text>
+                    </AnimatedPressable>
+                  </View>
+                </>
+              )}
+
               <Text style={styles.footNote}>
                 💰 換金アイテム(宝石・金塊など)は、鳥がここに売ると代金の半分が街の資金になります。
               </Text>
@@ -103,4 +134,24 @@ const styles = StyleSheet.create({
   itemValue: { fontSize: 12, fontWeight: '800', color: theme.textPrimary },
   emptyText: { fontSize: 12, color: theme.textMuted, paddingVertical: 12 },
   footNote: { fontSize: 11, color: theme.textMuted, marginTop: 12 },
+  recipeOfferCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: theme.cardAlt,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: theme.gold,
+    padding: 10,
+  },
+  recipeOfferTextWrap: { flex: 1 },
+  recipeOfferSub: { fontSize: 10, color: theme.textMuted, marginTop: 2 },
+  recipeBuyButton: {
+    backgroundColor: theme.gold,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  recipeBuyButtonDisabled: { backgroundColor: theme.disabled },
+  recipeBuyButtonText: { color: '#fff', fontWeight: '700', fontSize: 12 },
 });

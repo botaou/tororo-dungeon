@@ -11,6 +11,7 @@ import {
   MerchantLineupEntry,
   MerchantState,
   MiningNodeInstance,
+  RecipeSource,
   TreasureNodeInstance,
   WorldState,
 } from '../types';
@@ -60,10 +61,14 @@ import {
   MERCHANT_ITEM_STOCK_MIN,
   MERCHANT_LINEUP_SIZE,
   MERCHANT_RARE_CHANCE,
+  MERCHANT_RECIPE_OFFER_CHANCE,
   MERCHANT_VISIT_DURATION_MAX_MS,
   MERCHANT_VISIT_DURATION_MIN_MS,
   MINING_RESPAWN_MS,
   MOOD_REFRESH_MS,
+  RECIPE_COMBAT_CHANCE,
+  RECIPE_GIFT_CHANCE,
+  RECIPE_QUEST_CHANCE,
   REQUEST_CHECK_CHANCE,
   SATIETY_DECAY_PER_TICK,
   SATIETY_HUNGRY_THRESHOLD,
@@ -73,12 +78,15 @@ import {
   TRAVELER_MAX_PURCHASE,
   TREASURE_RESPAWN_MS,
 } from '../game/config';
+import { maybeUnlockRandomRecipe, rollMerchantRecipeOffer } from '../game/recipeUnlocks';
+import { CRAFTING_RECIPES } from '../data/recipes';
 import { usePlayerStore } from './usePlayerStore';
 import { BirdWallet, useBirdEconomyStore } from './useBirdEconomyStore';
 import { useGameTimeStore } from './useGameTimeStore';
 import { useQuestStore } from './useQuestStore';
+import { useRecipeStore } from './useRecipeStore';
 import { useTownStore } from './useTownStore';
-import { getTownLevel, getTownZoneRadius } from '../data/townGrid';
+import { getAllShopPositions, getTownLevel, getTownZoneRadius } from '../data/townGrid';
 
 let uidCounter = 0;
 function uid(prefix: string): string {
@@ -205,6 +213,7 @@ function buildInitialWorld(): WorldState {
     activityLog: [],
     merchant: null,
     recruitmentEvents: [],
+    recipeUnlockEvents: [],
   };
 }
 
@@ -227,7 +236,8 @@ function rollMerchantLineup(): MerchantLineupEntry[] {
 function buildMerchantVisit(now: number): MerchantState {
   const duration =
     MERCHANT_VISIT_DURATION_MIN_MS + Math.random() * (MERCHANT_VISIT_DURATION_MAX_MS - MERCHANT_VISIT_DURATION_MIN_MS);
-  return { arrivedAt: now, departsAt: now + duration, lineup: rollMerchantLineup() };
+  const recipeOffer = Math.random() < MERCHANT_RECIPE_OFFER_CHANCE ? rollMerchantRecipeOffer() : null;
+  return { arrivedAt: now, departsAt: now + duration, lineup: rollMerchantLineup(), recipeOffer };
 }
 
 // Applies exp to a bird in place, looping through as many level-ups as the
@@ -281,6 +291,13 @@ interface WorldActions {
   // actually present. Returns false (no state change) if there's no
   // merchant, the request doesn't match, or the warehouse has none to give.
   deliverToMerchant: (requestId: string) => boolean;
+  // Recipe-unlock route 1 ("商人が売りに来る") — spends gold to buy the
+  // visiting merchant's current recipeOffer, if any. Player-initiated
+  // (unlike the merchant's item lineup, which birds buy from
+  // autonomously) since a recipe is player knowledge, not something a bird
+  // carries or uses. Returns false if there's no merchant, no offer, or not
+  // enough gold.
+  buyMerchantRecipe: () => boolean;
 }
 
 // Shared by reportCraftCompleted and deliverToMerchant — both are player-
@@ -293,6 +310,7 @@ function finalizeStandaloneJob(world: WorldState, request: JobRequest, actionFra
   const birdIndex = world.birds.findIndex((b) => b.defId === request.acceptedBy);
   const nextBirds = [...world.birds];
   const tempLog: ActivityLogEntry[] = [];
+  let newRecipeUnlockEvent: { recipeId: string; source: RecipeSource } | null = null;
   if (birdIndex !== -1) {
     const bird = { ...world.birds[birdIndex] };
     grantExp(bird, request.expReward, tempLog);
@@ -305,6 +323,14 @@ function finalizeStandaloneJob(world: WorldState, request: JobRequest, actionFra
         `${bird.name}が依頼(${actionFragment})を達成した!(報酬${request.reward}G/経験値${request.expReward})`
       )
     );
+    // Recipe-unlock route 3 ("依頼掲示板の報酬") — craft/merchantDeliver
+    // jobs complete here rather than in tick(), so this route needs its own
+    // roll (gather/hunt kinds roll inside tick() itself).
+    const recipeResult = maybeUnlockRandomRecipe(RECIPE_QUEST_CHANCE, 'quest');
+    if (recipeResult) {
+      tempLog.push(makeLogEntry(bird.name, 'recipe', `${bird.name}が新しいレシピ「${recipeResult.itemName}」を見つけた!`));
+      newRecipeUnlockEvent = { recipeId: recipeResult.recipeId, source: 'quest' };
+    }
   }
   useTownStore.getState().addDevelopmentPoints(request.developmentPoints);
   useTownStore.getState().addReputation(request.reputationPoints);
@@ -321,6 +347,7 @@ function finalizeStandaloneJob(world: WorldState, request: JobRequest, actionFra
     ...world,
     birds: nextBirds,
     requests: nextRequests,
+    recipeUnlockEvents: newRecipeUnlockEvent ? [...world.recipeUnlockEvents, newRecipeUnlockEvent] : world.recipeUnlockEvents,
     activityLog: [...tempLog, ...world.activityLog].slice(0, ACTIVITY_LOG_MAX),
   };
 }
@@ -340,6 +367,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     activityLog: [],
     merchant: null,
     recruitmentEvents: [],
+    recipeUnlockEvents: [],
   },
 
   initWorld: () => set({ world: buildInitialWorld() }),
@@ -386,6 +414,30 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       return true;
     }
     set({ world: finalizeStandaloneJob(world, request, `${ITEM_DEF_MAP[request.itemId].name}を商人に${request.amount}個納品`) });
+    return true;
+  },
+
+  buyMerchantRecipe: () => {
+    const { world } = get();
+    const offer = world.merchant?.recipeOffer;
+    if (!world.merchant || !offer) return false;
+    if (!usePlayerStore.getState().trySpendGold(offer.price)) return false;
+    const recipe = CRAFTING_RECIPES.find((r) => r.id === offer.recipeId);
+    if (!useRecipeStore.getState().unlockRecipe(offer.recipeId, 'merchant') || !recipe) {
+      // Already unlocked some other way in the meantime — refund and bail.
+      usePlayerStore.getState().addGold(offer.price);
+      return false;
+    }
+    const itemName = ITEM_DEF_MAP[recipe.resultItemId].name;
+    const log = makeLogEntry(null, 'recipe', `商人から新しいレシピ「${itemName}」を購入した!(-${offer.price}G)`);
+    set({
+      world: {
+        ...world,
+        merchant: { ...world.merchant, recipeOffer: null },
+        activityLog: [log, ...world.activityLog].slice(0, ACTIVITY_LOG_MAX),
+        recipeUnlockEvents: [...world.recipeUnlockEvents, { recipeId: offer.recipeId, source: 'merchant' }],
+      },
+    });
     return true;
   },
 
@@ -538,6 +590,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       leisureSpots: world.leisureSpots,
       requests,
       shopStock: usePlayerStore.getState().shopStock,
+      shopPositions: getAllShopPositions(useTownStore.getState().plots),
       merchant,
       townZoneRadius: getTownZoneRadius(townLevel),
     };
@@ -546,6 +599,21 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     const materialsToAdd: Partial<Record<MaterialId, number>> = {};
     let goldToAdd = 0;
     const completedJobIds = new Set<string>();
+    // Recipe-unlock routes 'gift' (gather completion) and 'combat' (kill)
+    // roll straight into this during the loops below; 'quest' (job-board
+    // completion) rolls happen alongside each completedJobIds.add() call,
+    // gather/hunt kinds here and craft/merchantDeliver in
+    // finalizeStandaloneJob (which merges its own roll in separately, since
+    // it commits its own set() call outside tick() entirely).
+    const newRecipeUnlockEvents: { recipeId: string; source: 'gift' | 'quest' | 'combat' }[] = [];
+    function tryRecipeUnlock(chance: number, source: 'gift' | 'quest' | 'combat', birdName: string | null) {
+      const result = maybeUnlockRandomRecipe(chance, source);
+      if (!result) return;
+      newRecipeUnlockEvents.push({ recipeId: result.recipeId, source });
+      newLog.push(
+        makeLogEntry(birdName, 'recipe', `${birdName ? birdName + 'が' : ''}新しいレシピ「${result.itemName}」を見つけた!`)
+      );
+    }
 
     for (const bird of nextBirds) {
       if (!bird.isRecruited) continue;
@@ -565,6 +633,9 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         // paths set miningCollectedUid. useQuestStore.complete is a no-op
         // once already done, so this is safe to call every time.
         useQuestStore.getState().complete(HAKU_QUEST_ID);
+        // Recipe-unlock route 2 ("鳥が見つけてプレゼント") — a small chance
+        // on any successful gather, free-roam or job alike.
+        tryRecipeUnlock(RECIPE_GIFT_CHANCE, 'gift', bird.name);
       }
       if (outcome.treasureCollectedUid) {
         // Treasure gold goes straight to the finding bird (handled in ai.ts)
@@ -600,6 +671,8 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
               `${bird.name}が依頼(${MATERIAL_LABEL[request.materialId!]}${request.amount}個)を達成した!(報酬${request.reward}G/経験値${request.expReward})`
             )
           );
+          // Recipe-unlock route 3 ("依頼掲示板の報酬").
+          tryRecipeUnlock(RECIPE_QUEST_CHANCE, 'quest', bird.name);
         }
       }
       if (outcome.foodPurchase > 0) {
@@ -683,6 +756,9 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       if (kill.enemyName === WOLF_ENEMY_NAME) {
         useQuestStore.getState().complete(MONE_WOLF_KILL_MILESTONE_ID);
       }
+      // Recipe-unlock route 4 ("討伐報酬") — once per kill, not per
+      // participant, same granularity as the security-fee/toll above.
+      tryRecipeUnlock(RECIPE_COMBAT_CHANCE, 'combat', null);
       // 'hunt' job progress — only counts toward the bird that actually
       // accepted the job (mirrors gather, where the accepting bird is the
       // one that has to do the delivering), not just anyone who helped.
@@ -712,6 +788,8 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
                 `${bird.name}が依頼(${huntRequest.enemyName}${huntRequest.amount}体討伐)を達成した!(報酬${huntRequest.reward}G/経験値${huntRequest.expReward})`
               )
             );
+            // Recipe-unlock route 3 ("依頼掲示板の報酬").
+            tryRecipeUnlock(RECIPE_QUEST_CHANCE, 'quest', bird.name);
           }
         }
       }
@@ -881,6 +959,10 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         merchant,
         recruitmentEvents:
           newRecruitmentEvents.length > 0 ? [...world.recruitmentEvents, ...newRecruitmentEvents] : world.recruitmentEvents,
+        recipeUnlockEvents:
+          newRecipeUnlockEvents.length > 0
+            ? [...world.recipeUnlockEvents, ...newRecipeUnlockEvents]
+            : world.recipeUnlockEvents,
       },
     });
   },

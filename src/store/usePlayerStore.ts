@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ItemId, MaterialId, PlayerState, ShopKind } from '../types';
 import { STARTING_GOLD, STARTING_MATERIALS } from '../game/config';
 import { CRAFTING_RECIPES } from '../data/recipes';
+import { useRecipeStore } from './useRecipeStore';
 
 interface PlayerActions {
   addGold: (amount: number) => void;
@@ -45,7 +46,7 @@ const initialState: PlayerState = {
   gold: STARTING_GOLD,
   materials: { ...STARTING_MATERIALS },
   items: {},
-  shopStock: { general: {}, feed: {} },
+  shopStock: { general: {}, feed: {}, weapon: {}, armor: {} },
   tollFromHunt: 0,
   tollFromFood: 0,
   tollFromTraveler: 0,
@@ -88,6 +89,10 @@ export const usePlayerStore = create<PlayerStore>()(
       craftItem: (recipeId) => {
         const recipe = CRAFTING_RECIPES.find((r) => r.id === recipeId);
         if (!recipe) return false;
+        // Enforced here too, not just by CraftingPanel hiding the button —
+        // a recipe not yet unlocked (see useRecipeStore) simply can't be
+        // crafted, full stop.
+        if (!useRecipeStore.getState().isRecipeUnlocked(recipeId)) return false;
         const { materials, items } = get();
         const canAfford = (Object.entries(recipe.materialCost) as [MaterialId, number][]).every(
           ([materialId, amount]) => (materials[materialId] ?? 0) >= amount
