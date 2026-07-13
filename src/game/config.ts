@@ -99,8 +99,17 @@ export const FOOD_PRICE = 3;
 
 // A simple stand-in for a real traveler NPC: each tick there's a small
 // chance a traveler passes through and buys some of whatever the town has
-// in stock, straight out of the shared warehouse (no bird involved).
-export const TRAVELER_CHECK_CHANCE = 0.02;
+// in stock, straight out of the shared warehouse (no bird involved). This
+// was 0.02 (~once every 50 seconds) — nearly 7x more frequent than the
+// merchant's own arrival roll (MERCHANT_ARRIVAL_CHECK_CHANCE, ~once every
+// 5-6 minutes) despite the "occasional visitor" flavor text, and well above
+// the rate birds sell material *into* the warehouse (SELL_CHECK_CHANCE_BASE
+// = 0.006). Over a long real-time stretch (an 11-hour offline gap, in a
+// real-device report) that outflow-beats-inflow imbalance was enough to
+// completely empty the town's material warehouse. Brought down in line with
+// the merchant's rarity so travelers stay a rare, flavorful event instead of
+// the dominant material sink.
+export const TRAVELER_CHECK_CHANCE = 0.003;
 export const TRAVELER_MAX_PURCHASE = 6;
 
 // Each tick, a free bird missing a weapon or armor of its own has this

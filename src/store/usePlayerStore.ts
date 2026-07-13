@@ -151,6 +151,23 @@ export const usePlayerStore = create<PlayerStore>()(
       // currency instead of a material) and old saved data isn't compatible.
       name: 'tororo-dungeon-player-v2',
       storage: createJSONStorage(() => AsyncStorage),
+      // zustand's default merge is a shallow `{ ...current, ...persisted }`,
+      // so a saved shopStock from before weapon/armor shops existed (just
+      // { general, feed }) fully replaces the fresh default's 4-key object —
+      // it doesn't get merged key-by-key. Any lookup for the new shop kinds
+      // (ShopModal, ai.ts's sell/buy logic) then hit `undefined` and crashed
+      // (real-device "Cannot convert undefined value to object" report right
+      // after building a weapon shop). Explicitly merging shopStock one
+      // level deeper keeps old saves' actual stock while backfilling
+      // whichever shop kinds didn't exist yet when the save was made.
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as Partial<PlayerStore> | undefined;
+        return {
+          ...currentState,
+          ...persisted,
+          shopStock: { ...currentState.shopStock, ...persisted?.shopStock },
+        };
+      },
     }
   )
 );

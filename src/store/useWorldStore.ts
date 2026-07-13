@@ -41,7 +41,7 @@ import {
 } from '../game/recruitment';
 import { getEffectiveStats, maybeAutoEquip } from '../game/birdStats';
 import { MATERIAL_LABEL } from '../data/materials';
-import { JOB_PRESETS, JobPreset } from '../data/jobPresets';
+import { JobPreset } from '../data/jobPresets';
 import { ITEM_DEF_MAP, MERCHANT_COMMON_ITEM_IDS, MERCHANT_RARE_ITEM_IDS, RESTOCKED_ITEM_IDS } from '../data/items';
 import { MATERIAL_SELL_PRICE } from '../data/marketPrices';
 import {
@@ -336,12 +336,9 @@ function finalizeStandaloneJob(world: WorldState, request: JobRequest, actionFra
   useTownStore.getState().addReputation(request.reputationPoints);
   usePlayerStore.getState().addGold(-request.reward);
 
-  let nextRequests = world.requests.map((r) => (r.id === request.id ? { ...r, status: 'done' as const } : r));
-  const activeCount = nextRequests.filter((r) => r.status !== 'done').length;
-  if (activeCount < MAX_ACTIVE_REQUESTS) {
-    const preset = JOB_PRESETS[Math.floor(Math.random() * JOB_PRESETS.length)];
-    nextRequests = [...nextRequests, buildRequestFromPreset(preset)];
-  }
+  // No auto-refill here either — see tick()'s matching comment. This just
+  // frees the slot; the player posts whatever they want next themselves.
+  const nextRequests = world.requests.map((r) => (r.id === request.id ? { ...r, status: 'done' as const } : r));
 
   return {
     ...world,
@@ -840,15 +837,11 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         goldToAdd -= r.reward; // paid out below alongside the gathered material's own gold-neutral value
         return { ...r, status: 'done' as const };
       });
-      // Refill 1:1 for each slot that just freed up, capped at
-      // MAX_ACTIVE_REQUESTS — keeps the board a steady, bounded pool without
-      // overriding the player's own choice of which presets to post.
-      let activeCount = requests.filter((r) => r.status !== 'done').length;
-      for (let i = 0; i < completedJobIds.size && activeCount < MAX_ACTIVE_REQUESTS; i++) {
-        const preset = JOB_PRESETS[Math.floor(Math.random() * JOB_PRESETS.length)];
-        requests = [...requests, buildRequestFromPreset(preset)];
-        activeCount += 1;
-      }
+      // A completed slot used to auto-refill with a random preset — real-
+      // device feedback was that this fills the board with things the
+      // player didn't ask for, right when they wanted to post something of
+      // their own. A finished request now just frees its slot for the
+      // player's next manual post instead of being replaced automatically.
     }
 
     for (const { enemyUid, damage } of combatResult.retaliations) {
