@@ -62,16 +62,33 @@ export function PlotUnlockModal({ visible, cost, gold, materials, onUnlock, onCl
           {!canUnlock && <Text style={styles.shortNote}>不足している分があります</Text>}
 
           <View style={styles.buttonRow}>
-            <AnimatedPressable style={styles.closeButton} onPress={onClose}>
-              <Text style={styles.closeButtonText}>とじる</Text>
-            </AnimatedPressable>
-            <AnimatedPressable
-              style={[styles.unlockButton, !canUnlock && styles.unlockButtonDisabled]}
-              onPress={canUnlock ? onUnlock : undefined}
-              disabled={!canUnlock}
-            >
-              <Text style={styles.unlockButtonText}>解放する</Text>
-            </AnimatedPressable>
+            {/* AnimatedPressable applies its `style` prop to an inner
+                Animated.View, one layer below the (unstyled) Pressable it
+                renders — so a bare `flex: 1` on that inner style has no
+                real flex-row parent to resolve against, since the
+                Pressable in between never gets a definite width of its
+                own. This is the only place in the app with two such
+                buttons side by side sharing a row, and real-device
+                screenshots showed the button backgrounds sized/colored
+                correctly (proof the row layout resolves *something*) while
+                the Text labels inside rendered completely blank — a
+                fully-deterministic width for every layer removes the
+                ambiguity outright rather than relying on flex resolving
+                through an extra unstyled layer. */}
+            <View style={styles.buttonSlot}>
+              <AnimatedPressable style={styles.closeButton} onPress={onClose}>
+                <Text style={styles.closeButtonText}>とじる</Text>
+              </AnimatedPressable>
+            </View>
+            <View style={styles.buttonSlot}>
+              <AnimatedPressable
+                style={[styles.unlockButton, !canUnlock && styles.unlockButtonDisabled]}
+                onPress={canUnlock ? onUnlock : undefined}
+                disabled={!canUnlock}
+              >
+                <Text style={styles.unlockButtonText}>解放する</Text>
+              </AnimatedPressable>
+            </View>
           </View>
         </View>
       </View>
@@ -107,8 +124,8 @@ const styles = StyleSheet.create({
   rowValueShort: { color: theme.red },
   shortNote: { fontSize: 11, color: theme.red, textAlign: 'center', marginTop: 2, marginBottom: 6 },
   buttonRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  buttonSlot: { flex: 1 },
   closeButton: {
-    flex: 1,
     borderRadius: 999,
     paddingVertical: 12,
     alignItems: 'center',
@@ -118,7 +135,6 @@ const styles = StyleSheet.create({
   },
   closeButtonText: { color: theme.textSecondary, fontWeight: '700', fontSize: 13 },
   unlockButton: {
-    flex: 1,
     borderRadius: 999,
     paddingVertical: 12,
     alignItems: 'center',
