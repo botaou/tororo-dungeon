@@ -28,6 +28,8 @@ import {
   MERCHANT_SELL_CHECK_CHANCE,
   MIN_BIRD_DISTANCE,
   MOVE_SPEED,
+  OVERFLOW_SELL_MARGIN,
+  OVERFLOW_SELL_MAX_PER_TRIP,
   SELL_CHECK_CHANCE_BASE,
   SELL_CHECK_CHANCE_WANTS_MONEY,
   SELL_DWELL_TICKS,
@@ -150,7 +152,10 @@ export interface AiStepOutcome {
   jobCompletedId: string | null;
   // Set when a bird finishes a shop-selling trip — the store checks whether
   // the player can afford to buy this haul before crediting anyone.
-  sellAttempt: Partial<Record<MaterialId, number>> | null;
+  // `overflow` is true when this trip was triggered by BIRD_INVENTORY_CAP
+  // (see executeSellTrip) rather than the casual probabilistic roll — the
+  // store applies a much larger spend cap for those (see OVERFLOW_SELL_*).
+  sellAttempt: { materialId: MaterialId; amount: number; overflow: boolean } | null;
   // Set the moment a carried haul is deposited into the bird's own house —
   // purely for the activity log (the actual crediting already happened here).
   deliveredMaterial: { materialId: MaterialId; amount: number } | null;
@@ -480,11 +485,15 @@ function totalInventory(bird: BirdState): number {
   return Object.values(bird.inventory).reduce((sum, amount) => sum + (amount ?? 0), 0);
 }
 
-// Picks the single most-plentiful material to offer this trip (capped), not
-// the whole stash at once — otherwise a well-stocked bird's asking price
+// Picks the single most-plentiful material to offer this trip, not the
+// whole stash at once — otherwise a well-stocked bird's asking price
 // quickly outgrows what the player can ever afford, and trade freezes up
-// entirely instead of trickling along a little at a time.
-function pickSellOffer(bird: BirdState): { materialId: MaterialId; amount: number } | null {
+// entirely instead of trickling along a little at a time. `cap` is the
+// casual SELL_MAX_PER_TRIP for an ordinary trip, or a much larger overflow
+// target when the bird is over BIRD_INVENTORY_CAP (see executeSellTrip) —
+// offering only a couple of units per trip while overflowing is exactly
+// the real-device "sells 1-3 units forever and never unsticks" bug.
+function pickSellOffer(bird: BirdState, cap: number): { materialId: MaterialId; amount: number } | null {
   let bestId: MaterialId | null = null;
   let bestAmount = 0;
   for (const [key, amount] of Object.entries(bird.inventory) as [MaterialId, number][]) {
@@ -494,12 +503,16 @@ function pickSellOffer(bird: BirdState): { materialId: MaterialId; amount: numbe
     }
   }
   if (!bestId) return null;
-  return { materialId: bestId, amount: Math.min(bestAmount, SELL_MAX_PER_TRIP) };
+  return { materialId: bestId, amount: Math.min(bestAmount, cap) };
 }
 
 // A bird with something to sell (more likely while "wantsMoney") walks to
 // the general shop and offers its best-stocked material — the store decides
-// whether the player can actually afford to buy it.
+// whether the player can actually afford to buy it. Whether this counts as
+// an "overflow" sell (much larger caps, see config.ts's OVERFLOW_SELL_*) is
+// decided right here at completion time, from the bird's actual inventory
+// then — not from whatever triggered the trip — so it stays correct even if
+// the bird's stock changed mid-trip.
 function executeSellTrip(bird: BirdState): AiStepOutcome {
   const outcome = emptyOutcome();
   const shop = getShopPosition('general');
@@ -508,8 +521,11 @@ function executeSellTrip(bird: BirdState): AiStepOutcome {
   if (arrived) {
     bird.workProgress += 1;
     if (bird.workProgress >= SELL_DWELL_TICKS) {
-      const offer = pickSellOffer(bird);
-      if (offer) outcome.sellAttempt = { [offer.materialId]: offer.amount };
+      const excess = totalInventory(bird) - BIRD_INVENTORY_CAP;
+      const overflow = excess > 0;
+      const cap = overflow ? Math.min(OVERFLOW_SELL_MAX_PER_TRIP, excess + OVERFLOW_SELL_MARGIN) : SELL_MAX_PER_TRIP;
+      const offer = pickSellOffer(bird, cap);
+      if (offer) outcome.sellAttempt = { materialId: offer.materialId, amount: offer.amount, overflow };
       bird.targetKind = null;
       bird.workProgress = 0;
     }

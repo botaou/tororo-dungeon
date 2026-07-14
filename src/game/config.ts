@@ -84,6 +84,28 @@ export const SELL_CHECK_CHANCE_WANTS_MONEY = 0.07;
 // for certain (see ai.ts's stepBird), so a full bird makes offloading its
 // next priority instead of just occasionally considering it.
 export const BIRD_INVENTORY_CAP = 150;
+// Real-device bug: once a bird hit BIRD_INVENTORY_CAP, every tick's forced
+// sell trip still only offloaded a couple of units — a normal trip's offer
+// is capped at SELL_MAX_PER_TRIP units *and* SELL_MAX_GOLD_PER_TRIP gold,
+// which for a common material (wood @ 4G) meant floor(15/4) = 3 units per
+// trip. That's far too slow to ever bring a bird back under a 150-unit cap,
+// so it stayed "full" forever, re-triggering a guaranteed sell trip (see
+// ai.ts's stepBird) every single tick and completely crowding out gathering/
+// combat/jobs — exactly the casual per-trip caps' job (keep a *voluntary*
+// trickle-sale trade from draining the player too fast) applied to what's
+// actually an emergency "get this bird unstuck" situation instead. An
+// overflow trip (see ai.ts's executeSellTrip) uses these larger caps
+// instead, so it clears the cap in one or a couple of trips rather than
+// dozens: still bounded (so one enormous sale of a rare/pricey material
+// can't be unlimited), just paced for "fix the overflow now" rather than
+// "trickle a little gold in every so often."
+export const OVERFLOW_SELL_MAX_PER_TRIP = 60;
+export const OVERFLOW_SELL_MAX_GOLD_PER_TRIP = 300;
+// How far *under* the cap an overflow trip aims to land, on top of just
+// the raw excess — without this, selling exactly down to the cap would
+// leave the bird right back at "isFull" the moment it gathers one more
+// unit, immediately forcing another trip.
+export const OVERFLOW_SELL_MARGIN = 20;
 // A bird sells only its single most-plentiful material per trip (capped at
 // this amount), not its whole stash at once — otherwise a well-stocked bird's
 // asking price quickly outgrows what the player can ever afford, and trade
@@ -97,6 +119,12 @@ export const SELL_MAX_PER_TRIP = 8;
 // right along with income and never let the treasury actually get ahead;
 // a flat ceiling keeps each sale's drain bounded so toll income (which
 // keeps accumulating) can outpace it over time.
+//
+// This is deliberately a *casual-trade* pace, not an inventory-management
+// one — it only applies to an ordinary probabilistic sell trip (see
+// SELL_CHECK_CHANCE_BASE/WANTS_MONEY below). A bird whose inventory has hit
+// BIRD_INVENTORY_CAP uses the separate, much larger OVERFLOW_SELL_* caps
+// instead (see the real-device bug note there for why this split exists).
 export const SELL_MAX_GOLD_PER_TRIP = 15;
 
 // A basic ration is always free to produce (never touches the player's

@@ -66,6 +66,7 @@ import {
   MERCHANT_VISIT_DURATION_MIN_MS,
   MINING_RESPAWN_MS,
   MOOD_REFRESH_MS,
+  OVERFLOW_SELL_MAX_GOLD_PER_TRIP,
   RECIPE_COMBAT_CHANCE,
   RECIPE_GIFT_CHANCE,
   RECIPE_QUEST_CHANCE,
@@ -692,9 +693,17 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         // they can instead of failing the whole trip — otherwise a well-
         // stocked bird's asking price can permanently outpace the player's
         // slow trickle of income and trade just stalls.
-        const [materialId, offeredAmount] = Object.entries(outcome.sellAttempt)[0] as [MaterialId, number];
+        //
+        // An overflow sell (bird.inventory over BIRD_INVENTORY_CAP) uses a
+        // much larger gold cap than a casual trickle-trade — real-device
+        // bug: applying the casual SELL_MAX_GOLD_PER_TRIP (15G) here meant a
+        // full bird could only ever offload 1-3 units of a cheap material
+        // per trip, nowhere near enough to clear a 150-unit cap, so it just
+        // re-triggered a forced sell trip every single tick forever.
+        const { materialId, amount: offeredAmount, overflow } = outcome.sellAttempt;
         const unitPrice = MATERIAL_SELL_PRICE[materialId];
-        const spendCap = Math.min(usePlayerStore.getState().gold, SELL_MAX_GOLD_PER_TRIP);
+        const goldCeiling = overflow ? OVERFLOW_SELL_MAX_GOLD_PER_TRIP : SELL_MAX_GOLD_PER_TRIP;
+        const spendCap = Math.min(usePlayerStore.getState().gold, goldCeiling);
         const affordableUnits = unitPrice > 0 ? Math.floor(spendCap / unitPrice) : 0;
         const soldAmount = Math.min(offeredAmount ?? 0, affordableUnits);
         if (soldAmount > 0) {
