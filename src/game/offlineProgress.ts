@@ -35,6 +35,7 @@ import { CHARACTERS } from '../data/characters';
 import { ENEMY_DEFS, MINING_NODE_DEFS } from '../data/world';
 import { MATERIAL_SELL_PRICE } from '../data/marketPrices';
 import {
+  BIRD_INVENTORY_CAP,
   expToNextLevel,
   LEVEL_UP_ATK_GAIN,
   LEVEL_UP_DEFENSE_GAIN,
@@ -42,6 +43,9 @@ import {
   LEVEL_UP_SPEED_GAIN,
   OFFLINE_TICKS_PER_GATHER,
   OFFLINE_TICKS_PER_KILL,
+  OVERFLOW_SELL_MARGIN,
+  OVERFLOW_SELL_MAX_GOLD_PER_TRIP,
+  OVERFLOW_SELL_MAX_PER_TRIP,
   SECURITY_FEE_RATE,
   SELL_CHECK_CHANCE_BASE,
   SELL_MAX_GOLD_PER_TRIP,
@@ -196,6 +200,45 @@ export function simulateOfflineProgress(
       const affordableUnits = unitPrice > 0 ? Math.floor(spendCap / unitPrice) : 0;
       const soldAmount = Math.min(offeredAmount, affordableUnits);
       if (soldAmount <= 0) continue;
+      const cost = soldAmount * unitPrice;
+      nextInventory[bestId] = bestAmount - soldAmount;
+      materialsSnapshot[bestId] = (materialsSnapshot[bestId] ?? 0) + soldAmount;
+      simulatedPlayerGold -= cost;
+      sellExpense += cost;
+      sellGoldGained += cost;
+    }
+
+    // Real-device report: a bird came back from a long offline gap sitting
+    // on ~1500 units of one material — the casual trickle-sale loop above
+    // (fixed trip count, small per-trip caps) never checks
+    // BIRD_INVENTORY_CAP at all, unlike the online path (see ai.ts's
+    // executeSellTrip), so hours of uninterrupted gathering could far
+    // outpace it. Rather than hand back an overflowing bird that then needs
+    // many real-time trips to work down, keep selling here — using the same
+    // larger OVERFLOW_SELL_* caps the online path uses once over the cap —
+    // until the simulated inventory is back under it (or the player can't
+    // afford to buy any more). Bounded at 200 iterations purely as a
+    // runaway guard; each iteration can clear up to OVERFLOW_SELL_MAX_PER_TRIP
+    // units, so realistic stockpiles clear in well under that.
+    for (let guard = 0; guard < 200; guard++) {
+      const totalHeld = Object.values(nextInventory).reduce((sum, amount) => sum + (amount ?? 0), 0);
+      const excess = totalHeld - BIRD_INVENTORY_CAP;
+      if (excess <= 0) break;
+      let bestId: MaterialId | null = null;
+      let bestAmount = 0;
+      for (const [materialId, amount] of Object.entries(nextInventory) as [MaterialId, number][]) {
+        if ((amount ?? 0) > bestAmount) {
+          bestId = materialId;
+          bestAmount = amount ?? 0;
+        }
+      }
+      if (!bestId) break;
+      const unitPrice = MATERIAL_SELL_PRICE[bestId];
+      const offeredAmount = Math.min(bestAmount, OVERFLOW_SELL_MAX_PER_TRIP, excess + OVERFLOW_SELL_MARGIN);
+      const spendCap = Math.min(simulatedPlayerGold, OVERFLOW_SELL_MAX_GOLD_PER_TRIP);
+      const affordableUnits = unitPrice > 0 ? Math.floor(spendCap / unitPrice) : 0;
+      const soldAmount = Math.min(offeredAmount, affordableUnits);
+      if (soldAmount <= 0) break; // player can't afford any more — same stopping condition as a single online sale
       const cost = soldAmount * unitPrice;
       nextInventory[bestId] = bestAmount - soldAmount;
       materialsSnapshot[bestId] = (materialsSnapshot[bestId] ?? 0) + soldAmount;
