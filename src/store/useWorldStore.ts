@@ -596,6 +596,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       shopPositions: getAllShopPositions(useTownStore.getState().plots),
       merchant,
       townZoneRadius: currentTownZoneRadius,
+      playerGold: usePlayerStore.getState().gold,
     };
 
     const allAssignments: AttackAssignment[] = [];

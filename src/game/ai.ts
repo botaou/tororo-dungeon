@@ -39,6 +39,7 @@ import {
 import { TOWN_X, TOWN_Y } from '../data/world';
 import { getHousePosition } from '../data/houses';
 import { getShopPosition, MERCHANT_SPOT } from '../data/townGrid';
+import { MATERIAL_SELL_PRICE } from '../data/marketPrices';
 import { SHOP_DEFS } from '../data/shops';
 import { CONVERTIBLE_ITEM_IDS, ITEM_DEF_MAP, ITEM_DEFS } from '../data/items';
 import { getEffectiveStats, maybeAutoEquip } from './birdStats';
@@ -140,6 +141,19 @@ export interface AiWorld {
   // wandering (explore/rest) and the "waiting around town" job fallbacks
   // stay expressed relative to it instead of duplicating the constant.
   townZoneRadius: { rx: number; ry: number };
+  // The player's current gold — only used to decide whether it's even worth
+  // *forcing* an overflow sell trip (see stepBird's isFull check). A
+  // real-device report: once a bird was over BIRD_INVENTORY_CAP, it forced
+  // a sell trip every single tick regardless of whether the player could
+  // actually afford anything, so a cash-poor town saw a bird endlessly walk
+  // to the shop and "sell" zero units forever — worse, since every tick
+  // spent on that forced trip is a tick *not* spent hunting/gathering/doing
+  // jobs, none of the town's other income sources could run either,
+  // deadlocking the whole town's economy. Checking affordability before
+  // forcing the trip breaks that: if the player can't afford it right now,
+  // the bird falls back to its normal (much lower-chance) probabilistic
+  // roll instead, freeing it to go earn the town some gold in the meantime.
+  playerGold: number;
 }
 
 export interface AiStepOutcome {
@@ -297,7 +311,12 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
     return executeSellTrip(bird);
   }
   if (hasSellableInventory(bird)) {
-    const isFull = totalInventory(bird) >= BIRD_INVENTORY_CAP;
+    // Only *force* the trip (chance = 1) if the player can actually afford
+    // at least one unit of it — otherwise a cash-poor town would have a
+    // full bird endlessly walk to the shop and sell nothing, forever, since
+    // being stuck on this forced trip every tick leaves no room for the
+    // bird to go earn the town any gold either (see AiWorld.playerGold).
+    const isFull = totalInventory(bird) >= BIRD_INVENTORY_CAP && canAffordBestSale(bird, world.playerGold);
     const chance = isFull ? 1 : bird.mood === 'wantsMoney' ? SELL_CHECK_CHANCE_WANTS_MONEY : SELL_CHECK_CHANCE_BASE;
     if (Math.random() < chance) {
       bird.targetKind = 'shop';
@@ -475,6 +494,24 @@ function stepCarrying(bird: BirdState): AiStepOutcome {
 
 function hasSellableInventory(bird: BirdState): boolean {
   return Object.values(bird.inventory).some((amount) => (amount ?? 0) > 0);
+}
+
+// Whether the player could afford even a single unit of the bird's
+// best-stocked material right now — used to gate *forcing* an overflow
+// sell trip (see stepBird). Only checks unit price, not quantity: the
+// point isn't to predict the exact sale size, just to avoid forcing a trip
+// that's guaranteed to sell nothing at all.
+function canAffordBestSale(bird: BirdState, playerGold: number): boolean {
+  let bestId: MaterialId | null = null;
+  let bestAmount = 0;
+  for (const [key, amount] of Object.entries(bird.inventory) as [MaterialId, number][]) {
+    if ((amount ?? 0) > bestAmount) {
+      bestAmount = amount ?? 0;
+      bestId = key;
+    }
+  }
+  if (!bestId) return false;
+  return MATERIAL_SELL_PRICE[bestId] <= playerGold;
 }
 
 // Real-device report: birds sitting on hundreds of units of one material
