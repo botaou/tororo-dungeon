@@ -20,10 +20,10 @@ import {
 // Whether a point has crossed into the town's "core" ellipse (see
 // townGrid.ts's getTownZoneRadius) — used only to keep a chasing enemy from
 // following a fleeing bird all the way into town. Static enemy anchors are
-// already verified to sit outside this at every town level (see
-// data/townGrid.ts's TOWN_ZONE_RADIUS_BY_LEVEL comment), but that check says
-// nothing about where a *chase* can wander, since chasing just walks
-// straight at the target's live position with no boundary awareness.
+// already verified to sit outside this fixed radius (see data/townGrid.ts's
+// TOWN_ZONE_RADIUS comment), but that check says nothing about where a
+// *chase* can wander, since chasing just walks straight at the target's
+// live position with no boundary awareness.
 function isInsideTownZone(x: number, y: number, zoneRadius: { rx: number; ry: number }): boolean {
   const dx = (x - TOWN_X) / zoneRadius.rx;
   const dy = (y - TOWN_Y) / zoneRadius.ry;

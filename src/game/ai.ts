@@ -133,10 +133,10 @@ export interface AiWorld {
   // The visiting merchant, if one currently has its stall set up — null
   // between visits. Read-only from the AI's perspective, same as shopStock.
   merchant: MerchantState | null;
-  // The town zone's current footprint (see townGrid.ts's getTownZoneRadius)
-  // — grows with town level, so idle wandering (explore/rest) and the
-  // "waiting around town" job fallbacks all stay proportional to it instead
-  // of a fixed radius.
+  // The town zone's footprint (see townGrid.ts's getTownZoneRadius) — a
+  // fixed ellipse, passed through here rather than hardcoded so idle
+  // wandering (explore/rest) and the "waiting around town" job fallbacks
+  // stay expressed relative to it instead of duplicating the constant.
   townZoneRadius: { rx: number; ry: number };
 }
 

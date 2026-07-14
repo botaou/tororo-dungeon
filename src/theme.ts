@@ -19,6 +19,8 @@ export const theme = {
   pink: '#ff9fb3', // playful accent for highlights/titles
   disabled: '#e3d8c8',
   overlay: 'rgba(120, 90, 60, 0.35)',
+  road: '#d9b98a', // warm dirt-road tan, for the town's street grid
+  fence: '#a97c50', // wood-fence brown, for the town/field boundary marker
 };
 
 // A soft "sticker-like" drop shadow used on cards/buttons/sprites for a

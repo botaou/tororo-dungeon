@@ -542,7 +542,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     // rather than just unrendered/untargetable — otherwise a deep-zone
     // enemy could still "ambush" a bird that wanders near it before the
     // town's actually unlocked that ground.
-    const currentTownZoneRadius = getTownZoneRadius(townLevel);
+    const currentTownZoneRadius = getTownZoneRadius();
     enemies = enemies.map((e) =>
       e.defeated || e.minTownLevel > townLevel ? e : stepEnemy(e, birdsWithMood, currentTownZoneRadius)
     );

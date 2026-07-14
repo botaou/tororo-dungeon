@@ -19,6 +19,9 @@ import {
   getTownLevelDef,
   getTownZoneRadius,
   MERCHANT_SPOT,
+  PLOT_GRID_RING_INDICES,
+  plotGridColOffsetX,
+  plotGridRowOffsetY,
   shopKindForPlot,
   TOWN_PLOT_DEFS,
 } from '../data/townGrid';
@@ -170,7 +173,7 @@ export function WorldMap({
   const fieldHeight = WORLD_CANVAS_HEIGHT;
   const townLevel = getTownLevel(developmentPoints);
   const townLevelDef = getTownLevelDef(townLevel);
-  const zoneRadius = getTownZoneRadius(townLevel);
+  const zoneRadius = getTownZoneRadius();
   const zoneWidth = zoneRadius.rx * 2 * fieldWidth;
   const zoneHeight = zoneRadius.ry * 2 * fieldHeight;
 
@@ -212,12 +215,13 @@ export function WorldMap({
     [fieldWidth, fieldHeight]
   );
 
-  // The town zone's own backdrop — a warm-toned ellipse (vs. the field's
-  // meadow green) that grows with town level, plus a dashed ring marking the
-  // boundary between "town" and "adventure field". A faint tiled grass
-  // texture sits underneath the tint so it reads as "cozy garden ground"
-  // rather than a flat color, without overpowering the town's flat,
-  // clean-lined look.
+  // The town zone's own backdrop — a warm-toned, fixed-size ellipse (vs.
+  // the field's meadow green), plus a dashed ring marking the boundary
+  // between "town" and "adventure field" (the fence-post ring below is the
+  // primary boundary marker now; this dashed line is a fainter secondary
+  // cue). A faint tiled grass texture sits underneath the tint so it reads
+  // as "cozy garden ground" rather than a flat color, without overpowering
+  // the town's flat, clean-lined look.
   const townZoneNodes = useMemo(
     () => (
       <>
@@ -257,17 +261,83 @@ export function WorldMap({
     [fieldWidth, fieldHeight, zoneWidth, zoneHeight]
   );
 
+  // A ring of fence posts traced around the town zone ellipse — a
+  // real-device request for a clearer, more structural-looking boundary
+  // than the plain dashed line above gives on its own ("参考画像は柵で
+  // 区切られている"). POST_COUNT (20) and PHASE_DEG (10°) were picked by a
+  // numeric search over the fixed zone radius above: they're the
+  // combination that keeps every post at least ~30px clear of the always-
+  // present town fixtures a post could otherwise land right on top of
+  // (the two orthogonal ring-1 plots, the two shops, the merchant spot,
+  // all 4 houses) — a naive evenly-spaced ring landed a post almost exactly
+  // on the ring-1 E/W plots at some counts. Ring-1's own *diagonal* plots
+  // intentionally sit just outside this ring (see TOWN_ZONE_RADIUS's
+  // comment) so posts pass moderately close to those by design, not by
+  // oversight.
+  const fenceNodes = useMemo(() => {
+    const cx = TOWN_X * fieldWidth;
+    const cy = TOWN_Y * fieldHeight;
+    const rx = zoneWidth / 2;
+    const ry = zoneHeight / 2;
+    const POST_COUNT = 20;
+    const PHASE_DEG = 10;
+    const posts: React.ReactNode[] = [];
+    for (let i = 0; i < POST_COUNT; i++) {
+      const theta = ((i / POST_COUNT) * 360 + PHASE_DEG) * (Math.PI / 180);
+      const x = cx + rx * Math.cos(theta);
+      const y = cy + ry * Math.sin(theta);
+      posts.push(
+        <Text key={i} pointerEvents="none" style={[styles.fencePost, { left: x - 9, top: y - 9 }]}>
+          🪵
+        </Text>
+      );
+    }
+    return posts;
+  }, [fieldWidth, fieldHeight, zoneWidth, zoneHeight]);
+
+  // A full grid of roads along every row/column line the plot grid actually
+  // places plots on (not just the town-hall's own cross) — a real-device
+  // request for the town to read as road-divided city blocks rather than
+  // buildings scattered loosely across open grass. Spans the plot grid's
+  // full extent (ring-3 included) regardless of the current town level, so
+  // the road layout doesn't visibly shift/grow as more rings unlock —
+  // locked plots already show their own dimmed/level-badge state on top.
+  const roadGridNodes = useMemo(() => {
+    const maxDx = plotGridColOffsetX(3) * fieldWidth;
+    const maxDy = plotGridRowOffsetY(3) * fieldHeight;
+    const nodes: React.ReactNode[] = [];
+    for (const row of PLOT_GRID_RING_INDICES) {
+      const y = TOWN_Y * fieldHeight + plotGridRowOffsetY(row) * fieldHeight;
+      nodes.push(
+        <View
+          key={`h${row}`}
+          pointerEvents="none"
+          style={[styles.roadHorizontal, { top: y - 4, left: TOWN_X * fieldWidth - maxDx, width: maxDx * 2 }]}
+        />
+      );
+    }
+    for (const col of PLOT_GRID_RING_INDICES) {
+      const x = TOWN_X * fieldWidth + plotGridColOffsetX(col) * fieldWidth;
+      nodes.push(
+        <View
+          key={`v${col}`}
+          pointerEvents="none"
+          style={[styles.roadVertical, { left: x - 4, top: TOWN_Y * fieldHeight - maxDy, height: maxDy * 2 }]}
+        />
+      );
+    }
+    return nodes;
+  }, [fieldWidth, fieldHeight]);
+
   return (
     <View style={[styles.field, { width: fieldWidth, height: fieldHeight }]}>
       {fieldZonePatchNodes}
 
       {townZoneNodes}
 
-      {/* A simple cross-road motif suggesting the town's plots all connect
-          back to the town hall — not literal pathing, just a quick visual
-          anchor since real road art is a separate, later pass. */}
-      <View pointerEvents="none" style={[styles.roadHorizontal, { top: TOWN_Y * fieldHeight - 3, width: zoneWidth * 0.9, left: TOWN_X * fieldWidth - (zoneWidth * 0.9) / 2 }]} />
-      <View pointerEvents="none" style={[styles.roadVertical, { left: TOWN_X * fieldWidth - 3, height: zoneHeight * 0.9, top: TOWN_Y * fieldHeight - (zoneHeight * 0.9) / 2 }]} />
+      {roadGridNodes}
+
+      {fenceNodes}
 
       {TOWN_DECOR.map((d, i) => (
         <Text
@@ -557,7 +627,7 @@ function PlotSprite({
     // instead of a flat gray/green box, just dimmed differently.
     return (
       <AnimatedPressable
-        style={[styles.plot, levelLocked ? styles.plotUntamed : styles.plotLocked, { left: x - 12, top: y - 12 }]}
+        style={[styles.plot, levelLocked ? styles.plotUntamed : styles.plotLocked, { left: x - 18, top: y - 18 }]}
         onPress={onPress}
       >
         <Image source={TILE_IMAGES.grassPlain} resizeMode="cover" style={[styles.plotGrassBg, levelLocked && styles.plotGrassBgDim]} />
@@ -586,7 +656,7 @@ function PlotSprite({
   const buildingIcon = constructedOption?.emoji ?? (state.building ? BUILDING_ICON[state.building] : '·');
 
   return (
-    <AnimatedPressable style={[styles.plot, styles.plotOpen, { left: x - 12, top: y - 12 }]} onPress={onPress}>
+    <AnimatedPressable style={[styles.plot, styles.plotOpen, { left: x - 18, top: y - 18 }]} onPress={onPress}>
       <Text style={styles.plotBuildingIcon}>{shopEmoji ?? buildingIcon}</Text>
     </AnimatedPressable>
   );
@@ -869,11 +939,12 @@ const styles = StyleSheet.create({
     position: 'absolute',
     borderWidth: 2,
     borderStyle: 'dashed',
-    borderColor: theme.gold,
-    opacity: 0.55,
+    borderColor: theme.fence,
+    opacity: 0.4,
   },
-  roadHorizontal: { position: 'absolute', height: 6, borderRadius: 3, backgroundColor: theme.cardBorder, opacity: 0.6 },
-  roadVertical: { position: 'absolute', width: 6, borderRadius: 3, backgroundColor: theme.cardBorder, opacity: 0.6 },
+  roadHorizontal: { position: 'absolute', height: 8, borderRadius: 2, backgroundColor: theme.road, opacity: 0.75 },
+  roadVertical: { position: 'absolute', width: 8, borderRadius: 2, backgroundColor: theme.road, opacity: 0.75 },
+  fencePost: { position: 'absolute', fontSize: 18 },
   town: {
     position: 'absolute',
     width: 68,
@@ -904,9 +975,9 @@ const styles = StyleSheet.create({
   houseTag: { position: 'absolute', bottom: -6, right: -6, fontSize: 12 },
   plot: {
     position: 'absolute',
-    width: 24,
-    height: 24,
-    borderRadius: 8,
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -922,9 +993,9 @@ const styles = StyleSheet.create({
     borderStyle: 'dashed',
     borderColor: theme.pink,
   },
-  plotLockIcon: { fontSize: 12 },
-  plotCostText: { fontSize: 7, fontWeight: '700', color: theme.textMuted, marginTop: 1 },
-  plotBuildingIcon: { fontSize: 16, color: theme.textMuted },
+  plotLockIcon: { fontSize: 16 },
+  plotCostText: { fontSize: 8, fontWeight: '700', color: theme.textMuted, marginTop: 1 },
+  plotBuildingIcon: { fontSize: 22, color: theme.textMuted },
   plotUntamed: {
     borderWidth: 1,
     borderColor: 'rgba(107, 189, 110, 0.3)',
@@ -934,7 +1005,7 @@ const styles = StyleSheet.create({
   // than a merely gold-locked one.
   plotGrassBg: { position: 'absolute', width: '100%', height: '100%', opacity: 0.75 },
   plotGrassBgDim: { opacity: 0.4 },
-  plotLevelReq: { fontSize: 7, fontWeight: '800', color: theme.textPrimary },
+  plotLevelReq: { fontSize: 9, fontWeight: '800', color: theme.textPrimary },
   sprite: { position: 'absolute', alignItems: 'center', width: 56 },
   // A faint dug-out patch behind a mining node's icon (see data/tileImages.ts)
   // — purely decorative, sits underneath the emoji/amount text.

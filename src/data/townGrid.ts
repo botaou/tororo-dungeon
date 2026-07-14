@@ -40,6 +40,21 @@ function axisOffset(v: number, cell: number, outerStep: number): number {
   return Math.sign(v) * (2 * cell + outerStep);
 }
 
+// The 7 row/column indices a plot can sit on (ring -3..3) and their
+// distance from the town center, as normalized (0..1 canvas) offsets — the
+// same axisOffset formula buildPlotDefs uses for each plot's own x/y.
+// Exported so WorldMap can draw a full grid of roads along every row/column
+// line the plot grid actually uses (a real-device request for the town to
+// read as road-divided city blocks rather than buildings scattered in open
+// grass), without WorldMap needing to know CELL_W/CELL_H/OUTER_STEP itself.
+export const PLOT_GRID_RING_INDICES = [-3, -2, -1, 0, 1, 2, 3];
+export function plotGridRowOffsetY(row: number): number {
+  return axisOffset(row, CELL_H, OUTER_STEP_Y);
+}
+export function plotGridColOffsetX(col: number): number {
+  return axisOffset(col, CELL_W, OUTER_STEP_X);
+}
+
 function buildPlotDefs(): TownPlotDef[] {
   const defs: TownPlotDef[] = [];
   const materialCycle: Array<'wood' | 'ore' | 'mushroom' | 'berry'> = ['wood', 'ore', 'mushroom', 'berry'];
@@ -176,38 +191,41 @@ export function getTownLevelDef(level: number): TownLevelDef {
   return TOWN_LEVEL_DEFS.find((d) => d.level === level) ?? TOWN_LEVEL_DEFS[0];
 }
 
-// The town zone's visual backdrop (an ellipse centered on the town hall,
-// see WorldMap) and the radius AI uses to keep town-only wandering
-// (idle "rest" strolls) and field-only wandering (idle "explore") on the
-// correct side of the line — grows with each town-level tier so the zone's
-// footprint visibly keeps pace with the town's development.
+// The town zone's visual backdrop + fence boundary (see WorldMap) and the
+// radius AI uses to keep town-only wandering (idle "rest" strolls) and
+// field-only wandering (idle "explore") on the correct side of the line.
+//
+// Fixed (not per-town-level) — an earlier revision grew this with each town
+// level, but that meant re-verifying "does this still avoid every hand-
+// placed enemy/mining node" at 5 different sizes, and that exact spot has
+// already been the source of several real-device bugs this project (a
+// level-locked radius overlapping field content, then blocking
+// construction it could never actually grow to reach — see the
+// isInsideTownZone comment below and Phase 9②'s README notes). One fixed
+// size, chosen once and verified once, removes that whole recurring class
+// of bug. The zone still gets to *look* like it's growing town-to-town —
+// via the plot grid's road network and the buildings appearing on it — the
+// ellipse itself just isn't the mechanism for that anymore.
 //
 // Bounded above by data/world.ts's actual field content, not just by the
 // plot grid: the closest hand-placed enemy (wolf_b, at (0.75, 0.45)) sits
 // only ~0.27 away from town center, so any radius past that would draw the
 // town zone right on top of it — a "monster wandered into town" look, and
 // (since EnemySprite renders without pointerEvents="none") a real tap-
-// blocking risk for whatever it happens to overlap. The always-unlocked
-// ring-1 plots (both real shops included, at 0.1/0.195 from center) still
-// comfortably fit inside even the smallest tier. Ring-2/ring-3's outer
-// plots intentionally sit past the drawn edge at every level — the zone is
-// a soft "core of town" visual, not a requirement every buildable tile has
-// to sit inside. (A version of this file used to also gate construction on
-// zone containment, but the ellipse can never actually grow to reach most
-// of ring-2/ring-3 without overlapping the field content described above,
-// so that gate made a false promise for 40 of the 48 plots — construction
-// eligibility is governed by plot-unlock state + minTownLevel alone now,
-// see TownScreen's handlePlotPress.)
-const TOWN_ZONE_RADIUS_BY_LEVEL: Record<number, { rx: number; ry: number }> = {
-  1: { rx: 0.2, ry: 0.108 },
-  2: { rx: 0.22, ry: 0.118 },
-  3: { rx: 0.24, ry: 0.129 },
-  4: { rx: 0.25, ry: 0.134 },
-  5: { rx: 0.26, ry: 0.139 },
-};
+// blocking risk for whatever it happens to overlap. At rx=0.22/ry=0.145,
+// the closest field content (wolf_b) still clears with plenty of margin
+// (its ellipse-membership fraction is ~1.41, i.e. ~41% outside the
+// boundary), while the always-unlocked ring-1 plots (both real shops
+// included, at 0.1/0.195 from center), the merchant spot, and all 4 bird
+// houses sit comfortably inside. Ring-1's own *diagonal* plots and all of
+// ring-2/ring-3 intentionally sit past the drawn edge — the zone is a soft
+// "core of town" visual, not a requirement every buildable tile has to sit
+// inside (construction eligibility is governed by plot-unlock state +
+// minTownLevel alone, see TownScreen's handlePlotPress).
+const TOWN_ZONE_RADIUS = { rx: 0.22, ry: 0.145 };
 
-export function getTownZoneRadius(townLevel: number): { rx: number; ry: number } {
-  return TOWN_ZONE_RADIUS_BY_LEVEL[townLevel] ?? TOWN_ZONE_RADIUS_BY_LEVEL[1];
+export function getTownZoneRadius(): { rx: number; ry: number } {
+  return TOWN_ZONE_RADIUS;
 }
 
 // Generic fallback icon per building kind — used when a plot has a
