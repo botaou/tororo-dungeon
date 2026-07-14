@@ -49,6 +49,9 @@ export function TownStatusModal({ visible, developmentPoints, onClose }: Props) 
           )}
 
           <Text style={styles.hintText}>土地の解放・建物の建設・依頼の達成でポイントが貯まります。</Text>
+          <Text style={styles.hintText}>
+            地図上の色付きエリアは街の雰囲気を示す演出です。建物は解放済みの土地ならどこでも建てられます。
+          </Text>
 
           <AnimatedPressable style={styles.closeButton} onPress={onClose}>
             <Text style={styles.closeButtonText}>とじる</Text>

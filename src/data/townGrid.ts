@@ -189,10 +189,15 @@ export function getTownLevelDef(level: number): TownLevelDef {
 // (since EnemySprite renders without pointerEvents="none") a real tap-
 // blocking risk for whatever it happens to overlap. The always-unlocked
 // ring-1 plots (both real shops included, at 0.1/0.195 from center) still
-// comfortably fit inside even the smallest tier. Ring-2's outer diagonal
-// corners intentionally poke past the drawn edge at every level — the zone
-// is a soft "core of town" suggestion, not a hard requirement that every
-// buildable tile sit inside it.
+// comfortably fit inside even the smallest tier. Ring-2/ring-3's outer
+// plots intentionally sit past the drawn edge at every level — the zone is
+// a soft "core of town" visual, not a requirement every buildable tile has
+// to sit inside. (A version of this file used to also gate construction on
+// zone containment, but the ellipse can never actually grow to reach most
+// of ring-2/ring-3 without overlapping the field content described above,
+// so that gate made a false promise for 40 of the 48 plots — construction
+// eligibility is governed by plot-unlock state + minTownLevel alone now,
+// see TownScreen's handlePlotPress.)
 const TOWN_ZONE_RADIUS_BY_LEVEL: Record<number, { rx: number; ry: number }> = {
   1: { rx: 0.2, ry: 0.108 },
   2: { rx: 0.22, ry: 0.118 },
@@ -203,20 +208,6 @@ const TOWN_ZONE_RADIUS_BY_LEVEL: Record<number, { rx: number; ry: number }> = {
 
 export function getTownZoneRadius(townLevel: number): { rx: number; ry: number } {
   return TOWN_ZONE_RADIUS_BY_LEVEL[townLevel] ?? TOWN_ZONE_RADIUS_BY_LEVEL[1];
-}
-
-// Whether a point falls inside the town's current core ellipse. Used to
-// keep constructed buildings feeling like part of a cohesive town rather
-// than scattered across the whole 48-plot grid — land can still be
-// unlocked out at the level-gated outer rings (a real-device request:
-// "街を街として固めたい"/keep the town looking like one town), but
-// ConstructionModal only opens for a plot once the zone has actually grown
-// to include it, rather than letting a shop get built somewhere the zone
-// backdrop doesn't even draw yet.
-export function isInsideTownZone(x: number, y: number, zoneRadius: { rx: number; ry: number }): boolean {
-  const dx = (x - TOWN_X) / zoneRadius.rx;
-  const dy = (y - TOWN_Y) / zoneRadius.ry;
-  return dx * dx + dy * dy <= 1;
 }
 
 // Generic fallback icon per building kind — used when a plot has a

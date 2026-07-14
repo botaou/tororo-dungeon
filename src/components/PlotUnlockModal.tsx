@@ -61,6 +61,15 @@ export function PlotUnlockModal({ visible, cost, gold, materials, onUnlock, onCl
 
           {!canUnlock && <Text style={styles.shortNote}>不足している分があります</Text>}
 
+          {/* A real-device report found the old wording confusing: it wasn't
+              clear whether unlocking land actually let you build on it right
+              away, or whether some separate "街エリアの拡張" condition also
+              had to be met first. It doesn't — construction only ever checks
+              unlock state (and, for the outermost ring, the town level shown
+              on the map badge before this modal can even open) — so this
+              says so plainly. */}
+          <Text style={styles.reassuranceNote}>解放すると、すぐにこの土地に建物を建てられるようになります。</Text>
+
           <View style={styles.buttonRow}>
             {/* AnimatedPressable applies its `style` prop to an inner
                 Animated.View, one layer below the (unstyled) Pressable it
@@ -123,6 +132,7 @@ const styles = StyleSheet.create({
   rowValue: { fontSize: 14, fontWeight: '800', color: theme.textPrimary },
   rowValueShort: { color: theme.red },
   shortNote: { fontSize: 11, color: theme.red, textAlign: 'center', marginTop: 2, marginBottom: 6 },
+  reassuranceNote: { fontSize: 11, color: theme.textMuted, textAlign: 'center', marginTop: 2, marginBottom: 6 },
   buttonRow: { flexDirection: 'row', gap: 10, marginTop: 12 },
   buttonSlot: { flex: 1 },
   closeButton: {

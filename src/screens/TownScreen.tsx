@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useWorldStore } from '../store/useWorldStore';
 import { useTownStore } from '../store/useTownStore';
-import { getTownLevel, getTownZoneRadius, isInsideTownZone, TOWN_PLOT_DEFS } from '../data/townGrid';
+import { getTownLevel, TOWN_PLOT_DEFS } from '../data/townGrid';
 import { getBuildingOption } from '../data/buildingOptions';
 import { WorldMap, WORLD_CANVAS_HEIGHT, WORLD_CANVAS_WIDTH } from '../components/WorldMap';
 import { PannableMap } from '../components/PannableMap';
@@ -23,7 +23,6 @@ import { PlotUnlockModal } from '../components/PlotUnlockModal';
 import { ConstructionModal } from '../components/ConstructionModal';
 import { RecipeUnlockModal } from '../components/RecipeUnlockModal';
 import { TownStatusModal } from '../components/TownStatusModal';
-import { ZoneLockedModal } from '../components/ZoneLockedModal';
 import { ActivityLogPanel } from '../components/ActivityLogPanel';
 import { JobPreset } from '../data/jobPresets';
 import { PlotUnlockCost, ShopKind } from '../types';
@@ -52,12 +51,6 @@ export function TownScreen() {
   const [craftingVisible, setCraftingVisible] = useState(false);
   const [merchantVisible, setMerchantVisible] = useState(false);
   const [townStatusVisible, setTownStatusVisible] = useState(false);
-  // Shown when tapping an unlocked-but-empty plot outside the town's
-  // current zone ellipse — a real-device request to keep the town looking
-  // cohesive rather than buildings scattered across the whole level-gated
-  // grid (land can still be unlocked out there ahead of time, just not
-  // built on until the zone itself grows to include it).
-  const [zoneLockedVisible, setZoneLockedVisible] = useState(false);
   // Locked-but-affordable plot currently showing its cost breakdown (see
   // PlotUnlockModal) — null when closed.
   const [unlockTarget, setUnlockTarget] = useState<{ plotId: string; cost: PlotUnlockCost } | null>(null);
@@ -112,7 +105,6 @@ export function TownScreen() {
     craftingVisible ||
     merchantVisible ||
     townStatusVisible ||
-    zoneLockedVisible ||
     unlockTarget !== null ||
     constructionTarget !== null;
   const pendingRecruit = anyOtherModalOpen ? null : world.recruitmentEvents[shownRecruitCount] ?? null;
@@ -144,11 +136,13 @@ export function TownScreen() {
       if (option?.shopKind) setOpenShop(option.shopKind);
       return;
     }
-    const zoneRadius = getTownZoneRadius(getTownLevel(developmentPoints));
-    if (!isInsideTownZone(def.x, def.y, zoneRadius)) {
-      setZoneLockedVisible(true);
-      return;
-    }
+    // Construction eligibility is governed purely by unlock state + town
+    // level (already checked above/below) — the town-zone ellipse drawn on
+    // the map is decorative only (see townGrid.ts's getTownZoneRadius). An
+    // earlier revision blocked construction outside that ellipse too, but
+    // the ellipse geometrically can never grow to reach most of ring-2/
+    // ring-3 without overlapping hand-placed field content, which made that
+    // gate's "build once the zone grows" promise false for 40 of 48 plots.
     setConstructionTarget(plotId);
   };
 
@@ -247,8 +241,6 @@ export function TownScreen() {
         developmentPoints={developmentPoints}
         onClose={() => setTownStatusVisible(false)}
       />
-
-      <ZoneLockedModal visible={zoneLockedVisible} onClose={() => setZoneLockedVisible(false)} />
 
       <MerchantModal
         visible={merchantVisible}
