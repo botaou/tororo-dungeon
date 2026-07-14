@@ -15,6 +15,7 @@ import {
 } from '../types';
 import {
   ARRIVAL_THRESHOLD,
+  BIRD_INVENTORY_CAP,
   ENCOUNTER_HOLD_TICKS,
   FOOD_PRICE,
   GEAR_SHOP_CHECK_CHANCE,
@@ -291,7 +292,8 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
     return executeSellTrip(bird);
   }
   if (hasSellableInventory(bird)) {
-    const chance = bird.mood === 'wantsMoney' ? SELL_CHECK_CHANCE_WANTS_MONEY : SELL_CHECK_CHANCE_BASE;
+    const isFull = totalInventory(bird) >= BIRD_INVENTORY_CAP;
+    const chance = isFull ? 1 : bird.mood === 'wantsMoney' ? SELL_CHECK_CHANCE_WANTS_MONEY : SELL_CHECK_CHANCE_BASE;
     if (Math.random() < chance) {
       bird.targetKind = 'shop';
       bird.activity = 'selling';
@@ -468,6 +470,14 @@ function stepCarrying(bird: BirdState): AiStepOutcome {
 
 function hasSellableInventory(bird: BirdState): boolean {
   return Object.values(bird.inventory).some((amount) => (amount ?? 0) > 0);
+}
+
+// Real-device report: birds sitting on hundreds of units of one material
+// with no pressure to ever offload it. Compared against BIRD_INVENTORY_CAP
+// to force-trigger a sell trip once a bird's personal stash is "full" (see
+// stepBird), instead of relying purely on the normal probabilistic roll.
+function totalInventory(bird: BirdState): number {
+  return Object.values(bird.inventory).reduce((sum, amount) => sum + (amount ?? 0), 0);
 }
 
 // Picks the single most-plentiful material to offer this trip (capped), not

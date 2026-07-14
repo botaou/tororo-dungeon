@@ -23,13 +23,17 @@ interface PlayerActions {
   // credits through the same action — the player's own warehouse-material
   // sales to a visiting merchant too.
   creditMerchantToll: (amount: number) => void;
-  // Player-initiated: sell the town warehouse's entire current stock of one
-  // material to the visiting merchant, at the same flat rate the traveler
-  // and bird-to-shop sales use (MATERIAL_SELL_PRICE) — a real-device request
-  // for a way to offload warehouse material for gold that wasn't tied to
-  // the random traveler or to birds selling their own gathered stock.
-  // Returns the gold earned (0 if there was nothing to sell).
-  sellMaterialToMerchant: (materialId: MaterialId) => number;
+  // Player-initiated: sell up to `amount` of the town warehouse's stock of
+  // one material to the visiting merchant, at the same flat rate the
+  // traveler and bird-to-shop sales use (MATERIAL_SELL_PRICE) — a real-
+  // device request for a way to offload warehouse material for gold that
+  // wasn't tied to the random traveler or to birds selling their own
+  // gathered stock. Clamped to whatever's actually in stock (not rejected
+  // outright) — a real-device follow-up: selling the *entire* stack in one
+  // tap by default risked accidentally selling off material the player
+  // still needed, so the caller now picks how much. Returns the gold
+  // earned (0 if there was nothing to sell).
+  sellMaterialToMerchant: (materialId: MaterialId, amount: number) => number;
   // The player's main hands-on action: spend the recipe's material cost
   // out of the town warehouse to produce one crafted item. Returns false
   // (no state change) if the town doesn't have enough of any material.
@@ -96,13 +100,17 @@ export const usePlayerStore = create<PlayerStore>()(
       creditMerchantToll: (amount) =>
         set((s) => ({ gold: s.gold + amount, tollFromMerchant: s.tollFromMerchant + amount })),
 
-      sellMaterialToMerchant: (materialId) => {
+      sellMaterialToMerchant: (materialId, amount) => {
         const { materials } = get();
-        const amount = materials[materialId] ?? 0;
-        if (amount <= 0) return 0;
-        const revenue = amount * MATERIAL_SELL_PRICE[materialId];
+        const have = materials[materialId] ?? 0;
+        // Clamped, not rejected outright — a stale UI amount (e.g. another
+        // sale already went through) just sells whatever's actually left
+        // instead of failing the whole action.
+        const sold = Math.max(0, Math.min(amount, have));
+        if (sold <= 0) return 0;
+        const revenue = sold * MATERIAL_SELL_PRICE[materialId];
         set((s) => ({
-          materials: { ...s.materials, [materialId]: 0 },
+          materials: { ...s.materials, [materialId]: (s.materials[materialId] ?? 0) - sold },
           gold: s.gold + revenue,
           tollFromMerchant: s.tollFromMerchant + revenue,
         }));

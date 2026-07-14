@@ -66,6 +66,22 @@ export const ENEMY_DEFS: EnemyDef[] = [
   },
 ];
 
+export type EnemyStrengthTier = 'weak' | 'normal' | 'strong';
+
+// A rough, relative difficulty rating — real-device request for some way
+// to gauge an enemy's strength at a glance, without needing exact numbers.
+// Takes hp/atk directly rather than a full EnemyDef/EnemyInstance so
+// callers can pass an EnemyInstance's maxHp (its full, undamaged toughness)
+// rather than its current (possibly-depleted) hp — the rating shouldn't
+// shrink just because a fight's already in progress. atk is weighted
+// heavier than hp since it's what actually threatens the player's birds.
+export function getEnemyStrengthTier(enemy: { hp: number; atk: number }): EnemyStrengthTier {
+  const power = enemy.hp + enemy.atk * 4;
+  if (power < 50) return 'weak';
+  if (power <= 80) return 'normal';
+  return 'strong';
+}
+
 export const MINING_NODE_DEFS: MiningNodeDef[] = [
   // Forest — wood, plus its undergrowth (berries/herbs) and birds' feathers.
   { id: 'wood_1', name: '木', resource: 'wood', amount: 8, x: 0.2, y: 0.2 },

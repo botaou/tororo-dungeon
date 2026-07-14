@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { MaterialId, MerchantState } from '../types';
@@ -20,12 +20,22 @@ interface Props {
   // autonomously, since a recipe is player knowledge, not something a bird
   // carries. Returns false if the offer's gone or gold's insufficient.
   onBuyRecipe: () => boolean;
-  // Player-initiated sale of the town warehouse's entire stock of one
+  // Player-initiated sale of some of the town warehouse's stock of one
   // material — a real-device request for a way to offload warehouse
   // material that wasn't tied to the random traveler or to birds selling
-  // their own gathered stock.
-  onSellMaterial: (materialId: MaterialId) => void;
+  // their own gathered stock. `amount` is however much the player picked
+  // in this modal's own quantity stepper (see SELL_STEP below).
+  onSellMaterial: (materialId: MaterialId, amount: number) => void;
 }
+
+// Step size for the +/- quantity stepper below, and the starting amount
+// each material row defaults to. A real-device follow-up report: selling a
+// material's *entire* stack in one tap by default risked accidentally
+// selling off material the player still needed for crafting/building, so
+// this lets the player dial in an amount instead — stepping by 10 keeps a
+// few taps enough to reach a meaningful amount even against a stack in the
+// hundreds, while "全部売る" is still there for a genuine full dump.
+const SELL_STEP = 10;
 
 // Mostly view-only, like the rest of the game's shops from the player's
 // side — birds decide for themselves whether to buy from the shelf or sell
@@ -39,6 +49,20 @@ export function MerchantModal({ visible, onClose, merchant, gold, materials, onB
   const offerRecipe = recipeOffer ? CRAFTING_RECIPES.find((r) => r.id === recipeOffer.recipeId) : null;
   const offerItemDef = offerRecipe ? ITEM_DEF_MAP[offerRecipe.resultItemId] : null;
   const sellableMaterials = (Object.keys(materials) as MaterialId[]).filter((id) => (materials[id] ?? 0) > 0);
+
+  // Per-material selected sell quantity — undefined until the player first
+  // touches that material's stepper, at which point it defaults to
+  // min(stock, SELL_STEP). Kept here (not in the store) since it's purely
+  // this modal's own transient UI state.
+  const [sellAmounts, setSellAmounts] = useState<Partial<Record<MaterialId, number>>>({});
+  const getSellAmount = (materialId: MaterialId, stock: number) => {
+    const stored = sellAmounts[materialId];
+    return Math.max(1, Math.min(stored ?? Math.min(stock, SELL_STEP), stock));
+  };
+  const adjustSellAmount = (materialId: MaterialId, stock: number, delta: number) => {
+    const current = getSellAmount(materialId, stock);
+    setSellAmounts((prev) => ({ ...prev, [materialId]: Math.max(1, Math.min(stock, current + delta)) }));
+  };
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -101,20 +125,44 @@ export function MerchantModal({ visible, onClose, merchant, gold, materials, onB
                   <Text style={styles.sectionLabel}>🎒 倉庫の素材を売る</Text>
                   <ScrollView style={styles.sellList}>
                     {sellableMaterials.map((materialId) => {
-                      const amount = materials[materialId] ?? 0;
+                      const stock = materials[materialId] ?? 0;
+                      const amount = getSellAmount(materialId, stock);
                       const unitPrice = MATERIAL_SELL_PRICE[materialId];
                       return (
                         <View style={styles.sellRow} key={materialId}>
                           <Text style={styles.itemIcon}>{MATERIAL_ICON[materialId]}</Text>
                           <View style={styles.sellRowTextWrap}>
                             <Text style={styles.itemLabel}>{MATERIAL_LABEL[materialId]}</Text>
-                            <Text style={styles.recipeOfferSub}>
-                              {amount}個 × {unitPrice}G
-                            </Text>
+                            <Text style={styles.recipeOfferSub}>在庫 {stock}個 × {unitPrice}G</Text>
+                            <View style={styles.stepperRow}>
+                              <AnimatedPressable
+                                style={[styles.stepperButton, amount <= 1 && styles.stepperButtonDisabled]}
+                                onPress={() => adjustSellAmount(materialId, stock, -SELL_STEP)}
+                                disabled={amount <= 1}
+                              >
+                                <Text style={styles.stepperButtonText}>−</Text>
+                              </AnimatedPressable>
+                              <Text style={styles.stepperValue}>{amount}</Text>
+                              <AnimatedPressable
+                                style={[styles.stepperButton, amount >= stock && styles.stepperButtonDisabled]}
+                                onPress={() => adjustSellAmount(materialId, stock, SELL_STEP)}
+                                disabled={amount >= stock}
+                              >
+                                <Text style={styles.stepperButtonText}>＋</Text>
+                              </AnimatedPressable>
+                            </View>
                           </View>
-                          <AnimatedPressable style={styles.sellButton} onPress={() => onSellMaterial(materialId)}>
-                            <Text style={styles.sellButtonText}>{amount * unitPrice}Gで売る</Text>
-                          </AnimatedPressable>
+                          <View style={styles.sellButtonCol}>
+                            <AnimatedPressable style={styles.sellButton} onPress={() => onSellMaterial(materialId, amount)}>
+                              <Text style={styles.sellButtonText}>{amount * unitPrice}Gで売る</Text>
+                            </AnimatedPressable>
+                            <AnimatedPressable
+                              style={styles.sellAllButton}
+                              onPress={() => onSellMaterial(materialId, stock)}
+                            >
+                              <Text style={styles.sellAllButtonText}>全部売る</Text>
+                            </AnimatedPressable>
+                          </View>
                         </View>
                       );
                     })}
@@ -208,4 +256,26 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   sellButtonText: { color: '#fff', fontWeight: '700', fontSize: 12 },
+  stepperRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
+  stepperButton: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: theme.card,
+    borderWidth: 1,
+    borderColor: theme.cardBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperButtonDisabled: { opacity: 0.4 },
+  stepperButtonText: { color: theme.textPrimary, fontWeight: '800', fontSize: 14, lineHeight: 16 },
+  stepperValue: { fontSize: 13, fontWeight: '800', color: theme.textPrimary, minWidth: 34, textAlign: 'center' },
+  sellButtonCol: { gap: 6, alignItems: 'stretch' },
+  sellAllButton: {
+    backgroundColor: theme.cardBorder,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  sellAllButtonText: { color: theme.textSecondary, fontWeight: '700', fontSize: 11, textAlign: 'center' },
 });

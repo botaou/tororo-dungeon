@@ -76,6 +76,14 @@ export const SELL_DWELL_TICKS = 2;
 // deciding to make a trip to the shop; much more likely while "wantsMoney".
 export const SELL_CHECK_CHANCE_BASE = 0.006;
 export const SELL_CHECK_CHANCE_WANTS_MONEY = 0.07;
+// Total materials (summed across every kind) a bird can personally carry
+// before it's "full" — a real-device report showed birds sitting on
+// hundreds of units of a single material with no pressure to ever sell it,
+// affecting job/delivery efficiency. Past this total, the normal
+// probabilistic sell-trip roll above is skipped in favor of triggering one
+// for certain (see ai.ts's stepBird), so a full bird makes offloading its
+// next priority instead of just occasionally considering it.
+export const BIRD_INVENTORY_CAP = 150;
 // A bird sells only its single most-plentiful material per trip (capped at
 // this amount), not its whole stash at once — otherwise a well-stocked bird's
 // asking price quickly outgrows what the player can ever afford, and trade

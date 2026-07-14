@@ -12,7 +12,7 @@ import {
   TreasureNodeInstance,
 } from '../types';
 import { getCharacterDef } from '../data/characters';
-import { TOWN_DECOR, TOWN_X, TOWN_Y } from '../data/world';
+import { getEnemyStrengthTier, TOWN_DECOR, TOWN_X, TOWN_Y } from '../data/world';
 import {
   BUILDING_ICON,
   getTownLevel,
@@ -644,6 +644,11 @@ function EnemySprite({ enemy, x, y }: { enemy: EnemyInstance; x: number; y: numb
   if (enemy.defeated) return null;
 
   const ratio = enemy.maxHp > 0 ? Math.max(0, Math.min(1, enemy.hp / enemy.maxHp)) : 0;
+  // Real-device request — a rough, at-a-glance strength gauge (not exact
+  // numbers) using the enemy's full/undamaged maxHp, not its current
+  // (possibly-depleted) hp, so the rating doesn't shrink mid-fight.
+  const strengthTier = getEnemyStrengthTier({ hp: enemy.maxHp, atk: enemy.atk });
+  const strengthStars = strengthTier === 'weak' ? '⭐' : strengthTier === 'normal' ? '⭐⭐' : '⭐⭐⭐';
 
   return (
     <Animated.View
@@ -666,6 +671,7 @@ function EnemySprite({ enemy, x, y }: { enemy: EnemyInstance; x: number; y: numb
           { opacity: flash.interpolate({ inputRange: [0, 1], outputRange: [0, 0.55] }) },
         ]}
       />
+      {enemy.hp > 0 && <Text style={styles.enemyStrengthBadge}>{strengthStars}</Text>}
       <Text style={styles.emojiLarge}>{enemy.emoji}</Text>
       {enemy.hp > 0 && (
         <View style={styles.miniBarTrack}>
@@ -983,4 +989,13 @@ const styles = StyleSheet.create({
     borderColor: theme.cardBorder,
   },
   miniBarFill: { height: '100%', borderRadius: 2 },
+  enemyStrengthBadge: {
+    position: 'absolute',
+    top: -12,
+    alignSelf: 'center',
+    fontSize: 9,
+    textShadowColor: 'rgba(255,255,255,0.9)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 2,
+  },
 });
