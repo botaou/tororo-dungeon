@@ -34,6 +34,7 @@ import { BirdWallet } from '../store/useBirdEconomyStore';
 import { CHARACTERS } from '../data/characters';
 import { ENEMY_DEFS, MINING_NODE_DEFS } from '../data/world';
 import { MATERIAL_SELL_PRICE } from '../data/marketPrices';
+import { addCappedInventory } from './inventoryCap';
 import {
   BIRD_INVENTORY_CAP,
   expToNextLevel,
@@ -167,9 +168,14 @@ export function simulateOfflineProgress(
       speed += LEVEL_UP_SPEED_GAIN;
     }
 
+    // Hard-capped the same way the online path is (see game/inventoryCap.ts)
+    // — without this, a long (up to 8h) offline gap's worth of gathering
+    // could vastly outpace the sell-off loop below, and a bird would come
+    // back from being closed holding a huge, all-at-once pile (real-device
+    // report: ~1500 units of one material after a long gap).
     const nextInventory = { ...wallet.inventory };
     for (const [materialId, amount] of Object.entries(materialsGained) as [MaterialId, number][]) {
-      nextInventory[materialId] = (nextInventory[materialId] ?? 0) + (amount ?? 0);
+      addCappedInventory(nextInventory, materialId, amount ?? 0);
     }
     const nextItems = { ...wallet.items };
     for (const itemId of itemsFound) {

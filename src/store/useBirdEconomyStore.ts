@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { EquipSlot, ItemId, MaterialId } from '../types';
 import { getCharacterDef } from '../data/characters';
 import {
+  BIRD_INVENTORY_CAP,
   LEVEL_UP_ATK_GAIN,
   LEVEL_UP_HP_GAIN,
   STARTING_HAPPINESS,
@@ -129,6 +130,30 @@ export const useBirdEconomyStore = create<BirdEconomyState & BirdEconomyActions>
         }
         if (!Number.isFinite(saved?.maxHp) || saved!.maxHp < def.baseHp) {
           merged.maxHp = def.baseHp + (level - 1) * LEVEL_UP_HP_GAIN;
+        }
+        // BIRD_INVENTORY_CAP used to be a "sell more urgently past this"
+        // soft threshold rather than a hard limit, so a save from before it
+        // became a real cap (see game/inventoryCap.ts) can still be holding
+        // way more than 150 total — a real-device report found ~1500 units
+        // of one material sitting on a bird, left over from the old design.
+        // Trim any such backlog down to the cap once here (discarding the
+        // excess outright, no compensation — it was never really "earned"
+        // under the current rules) rather than making the player wait
+        // through dozens of forced sell trips to work it off normally.
+        // Removes the single largest material first, same "most-plentiful"
+        // preference the normal sell logic uses.
+        const totalHeld = Object.values(merged.inventory).reduce((sum, amount) => sum + (amount ?? 0), 0);
+        if (totalHeld > BIRD_INVENTORY_CAP) {
+          let excess = totalHeld - BIRD_INVENTORY_CAP;
+          const entries = (Object.entries(merged.inventory) as [MaterialId, number][]).sort(
+            (a, b) => (b[1] ?? 0) - (a[1] ?? 0)
+          );
+          for (const [materialId, amount] of entries) {
+            if (excess <= 0) break;
+            const trim = Math.min(amount ?? 0, excess);
+            merged.inventory[materialId] = (amount ?? 0) - trim;
+            excess -= trim;
+          }
         }
         return merged;
       },

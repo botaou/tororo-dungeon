@@ -27,6 +27,7 @@ import {
 } from '../data/world';
 import { rollRandomMood } from '../data/moods';
 import { AiWorld, separateBirds, stepBird } from '../game/ai';
+import { addCappedInventory } from '../game/inventoryCap';
 import { respawnPosition, stepEnemy } from '../game/enemyAi';
 import { AttackAssignment, applyHealing, resolveAttacks } from '../game/combat';
 import { scoreRequestAcceptance, tryAcceptRequest } from '../game/requests';
@@ -812,10 +813,16 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         const bird = nextBirds.find((b) => b.defId === drop.unitUid);
         if (!bird) continue;
         if (drop.kind === 'material') {
-          bird.inventory[drop.materialId] = (bird.inventory[drop.materialId] ?? 0) + drop.amount;
-          newLog.push(
-            makeLogEntry(bird.name, 'drop', `${bird.name}が${kill.enemyName}から${MATERIAL_LABEL[drop.materialId]}をドロップで手に入れた`)
-          );
+          const before = bird.inventory[drop.materialId] ?? 0;
+          addCappedInventory(bird.inventory, drop.materialId, drop.amount);
+          const added = (bird.inventory[drop.materialId] ?? 0) - before;
+          // A basket already at BIRD_INVENTORY_CAP has no room for the drop
+          // at all — skip the log line rather than claiming it was picked up.
+          if (added > 0) {
+            newLog.push(
+              makeLogEntry(bird.name, 'drop', `${bird.name}が${kill.enemyName}から${MATERIAL_LABEL[drop.materialId]}をドロップで手に入れた`)
+            );
+          }
         } else {
           bird.items[drop.itemId] = (bird.items[drop.itemId] ?? 0) + 1;
           maybeAutoEquip(bird, drop.itemId);

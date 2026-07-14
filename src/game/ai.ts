@@ -44,6 +44,7 @@ import { SHOP_DEFS } from '../data/shops';
 import { CONVERTIBLE_ITEM_IDS, ITEM_DEF_MAP, ITEM_DEFS } from '../data/items';
 import { getEffectiveStats, maybeAutoEquip } from './birdStats';
 import { AttackAssignment } from './combat';
+import { addCappedInventory, totalInventoryAmount } from './inventoryCap';
 
 // Personality doesn't gate any activity outright — it just weights how
 // likely each of the four is to be picked when a bird is free to choose.
@@ -316,7 +317,7 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
     // full bird endlessly walk to the shop and sell nothing, forever, since
     // being stuck on this forced trip every tick leaves no room for the
     // bird to go earn the town any gold either (see AiWorld.playerGold).
-    const isFull = totalInventory(bird) >= BIRD_INVENTORY_CAP && canAffordBestSale(bird, world.playerGold);
+    const isFull = totalInventoryAmount(bird.inventory) >= BIRD_INVENTORY_CAP && canAffordBestSale(bird, world.playerGold);
     const chance = isFull ? 1 : bird.mood === 'wantsMoney' ? SELL_CHECK_CHANCE_WANTS_MONEY : SELL_CHECK_CHANCE_BASE;
     if (Math.random() < chance) {
       bird.targetKind = 'shop';
@@ -485,8 +486,12 @@ function stepCarrying(bird: BirdState): AiStepOutcome {
   bird.activity = 'carrying';
   if (arrived && bird.carrying) {
     const { materialId, amount } = bird.carrying;
-    bird.inventory[materialId] = (bird.inventory[materialId] ?? 0) + amount;
-    outcome.deliveredMaterial = { materialId, amount };
+    const before = bird.inventory[materialId] ?? 0;
+    addCappedInventory(bird.inventory, materialId, amount);
+    const added = (bird.inventory[materialId] ?? 0) - before;
+    // A full basket means literally none of it fit — skip the "brought
+    // home" log line rather than reporting a confusing "0個持ち帰った".
+    if (added > 0) outcome.deliveredMaterial = { materialId, amount: added };
     bird.carrying = null;
   }
   return outcome;
@@ -512,14 +517,6 @@ function canAffordBestSale(bird: BirdState, playerGold: number): boolean {
   }
   if (!bestId) return false;
   return MATERIAL_SELL_PRICE[bestId] <= playerGold;
-}
-
-// Real-device report: birds sitting on hundreds of units of one material
-// with no pressure to ever offload it. Compared against BIRD_INVENTORY_CAP
-// to force-trigger a sell trip once a bird's personal stash is "full" (see
-// stepBird), instead of relying purely on the normal probabilistic roll.
-function totalInventory(bird: BirdState): number {
-  return Object.values(bird.inventory).reduce((sum, amount) => sum + (amount ?? 0), 0);
 }
 
 // Picks the single most-plentiful material to offer this trip, not the
@@ -558,9 +555,15 @@ function executeSellTrip(bird: BirdState): AiStepOutcome {
   if (arrived) {
     bird.workProgress += 1;
     if (bird.workProgress >= SELL_DWELL_TICKS) {
-      const excess = totalInventory(bird) - BIRD_INVENTORY_CAP;
-      const overflow = excess > 0;
-      const cap = overflow ? Math.min(OVERFLOW_SELL_MAX_PER_TRIP, excess + OVERFLOW_SELL_MARGIN) : SELL_MAX_PER_TRIP;
+      // >= not > : with inventory gains hard-capped at BIRD_INVENTORY_CAP
+      // (see addCappedInventory), a full bird normally sits at *exactly*
+      // the cap rather than over it, so "excess" is usually 0 here, not
+      // positive — still worth the larger caps below (bounded by
+      // OVERFLOW_SELL_MARGIN) so this doesn't fall back to the tiny casual
+      // per-trip caps every time a bird happens to be topped off.
+      const excess = totalInventoryAmount(bird.inventory) - BIRD_INVENTORY_CAP;
+      const overflow = excess >= 0;
+      const cap = overflow ? Math.min(OVERFLOW_SELL_MAX_PER_TRIP, Math.max(excess, 0) + OVERFLOW_SELL_MARGIN) : SELL_MAX_PER_TRIP;
       const offer = pickSellOffer(bird, cap);
       if (offer) outcome.sellAttempt = { materialId: offer.materialId, amount: offer.amount, overflow };
       bird.targetKind = null;
@@ -775,7 +778,7 @@ function executeGather(bird: BirdState, def: CharacterDef, world: AiWorld): AiSt
               maybeAutoEquip(bird, entry.itemId);
               outcome.bonusItemFound = entry.itemId;
             } else {
-              bird.inventory[entry.materialId] = (bird.inventory[entry.materialId] ?? 0) + entry.amount;
+              addCappedInventory(bird.inventory, entry.materialId, entry.amount);
             }
             break;
           }
