@@ -82,56 +82,64 @@ export function getEnemyStrengthTier(enemy: { hp: number; atk: number }): EnemyS
   return 'strong';
 }
 
+// Per-node yield amounts are deliberately small (~40% of an earlier, much
+// more generous pass) — a real-device report found a mining-focused bird
+// filling its entire BIRD_INVENTORY_CAP (150) in as little as ~12 minutes
+// of active play, and an offline catch-up report ("31分で素材986個") showed
+// the same pace compounding across all 4 birds at once. The target is
+// "tens of minutes of active gathering to approach the cap," not "a few
+// minutes" — see OFFLINE_TICKS_PER_GATHER in game/config.ts for the
+// per-personality encounter frequency this multiplies against.
 export const MINING_NODE_DEFS: MiningNodeDef[] = [
   // Forest — wood, plus its undergrowth (berries/herbs) and birds' feathers.
-  { id: 'wood_1', name: '木', resource: 'wood', amount: 8, x: 0.2, y: 0.2 },
-  { id: 'wood_2', name: '木', resource: 'wood', amount: 8, x: 0.285, y: 0.237 },
-  { id: 'berry_1', name: '木の実', resource: 'berry', amount: 6, x: 0.24, y: 0.24 },
-  { id: 'herb_1', name: '薬草', resource: 'herb', amount: 4, x: 0.28, y: 0.14 },
-  { id: 'feather_1', name: '羽根', resource: 'feather', amount: 3, x: 0.3, y: 0.18 },
+  { id: 'wood_1', name: '木', resource: 'wood', amount: 3, x: 0.2, y: 0.2 },
+  { id: 'wood_2', name: '木', resource: 'wood', amount: 3, x: 0.285, y: 0.237 },
+  { id: 'berry_1', name: '木の実', resource: 'berry', amount: 2, x: 0.24, y: 0.24 },
+  { id: 'herb_1', name: '薬草', resource: 'herb', amount: 2, x: 0.28, y: 0.14 },
+  { id: 'feather_1', name: '羽根', resource: 'feather', amount: 1, x: 0.3, y: 0.18 },
   // Quarry — ore, plus deeper gems and coal seams, upper-right.
-  { id: 'ore_1', name: '岩', resource: 'ore', amount: 6, x: 0.72, y: 0.2 },
-  { id: 'ore_2', name: '岩', resource: 'ore', amount: 6, x: 0.8, y: 0.28 },
+  { id: 'ore_1', name: '岩', resource: 'ore', amount: 2, x: 0.72, y: 0.2 },
+  { id: 'ore_2', name: '岩', resource: 'ore', amount: 2, x: 0.8, y: 0.28 },
   {
     id: 'gem_1',
     name: '宝石',
     resource: 'gem',
-    amount: 3,
+    amount: 1,
     bonusDropTable: [{ kind: 'item', itemId: 'ancientGem', chance: 0.02 }],
     x: 0.78,
     y: 0.18,
   },
-  { id: 'coal_1', name: '石炭', resource: 'coal', amount: 5, x: 0.727, y: 0.247 },
+  { id: 'coal_1', name: '石炭', resource: 'coal', amount: 2, x: 0.727, y: 0.247 },
   // Damp mushroom patch, lower-left.
-  { id: 'mushroom_1', name: 'キノコ', resource: 'mushroom', amount: 5, x: 0.18, y: 0.72 },
-  { id: 'mushroom_2', name: 'キノコ', resource: 'mushroom', amount: 5, x: 0.28, y: 0.8 },
+  { id: 'mushroom_1', name: 'キノコ', resource: 'mushroom', amount: 2, x: 0.18, y: 0.72 },
+  { id: 'mushroom_2', name: 'キノコ', resource: 'mushroom', amount: 2, x: 0.28, y: 0.8 },
   // Lake — fish, pearls, waterweed, around the river/pond leisure spots.
-  { id: 'fish_1', name: '魚', resource: 'fish', amount: 5, x: 0.65, y: 0.85 },
+  { id: 'fish_1', name: '魚', resource: 'fish', amount: 2, x: 0.65, y: 0.85 },
   {
     id: 'pearl_1',
     name: '真珠',
     resource: 'pearl',
-    amount: 2,
+    amount: 1,
     bonusDropTable: [{ kind: 'item', itemId: 'royalJewelry', chance: 0.01 }],
     x: 0.78,
     y: 0.9,
   },
-  { id: 'waterweed_1', name: '水草', resource: 'waterweed', amount: 4, x: 0.521, y: 0.839 },
+  { id: 'waterweed_1', name: '水草', resource: 'waterweed', amount: 2, x: 0.521, y: 0.839 },
   // Ruins — relics, magic stones, old coins, around the treasure chest.
-  { id: 'relic_1', name: '遺物', resource: 'relic', amount: 2, x: 0.42, y: 0.14 },
-  { id: 'magicStone_1', name: '魔石', resource: 'magicStone', amount: 2, x: 0.58, y: 0.1 },
+  { id: 'relic_1', name: '遺物', resource: 'relic', amount: 1, x: 0.42, y: 0.14 },
+  { id: 'magicStone_1', name: '魔石', resource: 'magicStone', amount: 1, x: 0.58, y: 0.1 },
   {
     id: 'oldCoin_1',
     name: '古いコイン',
     resource: 'oldCoin',
-    amount: 4,
+    amount: 2,
     bonusDropTable: [{ kind: 'item', itemId: 'goldBar', chance: 0.015 }],
     x: 0.5,
     y: 0.16,
   },
   // Same "deep zone" extension as wolf_c above — a bonus magicStone vein
   // only reachable once the town's ring-3 land is unlocked.
-  { id: 'magicStone_2', name: '魔石', resource: 'magicStone', amount: 3, x: 0.85, y: 0.06, minTownLevel: 3 },
+  { id: 'magicStone_2', name: '魔石', resource: 'magicStone', amount: 1, x: 0.85, y: 0.06, minTownLevel: 3 },
 ];
 
 // Old ruins along the north edge, between the forest and the quarry.

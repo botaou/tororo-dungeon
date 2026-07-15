@@ -23,6 +23,7 @@ import { PlotUnlockModal } from '../components/PlotUnlockModal';
 import { ConstructionModal } from '../components/ConstructionModal';
 import { RecipeUnlockModal } from '../components/RecipeUnlockModal';
 import { TownStatusModal } from '../components/TownStatusModal';
+import { HouseInventoryModal } from '../components/HouseInventoryModal';
 import { ActivityLogPanel } from '../components/ActivityLogPanel';
 import { JobPreset } from '../data/jobPresets';
 import { PlotUnlockCost, ShopKind } from '../types';
@@ -38,6 +39,10 @@ export function TownScreen() {
   const postRequest = useWorldStore((s) => s.postRequest);
   const deliverToMerchant = useWorldStore((s) => s.deliverToMerchant);
   const buyMerchantRecipe = useWorldStore((s) => s.buyMerchantRecipe);
+  const depositFoodToHouse = useWorldStore((s) => s.depositFoodToHouse);
+  const withdrawFoodFromHouse = useWorldStore((s) => s.withdrawFoodFromHouse);
+  const favoriteTreasure = useWorldStore((s) => s.favoriteTreasure);
+  const unfavoriteTreasure = useWorldStore((s) => s.unfavoriteTreasure);
   const plots = useTownStore((s) => s.plots);
   const developmentPoints = useTownStore((s) => s.developmentPoints);
   const levelUpEvents = useTownStore((s) => s.levelUpEvents);
@@ -51,6 +56,10 @@ export function TownScreen() {
   const [craftingVisible, setCraftingVisible] = useState(false);
   const [merchantVisible, setMerchantVisible] = useState(false);
   const [townStatusVisible, setTownStatusVisible] = useState(false);
+  // Which bird's house is currently open (see HouseInventoryModal) — null
+  // when closed. Tracks defId rather than a bare boolean since the modal
+  // needs to know *whose* house it's showing.
+  const [houseTarget, setHouseTarget] = useState<string | null>(null);
   // Locked-but-affordable plot currently showing its cost breakdown (see
   // PlotUnlockModal) — null when closed.
   const [unlockTarget, setUnlockTarget] = useState<{ plotId: string; cost: PlotUnlockCost } | null>(null);
@@ -105,6 +114,7 @@ export function TownScreen() {
     craftingVisible ||
     merchantVisible ||
     townStatusVisible ||
+    houseTarget !== null ||
     unlockTarget !== null ||
     constructionTarget !== null;
   const pendingRecruit = anyOtherModalOpen ? null : world.recruitmentEvents[shownRecruitCount] ?? null;
@@ -199,6 +209,7 @@ export function TownScreen() {
             onShopPress={(kind) => setOpenShop(kind)}
             onMerchantPress={() => setMerchantVisible(true)}
             onTownHallPress={() => setTownStatusVisible(true)}
+            onHousePress={(defId) => setHouseTarget(defId)}
           />
         </PannableMap>
       </View>
@@ -240,6 +251,17 @@ export function TownScreen() {
         visible={townStatusVisible}
         developmentPoints={developmentPoints}
         onClose={() => setTownStatusVisible(false)}
+      />
+
+      <HouseInventoryModal
+        visible={houseTarget !== null}
+        onClose={() => setHouseTarget(null)}
+        bird={activeBirds.find((b) => b.defId === houseTarget) ?? null}
+        playerItems={items}
+        onDepositFood={depositFoodToHouse}
+        onWithdrawFood={withdrawFoodFromHouse}
+        onFavoriteTreasure={favoriteTreasure}
+        onUnfavoriteTreasure={unfavoriteTreasure}
       />
 
       <MerchantModal

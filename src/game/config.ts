@@ -280,6 +280,15 @@ export const OFFLINE_TICKS_PER_GATHER: Record<Personality, number> = {
   cautious: 51,
 };
 
+// A bird's house storage (see HouseInventoryModal) — player-managed, not
+// automatic. Food stashed here is eaten before a hungry bird walks to the
+// feed shop (see ai.ts's stepShopFood); treasure stashed here is excluded
+// from autonomous merchant sales entirely (it's moved out of `items`, not
+// just flagged). Both capped at small, easy-to-reason-about counts —
+// generous enough to feel like a real stash, not a second warehouse.
+export const HOUSE_FOOD_CAP = 5;
+export const HOUSE_TREASURE_CAP = 5;
+
 export const STARTING_GOLD = 300;
 export const STARTING_MATERIALS = {
   wood: 0,

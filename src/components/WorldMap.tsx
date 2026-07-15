@@ -151,6 +151,7 @@ interface Props {
   onShopPress: (shopKind: ShopKind) => void;
   onMerchantPress: () => void;
   onTownHallPress: () => void;
+  onHousePress: (defId: string) => void;
 }
 
 export function WorldMap({
@@ -168,6 +169,7 @@ export function WorldMap({
   onShopPress,
   onMerchantPress,
   onTownHallPress,
+  onHousePress,
 }: Props) {
   const fieldWidth = WORLD_CANVAS_WIDTH;
   const fieldHeight = WORLD_CANVAS_HEIGHT;
@@ -398,14 +400,14 @@ export function WorldMap({
         if (!pos) return null;
         const def = getCharacterDef(b.defId);
         return (
-          <View
+          <AnimatedPressable
             key={b.defId}
-            pointerEvents="none"
             style={[styles.house, { left: pos.x * fieldWidth - 18, top: pos.y * fieldHeight - 18, borderColor: def.color }]}
+            onPress={() => onHousePress(b.defId)}
           >
             <Text style={styles.houseEmoji}>🏠</Text>
             <Text style={styles.houseTag}>{def.emoji}</Text>
-          </View>
+          </AnimatedPressable>
         );
       })}
 

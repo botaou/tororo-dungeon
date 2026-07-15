@@ -382,6 +382,18 @@ export interface BirdState {
   // see game/birdStats.ts's maybeAutoEquip. Never auto-replaces something
   // already equipped; extra copies just sit unequipped in `items`.
   equipment: Record<EquipSlot, ItemId | null>;
+  // A bird's own house storage — player-managed, tapped into via the
+  // HouseInventoryModal, distinct from the automatic inventory/items above.
+  // Food stashed here is eaten (see ai.ts's stepShopFood) before a hungry
+  // bird walks to the feed shop at all. Capped at HOUSE_FOOD_CAP total
+  // units (see game/config.ts).
+  houseFood: Partial<Record<ItemId, number>>;
+  // Convertible items the player has manually set aside as a bird's
+  // "favorites" — moved out of `items` entirely (not just flagged), so
+  // they're automatically excluded from the autonomous sell-to-merchant
+  // logic (see ai.ts's hasConvertibleItems/pickMerchantSellOffer, which
+  // only ever look at `items`). Capped at HOUSE_TREASURE_CAP entries.
+  houseTreasureIds: ItemId[];
   // Provisional growth system: exp comes only from combat contribution.
   // `exp` resets toward 0 each time it crosses the current level's
   // threshold (see expToNextLevel in game/config.ts) rather than

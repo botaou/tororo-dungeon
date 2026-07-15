@@ -46,6 +46,11 @@ interface PlayerActions {
   // merchant to fulfill a 'merchantDeliver' job request (see useWorldStore's
   // deliverToMerchant). Returns false if the warehouse doesn't have enough.
   consumeItems: (itemId: ItemId, amount: number) => boolean;
+  // Adds `amount` units of an item straight into the warehouse, no cost —
+  // the inverse of consumeItems. Used when a bird's house food stock (see
+  // HouseInventoryModal) is withdrawn back into the shared warehouse; the
+  // item was already paid for once when it was originally deposited.
+  addItems: (itemId: ItemId, amount: number) => void;
   // Background NPC restock for feed-shop commodity staples: adds straight
   // to the shelf (bypassing the crafted-goods warehouse) at a cost to gold.
   restockShopItem: (shopKind: ShopKind, itemId: ItemId, amount: number, unitCost: number) => void;
@@ -154,6 +159,11 @@ export const usePlayerStore = create<PlayerStore>()(
         if ((items[itemId] ?? 0) < amount) return false;
         set({ items: { ...items, [itemId]: (items[itemId] ?? 0) - amount } });
         return true;
+      },
+
+      addItems: (itemId, amount) => {
+        const { items } = get();
+        set({ items: { ...items, [itemId]: (items[itemId] ?? 0) + amount } });
       },
 
       restockShopItem: (shopKind, itemId, amount, unitCost) => {

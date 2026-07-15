@@ -194,6 +194,10 @@ export interface AiStepOutcome {
   // the activity log; the item itself is already credited to the bird
   // in-place (see executeGather).
   bonusItemFound: ItemId | null;
+  // Set when a hungry bird ate from its own house food stock instead of
+  // walking to the feed shop (see tryEatHouseFood) — purely for the
+  // activity log; the stock decrement already happened in-place.
+  ateHouseFood: ItemId | null;
 }
 
 function emptyOutcome(): AiStepOutcome {
@@ -210,6 +214,7 @@ function emptyOutcome(): AiStepOutcome {
     merchantSellAttempt: null,
     merchantBuyAttempt: null,
     bonusItemFound: null,
+    ateHouseFood: null,
   };
 }
 
@@ -301,6 +306,16 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
   }
 
   if (bird.mood === 'hungry') {
+    // A real-device request: a bird's own house food stock (see
+    // HouseInventoryModal) should be eaten first, before ever walking to
+    // the feed shop — it's already "at home," so this resolves instantly
+    // with no travel needed, unlike stepShopFood's trip.
+    const ateItemId = tryEatHouseFood(bird);
+    if (ateItemId) {
+      const outcome = emptyOutcome();
+      outcome.ateHouseFood = ateItemId;
+      return outcome;
+    }
     return stepShopFood(bird, world);
   }
   if (bird.mood === 'sleepy') {
@@ -422,6 +437,23 @@ function stepHomeNeed(bird: BirdState, activity: 'resting'): AiStepOutcome {
     }
   }
   return emptyOutcome();
+}
+
+// Eats one unit from the bird's own house food stock, if any — see
+// HouseInventoryModal. Returns the itemId eaten (for the activity log) or
+// null if the stock is empty, in which case the caller falls back to
+// stepShopFood's shop trip.
+function tryEatHouseFood(bird: BirdState): ItemId | null {
+  for (const [itemId, amount] of Object.entries(bird.houseFood) as [ItemId, number][]) {
+    if ((amount ?? 0) > 0) {
+      bird.houseFood[itemId] = amount - 1;
+      bird.satiety = STARTING_SATIETY;
+      bird.mood = 'normal';
+      bird.moodChangedAt = Date.now();
+      return itemId;
+    }
+  }
+  return null;
 }
 
 // Picks an affordable, in-stock food item at the feed shop for a hungry

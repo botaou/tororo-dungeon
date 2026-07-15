@@ -43,7 +43,13 @@ import {
 import { getEffectiveStats, maybeAutoEquip } from '../game/birdStats';
 import { MATERIAL_LABEL } from '../data/materials';
 import { describeJobTarget, JOB_KIND_UNIT_LABEL, JobPreset } from '../data/jobPresets';
-import { ITEM_DEF_MAP, MERCHANT_COMMON_ITEM_IDS, MERCHANT_RARE_ITEM_IDS, RESTOCKED_ITEM_IDS } from '../data/items';
+import {
+  CONVERTIBLE_ITEM_IDS,
+  ITEM_DEF_MAP,
+  MERCHANT_COMMON_ITEM_IDS,
+  MERCHANT_RARE_ITEM_IDS,
+  RESTOCKED_ITEM_IDS,
+} from '../data/items';
 import { MATERIAL_SELL_PRICE } from '../data/marketPrices';
 import {
   ACTIVITY_LOG_MAX,
@@ -66,6 +72,8 @@ import {
   MERCHANT_VISIT_DURATION_MAX_MS,
   MERCHANT_VISIT_DURATION_MIN_MS,
   MINING_RESPAWN_MS,
+  HOUSE_FOOD_CAP,
+  HOUSE_TREASURE_CAP,
   MOOD_REFRESH_MS,
   OVERFLOW_SELL_MAX_GOLD_PER_TRIP,
   RECIPE_COMBAT_CHANCE,
@@ -199,6 +207,8 @@ function buildInitialWorld(): WorldState {
       inventory: { ...wallet.inventory },
       items: { ...wallet.items },
       equipment: { ...wallet.equipment },
+      houseFood: { ...wallet.houseFood },
+      houseTreasureIds: [...wallet.houseTreasureIds],
       level: wallet.level,
       exp: wallet.exp,
       wanderX: null,
@@ -301,6 +311,14 @@ interface WorldActions {
   // carries or uses. Returns false if there's no merchant, no offer, or not
   // enough gold.
   buyMerchantRecipe: () => boolean;
+  // House storage (see HouseInventoryModal) — all four return false (no
+  // state change) if the move isn't possible (nothing to move, no room at
+  // the destination, wrong item category, etc.) rather than partially
+  // applying or throwing.
+  depositFoodToHouse: (defId: string, itemId: ItemId, amount: number) => boolean;
+  withdrawFoodFromHouse: (defId: string, itemId: ItemId, amount: number) => boolean;
+  favoriteTreasure: (defId: string, itemId: ItemId) => boolean;
+  unfavoriteTreasure: (defId: string, itemId: ItemId) => boolean;
 }
 
 // Shared by reportCraftCompleted and deliverToMerchant — both are player-
@@ -438,6 +456,84 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         recipeUnlockEvents: [...world.recipeUnlockEvents, { recipeId: offer.recipeId, source: 'merchant' }],
       },
     });
+    return true;
+  },
+
+  depositFoodToHouse: (defId, itemId, amount) => {
+    if (ITEM_DEF_MAP[itemId].category !== 'food') return false;
+    const { world } = get();
+    const birdIndex = world.birds.findIndex((b) => b.defId === defId);
+    if (birdIndex === -1) return false;
+    const bird = world.birds[birdIndex];
+    const currentTotal = Object.values(bird.houseFood).reduce((sum, a) => sum + (a ?? 0), 0);
+    const headroom = HOUSE_FOOD_CAP - currentTotal;
+    const owned = usePlayerStore.getState().items[itemId] ?? 0;
+    const moved = Math.min(amount, headroom, owned);
+    if (moved <= 0) return false;
+    usePlayerStore.getState().consumeItems(itemId, moved);
+    const nextBirds = [...world.birds];
+    nextBirds[birdIndex] = { ...bird, houseFood: { ...bird.houseFood, [itemId]: (bird.houseFood[itemId] ?? 0) + moved } };
+    set({ world: { ...world, birds: nextBirds } });
+    return true;
+  },
+
+  withdrawFoodFromHouse: (defId, itemId, amount) => {
+    const { world } = get();
+    const birdIndex = world.birds.findIndex((b) => b.defId === defId);
+    if (birdIndex === -1) return false;
+    const bird = world.birds[birdIndex];
+    const stocked = bird.houseFood[itemId] ?? 0;
+    const moved = Math.min(amount, stocked);
+    if (moved <= 0) return false;
+    usePlayerStore.getState().addItems(itemId, moved);
+    const nextBirds = [...world.birds];
+    nextBirds[birdIndex] = { ...bird, houseFood: { ...bird.houseFood, [itemId]: stocked - moved } };
+    set({ world: { ...world, birds: nextBirds } });
+    return true;
+  },
+
+  // Moves one unit of a convertible item out of `items` and into the
+  // bird's favorites list — physically removing it from `items` (not just
+  // flagging it) is what keeps it out of hasConvertibleItems/
+  // pickMerchantSellOffer's reach in ai.ts, so a favorited treasure can
+  // never get auto-sold to the merchant.
+  favoriteTreasure: (defId, itemId) => {
+    if (!CONVERTIBLE_ITEM_IDS.includes(itemId)) return false;
+    const { world } = get();
+    const birdIndex = world.birds.findIndex((b) => b.defId === defId);
+    if (birdIndex === -1) return false;
+    const bird = world.birds[birdIndex];
+    if (bird.houseTreasureIds.length >= HOUSE_TREASURE_CAP) return false;
+    const owned = bird.items[itemId] ?? 0;
+    if (owned <= 0) return false;
+    const nextBirds = [...world.birds];
+    nextBirds[birdIndex] = {
+      ...bird,
+      items: { ...bird.items, [itemId]: owned - 1 },
+      houseTreasureIds: [...bird.houseTreasureIds, itemId],
+    };
+    set({ world: { ...world, birds: nextBirds } });
+    return true;
+  },
+
+  // Reverse of favoriteTreasure — moves one unit back into `items`, making
+  // it sellable to the merchant again.
+  unfavoriteTreasure: (defId, itemId) => {
+    const { world } = get();
+    const birdIndex = world.birds.findIndex((b) => b.defId === defId);
+    if (birdIndex === -1) return false;
+    const bird = world.birds[birdIndex];
+    const idx = bird.houseTreasureIds.indexOf(itemId);
+    if (idx === -1) return false;
+    const nextTreasureIds = [...bird.houseTreasureIds];
+    nextTreasureIds.splice(idx, 1);
+    const nextBirds = [...world.birds];
+    nextBirds[birdIndex] = {
+      ...bird,
+      items: { ...bird.items, [itemId]: (bird.items[itemId] ?? 0) + 1 },
+      houseTreasureIds: nextTreasureIds,
+    };
+    set({ world: { ...world, birds: nextBirds } });
     return true;
   },
 
@@ -688,6 +784,11 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       if (outcome.foodPurchase > 0) {
         usePlayerStore.getState().creditFoodToll(outcome.foodPurchase);
         newLog.push(makeLogEntry(bird.name, 'buyFood', `${bird.name}が餌を購入した(+${outcome.foodPurchase}G)`));
+      }
+      if (outcome.ateHouseFood) {
+        newLog.push(
+          makeLogEntry(bird.name, 'buyFood', `${bird.name}が家に備蓄していた${ITEM_DEF_MAP[outcome.ateHouseFood].name}を食べた`)
+        );
       }
       if (outcome.sellAttempt) {
         // A bird offers one material at a time (see pickSellOffer in ai.ts).
@@ -944,6 +1045,8 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         inventory: b.inventory,
         items: b.items,
         equipment: b.equipment,
+        houseFood: b.houseFood,
+        houseTreasureIds: b.houseTreasureIds,
         level: b.level,
         exp: b.exp,
         atk: b.atk,

@@ -18,6 +18,10 @@ export interface BirdWallet {
   inventory: Record<MaterialId, number>;
   items: Partial<Record<ItemId, number>>;
   equipment: Record<EquipSlot, ItemId | null>;
+  // See BirdState's matching fields (types.ts) — house storage, managed by
+  // HouseInventoryModal.
+  houseFood: Partial<Record<ItemId, number>>;
+  houseTreasureIds: ItemId[];
   level: number;
   exp: number;
   atk: number;
@@ -40,6 +44,8 @@ function defaultWallet(defId: string): BirdWallet {
     inventory: { ...STARTING_MATERIALS },
     items: {},
     equipment: { weapon: null, armor: null, hat: null, shield: null },
+    houseFood: {},
+    houseTreasureIds: [],
     level: 1,
     exp: 0,
     atk: def.baseAtk,
