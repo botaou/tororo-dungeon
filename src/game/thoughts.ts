@@ -22,6 +22,8 @@ interface ThoughtLines {
   wantsMoney?: string;
   strolling?: string;
   playing?: string;
+  chatting?: string;
+  napping?: string;
 }
 
 // Flavor lines shown when the player taps a bird — a hint at what it's
@@ -45,6 +47,8 @@ const LINES: Record<string, ThoughtLines> = {
     wantsMoney: '稼げる依頼はないかな',
     strolling: 'ちょっと寄り道しちゃおう',
     playing: '遊ぶの楽しい！',
+    chatting: 'なあなあ、聞いてくれよ！',
+    napping: 'すー……すー……(ぐっすり)',
   },
   vivi: {
     idle: 'トロロと一緒なら行く',
@@ -63,6 +67,8 @@ const LINES: Record<string, ThoughtLines> = {
     wantsMoney: '依頼、受けてみようかな',
     strolling: 'このお花、かわいい！',
     playing: 'きゃっきゃ！たのしい〜！',
+    chatting: 'ねえねえ、聞いて聞いて！',
+    napping: 'むにゃむにゃ……',
   },
   haku: {
     idle: '今日は近場がいい',
@@ -81,6 +87,8 @@ const LINES: Record<string, ThoughtLines> = {
     wantsMoney: '依頼をこなそうかな',
     strolling: '少し遠回りしていこう',
     playing: '静かに過ごすのもいいものだ',
+    chatting: 'ちょっとした立ち話も、悪くないですね',
+    napping: '……(すやすや)',
   },
   mone: {
     idle: '鉱石掘りたい',
@@ -101,6 +109,8 @@ const LINES: Record<string, ThoughtLines> = {
     wantsMoney: 'お金になるものを探そう',
     strolling: 'キラキラしたもの落ちてないかな',
     playing: '掘り出し物ないかな〜',
+    chatting: 'ねえ、面白い話があるんだけど！',
+    napping: 'ぐー……ぐー……',
   },
 };
 

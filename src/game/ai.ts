@@ -36,6 +36,10 @@ import {
   MERCHANT_SELL_CHECK_CHANCE,
   MIN_BIRD_DISTANCE,
   MOVE_SPEED,
+  NAP_CHANCE_BASE,
+  NAP_CHANCE_GOOD_MOOD,
+  NAP_DWELL_TICKS,
+  NAP_GOOD_MOOD_THRESHOLD,
   OVERFLOW_SELL_MARGIN,
   OVERFLOW_SELL_MAX_PER_TRIP,
   PLAY_DWELL_TICKS,
@@ -225,6 +229,9 @@ export interface AiStepOutcome {
   // Set the tick a bird commits to a fresh detour stroll (see executeDetour)
   // — purely for the activity log.
   detourStarted: boolean;
+  // Set the tick a bird commits to a fresh at-home nap (see executeNap) —
+  // purely for the activity log.
+  startedNapping: boolean;
   // Set when a play-session's per-tick inspiration roll hits — the stat/
   // skill change itself already happened in-place (see executePlay); this
   // is purely for the activity log + (for a skill) the notification modal.
@@ -248,6 +255,7 @@ function emptyOutcome(): AiStepOutcome {
     ateHouseFood: null,
     startedPlaying: null,
     detourStarted: false,
+    startedNapping: false,
     inspiration: null,
   };
 }
@@ -264,6 +272,7 @@ function categoryOf(targetKind: BirdState['targetKind']): ActivityCategory | nul
     case 'rest':
     case 'river':
     case 'pond':
+    case 'nap':
       return 'rest';
     case 'play':
       return 'play';
@@ -346,6 +355,18 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
   const isRecovering = bird.activity === 'recovering' ? bird.hp < bird.maxHp : bird.hp <= 0 || bird.hp < bird.maxHp * LOW_HP_RETREAT_THRESHOLD_PERCENT;
   if (isRecovering) {
     return stepRecover(bird);
+  }
+
+  // A real-device request: the chat speech bubble (see useWorldStore's
+  // tick, which sets this) barely registered because the bird kept right on
+  // moving while it showed, making the pause hard to connect to the bubble.
+  // Holding the bird here (skipping every other decision for a few ticks,
+  // second in priority only to recovering) makes "stopped to talk" an
+  // actual visible beat instead of a passing coincidence.
+  if (bird.chatPauseTicks > 0) {
+    bird.chatPauseTicks -= 1;
+    bird.activity = 'chatting';
+    return emptyOutcome();
   }
 
   if (bird.currentJobId) {
@@ -978,7 +999,21 @@ function executeRest(bird: BirdState, world: AiWorld): AiStepOutcome {
     return emptyOutcome();
   }
 
-  // Fresh decision: leisure spot or just a stroll near town.
+  if (bird.targetKind === 'nap') {
+    return executeNap(bird);
+  }
+
+  // Fresh decision: a nap at home, a leisure spot, or just a stroll near
+  // town. Checked first (see NAP_GOOD_MOOD_THRESHOLD) so a comfortable bird
+  // reliably gets a shot at the calmer option instead of it always losing
+  // out to LEISURE_CHANCE's fairly high roll.
+  const goodMood = bird.happiness >= NAP_GOOD_MOOD_THRESHOLD && bird.satiety >= NAP_GOOD_MOOD_THRESHOLD;
+  if (Math.random() < (goodMood ? NAP_CHANCE_GOOD_MOOD : NAP_CHANCE_BASE)) {
+    bird.targetKind = 'nap';
+    bird.targetRefUid = null;
+    bird.workProgress = 0;
+    return executeNap(bird);
+  }
   if (world.leisureSpots.length > 0 && Math.random() < LEISURE_CHANCE) {
     const spot = nearest(world.leisureSpots, bird.x, bird.y);
     if (spot) {
@@ -997,36 +1032,45 @@ function executeRest(bird: BirdState, world: AiWorld): AiStepOutcome {
   return emptyOutcome();
 }
 
-// A short aimless stroll near town — mechanically almost identical to
-// executeRest's own "just mill around" branch, just tagged with its own
-// activity/log line so it reads as a deliberate little detour rather than
-// ordinary resting (real-device request: "寄り道する(例えば街をぶらぶら歩く、
-// 花を眺めるなど)"). Entered only from stepBird's fresh-decision point (see
-// detourChance), never as a mid-pursuit interrupt.
+// A little detour — real-device request: "寄り道する(例えば街をぶらぶら歩く、
+// 花を眺めるなど)". The first version walked to a random nearby point, but
+// since that point always sat well within a single tick's MOVE_SPEED, the
+// whole thing resolved in 1-2 ticks — too fast to actually notice among 4
+// independently-moving birds (a second real-device report). Rather than
+// walk anywhere, the bird just stops in place for DETOUR_DWELL_TICKS ticks
+// with the strolling badge up — a real, visible pause instead of a blink-
+// and-miss-it teleport. Entered only from stepBird's fresh-decision point
+// (see detourChance), never as a mid-pursuit interrupt, so it can't stall
+// out a job/combat/mining pursuit already underway.
 function executeDetour(bird: BirdState): AiStepOutcome {
   const outcome = emptyOutcome();
-  const hasDest = bird.wanderX !== null && bird.wanderY !== null;
-  if (!hasDest) {
-    const angle = Math.random() * Math.PI * 2;
-    const dist = 0.03 + Math.random() * 0.05;
-    const dest = {
-      x: Math.min(0.92, Math.max(0.08, bird.x + Math.cos(angle) * dist)),
-      y: Math.min(0.88, Math.max(0.16, bird.y + Math.sin(angle) * dist)),
-    };
-    bird.wanderX = dest.x;
-    bird.wanderY = dest.y;
-    bird.activity = 'strolling';
-    outcome.detourStarted = true;
-    return outcome;
-  }
-  const arrived = moveToward(bird, bird.wanderX!, bird.wanderY!);
   bird.activity = 'strolling';
+  bird.workProgress += 1;
+  if (bird.workProgress === 1) outcome.detourStarted = true;
+  if (bird.workProgress >= DETOUR_DWELL_TICKS) {
+    bird.targetKind = null;
+    bird.workProgress = 0;
+  }
+  return outcome;
+}
+
+// A longer, discretionary at-home rest — real-device request: birds looked
+// restless with nothing but short activities in between errands. Unlike
+// stepHomeNeed's forced "sleepy mood" homing, this is just one of rest's own
+// sub-choices (see executeRest), picked more often when the bird is already
+// comfortable (see NAP_GOOD_MOOD_THRESHOLD) rather than only when actually
+// tired. Dwells far longer than any other rest sub-behavior (NAP_DWELL_TICKS)
+// so it reads as an actual pause in the pace, not another quick errand.
+function executeNap(bird: BirdState): AiStepOutcome {
+  const outcome = emptyOutcome();
+  const house = getHousePosition(bird.defId);
+  const arrived = moveToward(bird, house.x, house.y);
+  bird.activity = 'napping';
   if (arrived) {
     bird.workProgress += 1;
-    if (bird.workProgress >= DETOUR_DWELL_TICKS) {
+    if (bird.workProgress === 1) outcome.startedNapping = true;
+    if (bird.workProgress >= NAP_DWELL_TICKS) {
       bird.targetKind = null;
-      bird.wanderX = null;
-      bird.wanderY = null;
       bird.workProgress = 0;
     }
   }

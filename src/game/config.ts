@@ -318,13 +318,48 @@ export const PLAY_DWELL_TICKS = 3;
 // a pursuit already underway (job/combat/mining stay untouched).
 export const DETOUR_CHANCE_BASE = 0.02;
 export const DETOUR_CHANCE_LOW_MOOD = 0.06;
-export const DETOUR_DWELL_TICKS = 2;
+// A real-device request: a detour used to walk the bird to a nearby random
+// point and barely dwell there, over almost before it started — too fast to
+// actually notice among 4 independently-moving birds. executeDetour no
+// longer moves the bird at all now (see its own comment); this is just how
+// many seconds (1 tick ≈ 1s, see TICK_MS) it stands still with the
+// strolling badge up.
+export const DETOUR_DWELL_TICKS = 3;
 // Two nearby recruited birds occasionally pause to "chat" — a cosmetic
-// speech-bubble overlay only (see BirdState.chatLine), checked once per tick
-// per pair within this distance of each other.
-export const CHAT_PROXIMITY_DIST = 0.06;
-export const CHAT_CHANCE_BASE = 0.015;
-export const CHAT_CHANCE_LOW_MOOD_MULT = 2;
+// speech-bubble overlay (see BirdState.chatLine) plus a brief in-place pause
+// (see BirdState.chatPauseTicks) — checked once per tick per eligible pair
+// within this distance of each other.
+//
+// A real-device request: chat almost never fired because the old formula
+// multiplied a very small base chance by a mood boost, so a bird whose
+// happiness stayed comfortably high (the common case) got the *lowest*
+// version of an already-tiny number. Split into a real base rate (fires
+// regardless of mood) plus a modest additive bonus when either bird's
+// happiness is low, and widened the proximity check — the old 0.06 sat
+// right at the edge of MIN_BIRD_DISTANCE's own push-apart radius (0.05), so
+// two birds were almost never actually inside it. These are a first-pass
+// balance (aimed at "at least once every ~5 minutes of normal play"); retune
+// after playing if it's still too rare/frequent.
+export const CHAT_PROXIMITY_DIST = 0.12;
+export const CHAT_CHANCE_BASE = 0.05;
+export const CHAT_CHANCE_LOW_MOOD_BONUS = 0.05;
+// How many ticks a chatting pair stands still (see BirdState.chatPauseTicks)
+// — long enough that the speech bubble reads as "the reason they stopped,"
+// not a coincidence during a stop they were already going to make.
+export const CHAT_PAUSE_TICKS = 3;
+
+// A real-device request: birds looked restless/fidgety with nothing but
+// short activities. Adds a longer, discretionary "go home and nap" option
+// within the 'rest' category (see ai.ts's executeNap) — picked more often
+// when a bird is already comfortable (happiness and satiety both at/above
+// this threshold) rather than only when actually sleepy.
+export const NAP_GOOD_MOOD_THRESHOLD = 60;
+export const NAP_CHANCE_BASE = 0.15;
+export const NAP_CHANCE_GOOD_MOOD = 0.4;
+// Deliberately much longer than any other rest sub-behavior's dwell (see
+// LEISURE_DWELL_TICKS/DETOUR_DWELL_TICKS) — the whole point is a visibly
+// calmer, slower beat.
+export const NAP_DWELL_TICKS = 8;
 // Each tick spent actually playing (see ai.ts's executePlay), independent
 // rolls for a small stat bump ("中程度") and, far rarer, a whole new
 // permanent skill ("かなり低い") — see data/skills.ts.

@@ -32,6 +32,14 @@ export function getBirdStatusLabel(bird: BirdState): string {
       return '水浴び中';
     case 'fishing':
       return '釣り中';
+    case 'strolling':
+      return '寄り道中';
+    case 'playing':
+      return '遊び中';
+    case 'chatting':
+      return 'おしゃべり中';
+    case 'napping':
+      return 'お昼寝中';
     case 'idle':
     default:
       return '移動中';
@@ -68,6 +76,12 @@ export function getBirdGoalLabel(bird: BirdState): string {
       return '探検中';
     case 'rest':
       return '散歩中';
+    case 'detour':
+      return '寄り道している';
+    case 'play':
+      return '遊んでいる';
+    case 'nap':
+      return '家でお昼寝している';
     default:
       return '次の行動を考え中';
   }

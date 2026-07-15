@@ -361,6 +361,7 @@ export function WorldMap({
             def={def}
             state={shopKind ? { ...state, unlocked: true, building: 'shop' } : state}
             shopEmoji={shopKind ? SHOP_DEFS[shopKind].emoji : undefined}
+            shopName={shopKind ? SHOP_DEFS[shopKind].name : undefined}
             levelLocked={levelLocked}
             x={def.x * fieldWidth}
             y={def.y * fieldHeight}
@@ -607,6 +608,7 @@ function PlotSprite({
   def,
   state,
   shopEmoji,
+  shopName,
   levelLocked,
   x,
   y,
@@ -615,6 +617,7 @@ function PlotSprite({
   def: (typeof TOWN_PLOT_DEFS)[number];
   state: TownPlotState;
   shopEmoji?: string;
+  shopName?: string;
   levelLocked: boolean;
   x: number;
   y: number;
@@ -656,11 +659,28 @@ function PlotSprite({
   // but render as 🛠️/🌾 respectively once matched back to their option.
   const constructedOption = getBuildingOption(state.constructedBuildingId);
   const buildingIcon = constructedOption?.emoji ?? (state.building ? BUILDING_ICON[state.building] : '·');
+  // A real-device request: a constructed building (in particular the new
+  // park/bathhouse — see Phase 11) was hard to tell apart from any other
+  // small emoji dotted around the map, since only the bare icon rendered
+  // with no name at all. A short label underneath — same idea as the house/
+  // merchant/town-hall sprites already have — makes what's actually built
+  // here unambiguous at a glance.
+  const label = shopName ?? constructedOption?.name;
 
   return (
-    <AnimatedPressable style={[styles.plot, styles.plotOpen, { left: x - 18, top: y - 18 }]} onPress={onPress}>
-      <Text style={styles.plotBuildingIcon}>{shopEmoji ?? buildingIcon}</Text>
-    </AnimatedPressable>
+    <>
+      <AnimatedPressable style={[styles.plot, styles.plotOpen, { left: x - 18, top: y - 18 }]} onPress={onPress}>
+        <Text style={styles.plotBuildingIcon}>{shopEmoji ?? buildingIcon}</Text>
+      </AnimatedPressable>
+      {/* The plot box itself clips at 36x36 (overflow: hidden), so the
+          label is a separate sibling positioned just below it rather than a
+          child — otherwise it'd get cut off before ever becoming visible. */}
+      {label && (
+        <Text pointerEvents="none" style={[styles.plotBuildingLabel, { left: x - 30, top: y + 19 }]} numberOfLines={1}>
+          {label}
+        </Text>
+      )}
+    </>
   );
 }
 
@@ -860,7 +880,9 @@ function BirdSprite({
     bird.activity === 'merchantSelling' ||
     bird.activity === 'recovering' ||
     bird.activity === 'strolling' ||
-    bird.activity === 'playing';
+    bird.activity === 'playing' ||
+    bird.activity === 'chatting' ||
+    bird.activity === 'napping';
 
   useEffect(() => {
     if (isSulking || isPassiveActivity) return;
@@ -929,6 +951,8 @@ function BirdSprite({
             <Text style={styles.carryBadge}>💰</Text>
           )}
           {bird.activity === 'playing' && <Text style={styles.carryBadge}>🎉</Text>}
+          {bird.activity === 'strolling' && <Text style={styles.carryBadge}>💭</Text>}
+          {bird.activity === 'napping' && <Text style={styles.carryBadge}>😴</Text>}
           <Text style={styles.nameTag}>{bird.name}</Text>
           <View style={styles.miniBarTrack}>
             <View style={[styles.miniBarFill, { width: `${ratio * 100}%`, backgroundColor: def.color }]} />
@@ -1030,6 +1054,17 @@ const styles = StyleSheet.create({
   plotLockIcon: { fontSize: 16 },
   plotCostText: { fontSize: 8, fontWeight: '700', color: theme.textMuted, marginTop: 1 },
   plotBuildingIcon: { fontSize: 22, color: theme.textMuted },
+  plotBuildingLabel: {
+    position: 'absolute',
+    width: 60,
+    fontSize: 8,
+    fontWeight: '700',
+    color: theme.textPrimary,
+    textAlign: 'center',
+    backgroundColor: 'rgba(255,255,255,0.75)',
+    borderRadius: 6,
+    paddingHorizontal: 2,
+  },
   plotUntamed: {
     borderWidth: 1,
     borderColor: 'rgba(107, 189, 110, 0.3)',

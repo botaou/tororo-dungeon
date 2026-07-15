@@ -56,7 +56,8 @@ import { MATERIAL_SELL_PRICE } from '../data/marketPrices';
 import {
   ACTIVITY_LOG_MAX,
   CHAT_CHANCE_BASE,
-  CHAT_CHANCE_LOW_MOOD_MULT,
+  CHAT_CHANCE_LOW_MOOD_BONUS,
+  CHAT_PAUSE_TICKS,
   CHAT_PROXIMITY_DIST,
   ENEMY_RESPAWN_MS,
   expToNextLevel,
@@ -234,6 +235,7 @@ function buildInitialWorld(): WorldState {
       wanderY: null,
       chatLine: null,
       chatLineSetAt: 0,
+      chatPauseTicks: 0,
     };
   });
 
@@ -827,6 +829,9 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         const line = DETOUR_LOG_LINES[Math.floor(Math.random() * DETOUR_LOG_LINES.length)];
         newLog.push(makeLogEntry(bird.name, 'detour', `${bird.name}${line}`));
       }
+      if (outcome.startedNapping) {
+        newLog.push(makeLogEntry(bird.name, 'nap', `${bird.name}が家でのんびり昼寝している`));
+      }
       if (outcome.inspiration) {
         if (outcome.inspiration.kind === 'skill') {
           const skillDef = BIRD_SKILL_DEF_MAP[outcome.inspiration.skillId];
@@ -1081,28 +1086,42 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     const finalBirds = separateBirds(healedBirds);
 
     // Phase 11's ambient "chat" flavor: two nearby recruited birds
-    // occasionally pause to exchange a line — purely a cosmetic speech-
-    // bubble overlay (see BirdState.chatLine), never touching movement or
-    // activity state. This has to live here rather than in ai.ts's stepBird
-    // (which only ever sees one bird at a time) since only the tick loop has
-    // every bird's final position at once. Checked after separateBirds so
-    // positions are this tick's real, final ones.
+    // occasionally pause to exchange a line — a cosmetic speech-bubble
+    // overlay (see BirdState.chatLine) plus a brief in-place pause (see
+    // BirdState.chatPauseTicks/stepBird), so the bubble actually reads as
+    // "why they stopped" rather than a blink during otherwise-constant
+    // motion (real-device report). This has to live here rather than in
+    // ai.ts's stepBird (which only ever sees one bird at a time) since only
+    // the tick loop has every bird's final position at once. Checked after
+    // separateBirds so positions are this tick's real, final ones.
+    //
+    // Only eligible while a bird is already doing something "free" —
+    // pausing mid-combat/mid-job/mid-carry would either look broken (a
+    // fighting bird frozen next to its target) or interfere with the job/
+    // delivery flow this feature is explicitly not supposed to touch.
+    const CHAT_ELIGIBLE_ACTIVITIES = new Set(['idle', 'resting', 'strolling', 'playing', 'bathing', 'fishing']);
     for (let i = 0; i < finalBirds.length; i++) {
       const a = finalBirds[i];
-      if (!a.isRecruited || a.hp <= 0) continue;
+      if (!a.isRecruited || a.hp <= 0 || a.currentJobId || !CHAT_ELIGIBLE_ACTIVITIES.has(a.activity)) continue;
       for (let j = i + 1; j < finalBirds.length; j++) {
         const b = finalBirds[j];
-        if (!b.isRecruited || b.hp <= 0) continue;
+        if (!b.isRecruited || b.hp <= 0 || b.currentJobId || !CHAT_ELIGIBLE_ACTIVITIES.has(b.activity)) continue;
         if (Math.hypot(a.x - b.x, a.y - b.y) > CHAT_PROXIMITY_DIST) continue;
-        const moodBoost =
-          a.happiness <= HAPPINESS_LOW_THRESHOLD || b.happiness <= HAPPINESS_LOW_THRESHOLD
-            ? CHAT_CHANCE_LOW_MOOD_MULT
-            : 1;
-        if (Math.random() >= CHAT_CHANCE_BASE * moodBoost) continue;
+        // Additive, not multiplicative — a real-device report found chat
+        // almost never fired because a tiny base chance got multiplied by
+        // the mood boost, so a bird whose happiness stayed comfortably high
+        // (the common case) got the *smallest* version of an already-tiny
+        // number. A flat base rate now fires regardless of mood, with only
+        // a modest top-up when either bird is unhappy.
+        const lowMoodBonus =
+          a.happiness <= HAPPINESS_LOW_THRESHOLD || b.happiness <= HAPPINESS_LOW_THRESHOLD ? CHAT_CHANCE_LOW_MOOD_BONUS : 0;
+        if (Math.random() >= CHAT_CHANCE_BASE + lowMoodBonus) continue;
         a.chatLine = CHAT_LINES[Math.floor(Math.random() * CHAT_LINES.length)];
         a.chatLineSetAt = now;
+        a.chatPauseTicks = CHAT_PAUSE_TICKS;
         b.chatLine = CHAT_LINES[Math.floor(Math.random() * CHAT_LINES.length)];
         b.chatLineSetAt = now;
+        b.chatPauseTicks = CHAT_PAUSE_TICKS;
       }
     }
 

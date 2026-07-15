@@ -321,13 +321,22 @@ export type ActivityKind =
   // Phase 11: a short aimless stroll near town (see ai.ts's executeDetour),
   // and playing at a constructed park/bathhouse (see executePlay).
   | 'strolling'
-  | 'playing';
+  | 'playing'
+  // Phase 11 follow-up: an ambient two-bird chat pause (see BirdState.
+  // chatPauseTicks) and a longer, discretionary at-home nap (see
+  // ai.ts's executeNap) — both added so the new flavor behaviors read as a
+  // visible "stop and do this" beat instead of birds staying in constant
+  // motion.
+  | 'chatting'
+  | 'napping';
 
 // A pursuit goal a bird's AI is actively working toward. A job is just a
 // mining/treasure pursuit restricted to a specific request's material and
 // tagged with which request it fulfills (see BirdState.currentJobId).
 // 'detour' and 'play' are Phase 11 additions — see ai.ts's executeDetour/
-// executePlay.
+// executePlay. 'nap' is the Phase 11 follow-up's at-home rest option (see
+// executeNap) — grouped under the same 'rest' ActivityCategory as
+// 'river'/'pond'/'rest' itself (see categoryOf).
 export type TargetKind =
   | 'enemy'
   | 'mining'
@@ -339,7 +348,8 @@ export type TargetKind =
   | 'shop'
   | 'townHall'
   | 'detour'
-  | 'play';
+  | 'play'
+  | 'nap';
 
 // The five things every bird can choose to do — personality only weights
 // how likely each one is to be picked, it never rules one out entirely.
@@ -438,6 +448,12 @@ export interface BirdState {
   // timestamp the same way it already watches bird.hp for the retreat line).
   chatLine: string | null;
   chatLineSetAt: number;
+  // Ticks remaining in an ambient chat pause (see useWorldStore's tick) —
+  // while > 0, stepBird holds the bird in place (no movement, no other
+  // decisions) so the chat bubble above actually reads as "stopped to talk"
+  // instead of drifting away mid-conversation. Ephemeral, same as
+  // chatLine/chatLineSetAt — never persisted.
+  chatPauseTicks: number;
 }
 
 export type JobStatus = 'open' | 'inProgress' | 'done';
