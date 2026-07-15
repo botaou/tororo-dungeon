@@ -4,14 +4,19 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { EquipSlot, ItemId, MaterialId } from '../types';
 import { getCharacterDef } from '../data/characters';
+import { ITEM_DEF_MAP } from '../data/items';
 import {
   BIRD_INVENTORY_CAP,
+  EQUIPMENT_SALVAGE_FRACTION,
+  EQUIPMENT_SPARE_CAP,
   LEVEL_UP_ATK_GAIN,
   LEVEL_UP_HP_GAIN,
   STARTING_HAPPINESS,
   STARTING_MATERIALS,
   STARTING_SATIETY,
 } from '../game/config';
+
+const EQUIP_CATEGORIES = ['weapon', 'armor', 'hat', 'shield'];
 
 export interface BirdWallet {
   gold: number;
@@ -159,6 +164,24 @@ export const useBirdEconomyStore = create<BirdEconomyState & BirdEconomyActions>
             const trim = Math.min(amount ?? 0, excess);
             merged.inventory[materialId] = (amount ?? 0) - trim;
             excess -= trim;
+          }
+        }
+        // Same idea, for equip-category items (weapon/armor/hat/shield):
+        // EQUIPMENT_SPARE_CAP didn't exist until this same real-device
+        // report (a bird held 193 spare copies of one weapon, all from
+        // uncapped combat-drop crediting — see game/inventoryCap.ts's
+        // addItemCapped), so an existing save can be sitting on a large
+        // pre-cap backlog. Trimmed down to the cap once here — but unlike
+        // the material trim above, the excess is *salvaged* for gold
+        // (matching the "convert overflow to currency, don't just discard
+        // it" ask that prompted this fix) rather than discarded for nothing.
+        for (const itemId of Object.keys(merged.items) as ItemId[]) {
+          if (!EQUIP_CATEGORIES.includes(ITEM_DEF_MAP[itemId].category)) continue;
+          const owned = merged.items[itemId] ?? 0;
+          if (owned > EQUIPMENT_SPARE_CAP) {
+            const excessCount = owned - EQUIPMENT_SPARE_CAP;
+            merged.items[itemId] = EQUIPMENT_SPARE_CAP;
+            merged.gold += Math.round(ITEM_DEF_MAP[itemId].buyPrice * EQUIPMENT_SALVAGE_FRACTION * excessCount);
           }
         }
         return merged;

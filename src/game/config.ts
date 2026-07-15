@@ -111,6 +111,21 @@ export const OVERFLOW_SELL_MARGIN = 20;
 // asking price quickly outgrows what the player can ever afford, and trade
 // freezes up entirely instead of trickling along a little at a time.
 export const SELL_MAX_PER_TRIP = 8;
+
+// Max copies of a single equip-category item (weapon/armor/hat/shield) a
+// bird will hold at once — real-device report: a bird accumulated 193
+// spare copies of the same weapon from repeated combat drops, since drop
+// crediting had no cap at all (materials got one in Phase 9/10, but
+// equipment items never did). Purchases were already safe (pickGearOffer
+// skips a category entirely once anything's equipped in it), so this only
+// ever bites on drops. 2 means "one equipped + one genuine spare" — past
+// that, addEquipmentItemCapped (game/inventoryCap.ts) auto-sells the extra
+// for gold on the spot instead of silently discarding it.
+export const EQUIPMENT_SPARE_CAP = 2;
+// What fraction of an item's normal shop buyPrice a salvaged-overflow copy
+// is worth — well below the merchant's 50/50 convertible-item split, since
+// this is a bird quietly recycling a duplicate rather than a real sale.
+export const EQUIPMENT_SALVAGE_FRACTION = 0.4;
 // When a bird's full offer would cost more than the player currently has,
 // the player still buys a partial amount (see useWorldStore) rather than
 // letting the trip fail outright — but a single sale can never cost the

@@ -44,7 +44,7 @@ import { SHOP_DEFS } from '../data/shops';
 import { CONVERTIBLE_ITEM_IDS, ITEM_DEF_MAP, ITEM_DEFS } from '../data/items';
 import { getEffectiveStats, maybeAutoEquip } from './birdStats';
 import { AttackAssignment } from './combat';
-import { addCappedInventory, totalInventoryAmount } from './inventoryCap';
+import { addCappedInventory, addItemCapped, totalInventoryAmount } from './inventoryCap';
 
 // Personality doesn't gate any activity outright — it just weights how
 // likely each of the four is to be picked when a bird is free to choose.
@@ -806,7 +806,12 @@ function executeGather(bird: BirdState, def: CharacterDef, world: AiWorld): AiSt
           for (const entry of node.bonusDropTable ?? []) {
             if (Math.random() >= entry.chance) continue;
             if (entry.kind === 'item') {
-              bird.items[entry.itemId] = (bird.items[entry.itemId] ?? 0) + 1;
+              // Bonus-table items are convertible treasure today, not
+              // equip-category gear, so this never actually hits the
+              // equip spare cap — routed through the same capped helper as
+              // combat drops anyway, so that stays true if the data ever
+              // changes rather than relying on it staying that way.
+              addItemCapped(bird, entry.itemId, 1);
               maybeAutoEquip(bird, entry.itemId);
               outcome.bonusItemFound = entry.itemId;
             } else {

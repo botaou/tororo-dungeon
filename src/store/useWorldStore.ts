@@ -27,7 +27,7 @@ import {
 } from '../data/world';
 import { rollRandomMood } from '../data/moods';
 import { AiWorld, separateBirds, stepBird } from '../game/ai';
-import { addCappedInventory } from '../game/inventoryCap';
+import { addCappedInventory, addItemCapped } from '../game/inventoryCap';
 import { respawnPosition, stepEnemy } from '../game/enemyAi';
 import { AttackAssignment, applyHealing, resolveAttacks } from '../game/combat';
 import { scoreRequestAcceptance, tryAcceptRequest } from '../game/requests';
@@ -823,7 +823,12 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       if (outcome.shopPurchase) {
         const { shopKind, itemId, amount, totalCost } = outcome.shopPurchase;
         usePlayerStore.getState().fulfillShopPurchase(shopKind, itemId, amount, totalCost);
-        bird.items[itemId] = (bird.items[itemId] ?? 0) + amount;
+        // In practice a gear purchase never hits the equip spare cap here —
+        // pickGearOffer (ai.ts) already refuses to shop for a category
+        // that's already equipped — but routing through the same capped
+        // helper as combat drops keeps that guarantee even if that gating
+        // ever changes, rather than depending on two places staying in sync.
+        addItemCapped(bird, itemId, amount);
         maybeAutoEquip(bird, itemId);
         newLog.push(
           makeLogEntry(bird.name, 'buyShop', `${bird.name}が${ITEM_DEF_MAP[itemId].name}を買った(街に+${totalCost}G)`)
@@ -925,11 +930,25 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
             );
           }
         } else {
-          bird.items[drop.itemId] = (bird.items[drop.itemId] ?? 0) + 1;
+          const result = addItemCapped(bird, drop.itemId, 1);
           maybeAutoEquip(bird, drop.itemId);
-          newLog.push(
-            makeLogEntry(bird.name, 'drop', `${bird.name}が${kill.enemyName}から${ITEM_DEF_MAP[drop.itemId].name}をドロップで手に入れた!`)
-          );
+          if (result.added > 0) {
+            newLog.push(
+              makeLogEntry(bird.name, 'drop', `${bird.name}が${kill.enemyName}から${ITEM_DEF_MAP[drop.itemId].name}をドロップで手に入れた!`)
+            );
+          } else {
+            // Equip-category spare cap hit (see EQUIPMENT_SPARE_CAP) — a
+            // real-device report found 193 spare copies of one weapon piled
+            // up here with no cap at all. Salvaged for gold instead of
+            // silently vanishing.
+            newLog.push(
+              makeLogEntry(
+                bird.name,
+                'drop',
+                `${bird.name}が${kill.enemyName}から${ITEM_DEF_MAP[drop.itemId].name}をドロップしたが、予備が十分だったため換金した(+${result.salvageGold}G)`
+              )
+            );
+          }
         }
       }
       const participantNames = kill.participants
