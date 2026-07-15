@@ -139,6 +139,32 @@ export function getAllShopPositions(plots: Record<string, TownPlotState>): Parti
   return result;
 }
 
+// Every constructed park/bathhouse plot (see data/buildingOptions.ts) — the
+// destinations for Phase 11's "play" behavior (see ai.ts's executePlay).
+// Unlike shops, these have no fixed always-present plot at all, so this is
+// just the constructed-plot scan half of getAllShopPositions (no fixed-plot
+// half to merge in first). A bird just heads for whichever is nearest, not
+// specifically a park vs a bathhouse — there's no mechanical difference
+// between the two yet, only flavor (see BuildingOption.emoji/name).
+export interface AmenitySpot {
+  id: string; // the plot id it's built on — doubles as BirdState.targetRefUid
+  kind: 'park' | 'bathhouse';
+  x: number;
+  y: number;
+}
+
+export function getAllAmenityPositions(plots: Record<string, TownPlotState>): AmenitySpot[] {
+  const result: AmenitySpot[] = [];
+  for (const def of TOWN_PLOT_DEFS) {
+    const state = plots[def.id];
+    const option = getBuildingOption(state?.constructedBuildingId ?? null);
+    if (option?.buildingKind === 'park' || option?.buildingKind === 'bathhouse') {
+      result.push({ id: def.id, kind: option.buildingKind, x: def.x, y: def.y });
+    }
+  }
+  return result;
+}
+
 // Where the visiting merchant sets up — a fixed spot off the buildable
 // grid's diagonal plots, southeast of the town hall, clear of both
 // permanent shops (which sit on the N/S axis). Not a real plot: nothing
@@ -241,4 +267,6 @@ export const BUILDING_ICON: Record<BuildingKind, string> = {
   shop: '🏪',
   warehouse: '📦',
   garden: '🌷',
+  park: '🌳',
+  bathhouse: '🛁',
 };

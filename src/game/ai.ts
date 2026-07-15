@@ -16,11 +16,19 @@ import {
 import {
   ARRIVAL_THRESHOLD,
   BIRD_INVENTORY_CAP,
+  DETOUR_CHANCE_BASE,
+  DETOUR_CHANCE_LOW_MOOD,
+  DETOUR_DWELL_TICKS,
   ENCOUNTER_HOLD_TICKS,
   FOOD_PRICE,
   GEAR_SHOP_CHECK_CHANCE,
+  HAPPINESS_LOW_THRESHOLD,
   HOME_HEAL_PER_TICK,
   HOME_NEED_TICKS,
+  INSPIRATION_HP_GAIN,
+  INSPIRATION_SKILL_CHANCE,
+  INSPIRATION_STAT_CHANCE,
+  INSPIRATION_STAT_GAIN,
   LEISURE_CHANCE,
   LEISURE_DWELL_TICKS,
   LOW_HP_RETREAT_THRESHOLD_PERCENT,
@@ -30,6 +38,7 @@ import {
   MOVE_SPEED,
   OVERFLOW_SELL_MARGIN,
   OVERFLOW_SELL_MAX_PER_TRIP,
+  PLAY_DWELL_TICKS,
   SELL_CHECK_CHANCE_BASE,
   SELL_CHECK_CHANCE_WANTS_MONEY,
   SELL_DWELL_TICKS,
@@ -42,6 +51,7 @@ import { getShopPosition, MERCHANT_SPOT } from '../data/townGrid';
 import { MATERIAL_SELL_PRICE } from '../data/marketPrices';
 import { SHOP_DEFS } from '../data/shops';
 import { CONVERTIBLE_ITEM_IDS, ITEM_DEF_MAP, ITEM_DEFS } from '../data/items';
+import { BIRD_SKILL_DEFS } from '../data/skills';
 import { getEffectiveStats, maybeAutoEquip } from './birdStats';
 import { AttackAssignment } from './combat';
 import { addCappedInventory, addItemCapped, totalInventoryAmount } from './inventoryCap';
@@ -56,14 +66,17 @@ interface PersonalityProfile {
   mining: number;
   explore: number;
   rest: number;
+  // Phase 11: weight toward heading to a constructed park/bathhouse — only
+  // ever nonzero in practice if at least one exists (see pickCategory).
+  play: number;
   dangerAversion: number; // 0 = fearless, 1 = avoids anything but the weakest foe
 }
 
 export const PERSONALITY_PROFILES: Record<Personality, PersonalityProfile> = {
-  vanguard: { combat: 0.55, explore: 0.3, mining: 0.1, rest: 0.05, dangerAversion: 0 },
-  freeSpirit: { combat: 0.2, explore: 0.2, mining: 0.55, rest: 0.05, dangerAversion: 0.35 },
-  clingy: { combat: 0.25, explore: 0.2, mining: 0.15, rest: 0.4, dangerAversion: 0.5 },
-  cautious: { combat: 0.3, explore: 0.15, mining: 0.1, rest: 0.45, dangerAversion: 0.85 },
+  vanguard: { combat: 0.55, explore: 0.3, mining: 0.1, rest: 0.05, play: 0.05, dangerAversion: 0 },
+  freeSpirit: { combat: 0.2, explore: 0.2, mining: 0.55, rest: 0.05, play: 0.15, dangerAversion: 0.35 },
+  clingy: { combat: 0.25, explore: 0.2, mining: 0.15, rest: 0.4, play: 0.2, dangerAversion: 0.5 },
+  cautious: { combat: 0.3, explore: 0.15, mining: 0.1, rest: 0.45, play: 0.15, dangerAversion: 0.85 },
 };
 
 // Enemy atk value considered "as dangerous as it gets" for weighting
@@ -155,7 +168,15 @@ export interface AiWorld {
   // the bird falls back to its normal (much lower-chance) probabilistic
   // roll instead, freeing it to go earn the town some gold in the meantime.
   playerGold: number;
+  // Every constructed park/bathhouse (see data/townGrid.ts's
+  // getAllAmenityPositions) — the destinations for Phase 11's "play"
+  // category. Empty until the player builds at least one.
+  amenityPositions: { id: string; kind: 'park' | 'bathhouse'; x: number; y: number }[];
 }
+
+// A permanent stat a play-session "inspiration" roll can bump (see
+// executePlay/rollInspiration below).
+export type InspirationStat = 'atk' | 'defense' | 'speed' | 'luck' | 'maxHp';
 
 export interface AiStepOutcome {
   assignments: AttackAssignment[];
@@ -198,6 +219,16 @@ export interface AiStepOutcome {
   // walking to the feed shop (see tryEatHouseFood) — purely for the
   // activity log; the stock decrement already happened in-place.
   ateHouseFood: ItemId | null;
+  // Set the first tick a bird actually starts playing at a park/bathhouse
+  // (see executePlay) — purely for the activity log.
+  startedPlaying: 'park' | 'bathhouse' | null;
+  // Set the tick a bird commits to a fresh detour stroll (see executeDetour)
+  // — purely for the activity log.
+  detourStarted: boolean;
+  // Set when a play-session's per-tick inspiration roll hits — the stat/
+  // skill change itself already happened in-place (see executePlay); this
+  // is purely for the activity log + (for a skill) the notification modal.
+  inspiration: { kind: 'stat'; stat: InspirationStat; amount: number } | { kind: 'skill'; skillId: string } | null;
 }
 
 function emptyOutcome(): AiStepOutcome {
@@ -215,6 +246,9 @@ function emptyOutcome(): AiStepOutcome {
     merchantBuyAttempt: null,
     bonusItemFound: null,
     ateHouseFood: null,
+    startedPlaying: null,
+    detourStarted: false,
+    inspiration: null,
   };
 }
 
@@ -231,6 +265,8 @@ function categoryOf(targetKind: BirdState['targetKind']): ActivityCategory | nul
     case 'river':
     case 'pond':
       return 'rest';
+    case 'play':
+      return 'play';
     case 'shop':
       return null;
     default:
@@ -248,6 +284,10 @@ function pickCategory(bird: BirdState, def: CharacterDef, world: AiWorld): Activ
   const nearestEnemy = nearest(aliveEnemies, bird.x, bird.y);
   const hasGatherable =
     world.miningNodes.some((m) => !m.collected) || world.treasures.some((t) => !t.collected);
+  const hasAmenity = world.amenityPositions.length > 0;
+  // A bored/unhappy bird is more drawn to playing (Phase 11 request: tie
+  // this to the existing happiness meter).
+  const playMoodBoost = bird.happiness <= HAPPINESS_LOW_THRESHOLD ? 2 : 1;
 
   let combatWeight = 0;
   if (nearestEnemy) {
@@ -257,13 +297,22 @@ function pickCategory(bird: BirdState, def: CharacterDef, world: AiWorld): Activ
   const miningWeight = hasGatherable ? profile.mining : 0;
   const exploreWeight = profile.explore;
   const restWeight = profile.rest;
+  const playWeight = hasAmenity ? profile.play * playMoodBoost : 0;
 
-  const total = combatWeight + miningWeight + exploreWeight + restWeight;
+  const total = combatWeight + miningWeight + exploreWeight + restWeight + playWeight;
   let roll = Math.random() * total;
   if ((roll -= combatWeight) < 0) return 'combat';
   if ((roll -= miningWeight) < 0) return 'mining';
   if ((roll -= exploreWeight) < 0) return 'explore';
-  return 'rest';
+  if ((roll -= restWeight) < 0) return 'rest';
+  return 'play';
+}
+
+// Detour chance is boosted the same way play's weight is — a bored/unhappy
+// bird is more likely to wander off instead of heading straight to its next
+// task (see HAPPINESS_LOW_THRESHOLD).
+function detourChance(bird: BirdState): number {
+  return bird.happiness <= HAPPINESS_LOW_THRESHOLD ? DETOUR_CHANCE_LOW_MOOD : DETOUR_CHANCE_BASE;
 }
 
 function isStillPursuing(bird: BirdState, category: ActivityCategory, world: AiWorld): boolean {
@@ -279,6 +328,8 @@ function isStillPursuing(bird: BirdState, category: ActivityCategory, world: AiW
       // These conclude a "leg" at a time (see executors) rather than being
       // invalidated externally, so once set they stay valid until cleared.
       return bird.targetKind !== null;
+    case 'play':
+      return world.amenityPositions.some((a) => a.id === bird.targetRefUid);
   }
 }
 
@@ -379,8 +430,26 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
     }
   }
 
+  // Continue an already-committed detour stroll (see executeDetour) — never
+  // interrupts a job/combat/mining pursuit, since this is only ever entered
+  // via the fresh-decision branch below.
+  if (bird.targetKind === 'detour') {
+    return executeDetour(bird);
+  }
+
   let category = categoryOf(bird.targetKind);
   if (!category || !isStillPursuing(bird, category, world)) {
+    // A real-device request: birds should occasionally take a little detour
+    // instead of beelining straight to their next task. Rolled only at this
+    // same "picking something fresh to do" decision point — never as a
+    // mid-pursuit interrupt — so the job/combat/mining state machines stay
+    // completely untouched by this feature.
+    if (Math.random() < detourChance(bird)) {
+      bird.targetKind = 'detour';
+      bird.targetRefUid = null;
+      bird.workProgress = 0;
+      return executeDetour(bird);
+    }
     category = pickCategory(bird, def, world);
     bird.targetKind = null;
     bird.targetRefUid = null;
@@ -396,6 +465,8 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
       return executeExplore(bird, world);
     case 'rest':
       return executeRest(bird, world);
+    case 'play':
+      return executePlay(bird, world);
   }
 }
 
@@ -924,6 +995,112 @@ function executeRest(bird: BirdState, world: AiWorld): AiStepOutcome {
   bird.targetKind = 'rest';
   bird.activity = 'idle';
   return emptyOutcome();
+}
+
+// A short aimless stroll near town — mechanically almost identical to
+// executeRest's own "just mill around" branch, just tagged with its own
+// activity/log line so it reads as a deliberate little detour rather than
+// ordinary resting (real-device request: "寄り道する(例えば街をぶらぶら歩く、
+// 花を眺めるなど)"). Entered only from stepBird's fresh-decision point (see
+// detourChance), never as a mid-pursuit interrupt.
+function executeDetour(bird: BirdState): AiStepOutcome {
+  const outcome = emptyOutcome();
+  const hasDest = bird.wanderX !== null && bird.wanderY !== null;
+  if (!hasDest) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 0.03 + Math.random() * 0.05;
+    const dest = {
+      x: Math.min(0.92, Math.max(0.08, bird.x + Math.cos(angle) * dist)),
+      y: Math.min(0.88, Math.max(0.16, bird.y + Math.sin(angle) * dist)),
+    };
+    bird.wanderX = dest.x;
+    bird.wanderY = dest.y;
+    bird.activity = 'strolling';
+    outcome.detourStarted = true;
+    return outcome;
+  }
+  const arrived = moveToward(bird, bird.wanderX!, bird.wanderY!);
+  bird.activity = 'strolling';
+  if (arrived) {
+    bird.workProgress += 1;
+    if (bird.workProgress >= DETOUR_DWELL_TICKS) {
+      bird.targetKind = null;
+      bird.wanderX = null;
+      bird.wanderY = null;
+      bird.workProgress = 0;
+    }
+  }
+  return outcome;
+}
+
+// A permanent, small stat bump — one of five candidates picked uniformly.
+// maxHp bumps current hp along with it (same shape as grantExp's level-up
+// gains in useWorldStore), the other four are flat +1 (or +2 for luck, see
+// data/skills.ts's own luck-skill note) additions to the bird's base stat.
+function applyStatInspiration(bird: BirdState): InspirationStat {
+  const stats: InspirationStat[] = ['atk', 'defense', 'speed', 'luck', 'maxHp'];
+  const stat = stats[Math.floor(Math.random() * stats.length)];
+  if (stat === 'maxHp') {
+    bird.maxHp += INSPIRATION_HP_GAIN;
+    bird.hp += INSPIRATION_HP_GAIN;
+  } else {
+    bird[stat] += INSPIRATION_STAT_GAIN;
+  }
+  return stat;
+}
+
+// Playing at a park/bathhouse — the destination for Phase 11's "遊ぶ"
+// behavior. Same one-leg-then-dwell shape as executeRest's leisure-spot
+// branch. Each tick spent actually playing independently rolls for a rare
+// permanent skill (checked first, since it's the rarer of the two) or a
+// small stat bump — see config.ts's INSPIRATION_* constants.
+function executePlay(bird: BirdState, world: AiWorld): AiStepOutcome {
+  const outcome = emptyOutcome();
+  const stillValid = bird.targetKind === 'play' && world.amenityPositions.some((a) => a.id === bird.targetRefUid);
+  if (!stillValid) {
+    const spot = nearest(world.amenityPositions, bird.x, bird.y);
+    if (!spot) {
+      bird.targetKind = null;
+      return outcome;
+    }
+    bird.targetKind = 'play';
+    bird.targetRefUid = spot.id;
+    bird.workProgress = 0;
+  }
+  const spot = world.amenityPositions.find((a) => a.id === bird.targetRefUid);
+  if (!spot) return outcome;
+
+  const arrived = moveToward(bird, spot.x, spot.y);
+  bird.activity = 'playing';
+  if (arrived) {
+    bird.workProgress += 1;
+    if (bird.workProgress === 1) outcome.startedPlaying = spot.kind;
+
+    if (Math.random() < INSPIRATION_SKILL_CHANCE) {
+      const owned = new Set(bird.skills);
+      const candidates = BIRD_SKILL_DEFS.filter((s) => !owned.has(s.id));
+      if (candidates.length > 0) {
+        const pick = candidates[Math.floor(Math.random() * candidates.length)];
+        bird.skills = [...bird.skills, pick.id];
+        outcome.inspiration = { kind: 'skill', skillId: pick.id };
+      }
+    } else if (Math.random() < INSPIRATION_STAT_CHANCE) {
+      const stat = applyStatInspiration(bird);
+      // A lightweight "💡" speech bubble — reuses the same ephemeral chat-
+      // bubble field the ambient bird-to-bird chat event uses (see
+      // useWorldStore's tick), since both are just cosmetic flavor.
+      bird.chatLine = '💡ひらめいた!';
+      bird.chatLineSetAt = Date.now();
+      outcome.inspiration = { kind: 'stat', stat, amount: stat === 'maxHp' ? INSPIRATION_HP_GAIN : INSPIRATION_STAT_GAIN };
+    }
+
+    if (bird.workProgress >= PLAY_DWELL_TICKS) {
+      bird.targetKind = null;
+      bird.targetRefUid = null;
+      bird.workProgress = 0;
+    }
+  }
+  return outcome;
 }
 
 // Any bird with an accepted job pursues it — this overrides normal category

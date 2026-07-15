@@ -20,6 +20,8 @@ interface ThoughtLines {
   happy?: string;
   hungry?: string;
   wantsMoney?: string;
+  strolling?: string;
+  playing?: string;
 }
 
 // Flavor lines shown when the player taps a bird — a hint at what it's
@@ -41,6 +43,8 @@ const LINES: Record<string, ThoughtLines> = {
     recovering: '早く元気にならなきゃ……',
     happy: '外の空気が気持ちいい！',
     wantsMoney: '稼げる依頼はないかな',
+    strolling: 'ちょっと寄り道しちゃおう',
+    playing: '遊ぶの楽しい！',
   },
   vivi: {
     idle: 'トロロと一緒なら行く',
@@ -57,6 +61,8 @@ const LINES: Record<string, ThoughtLines> = {
     recovering: 'いたた……ちょっと休む',
     happy: 'たのしいね！',
     wantsMoney: '依頼、受けてみようかな',
+    strolling: 'このお花、かわいい！',
+    playing: 'きゃっきゃ！たのしい〜！',
   },
   haku: {
     idle: '今日は近場がいい',
@@ -73,6 +79,8 @@ const LINES: Record<string, ThoughtLines> = {
     recovering: '無理は禁物……ゆっくり治そう',
     happy: 'みんな無事でよかった',
     wantsMoney: '依頼をこなそうかな',
+    strolling: '少し遠回りしていこう',
+    playing: '静かに過ごすのもいいものだ',
   },
   mone: {
     idle: '鉱石掘りたい',
@@ -91,6 +99,8 @@ const LINES: Record<string, ThoughtLines> = {
     recovering: 'むぅ……もうちょっと休む',
     happy: 'いいもの見つけた！',
     wantsMoney: 'お金になるものを探そう',
+    strolling: 'キラキラしたもの落ちてないかな',
+    playing: '掘り出し物ないかな〜',
   },
 };
 
@@ -98,6 +108,19 @@ const LINES: Record<string, ThoughtLines> = {
 // before it heads home to recover — deliberately light and a little
 // bratty ("tired and heading home to sulk"), never anything heavier.
 export const RETREAT_LINES = ['疲れたから帰る〜!', 'もうやーだ。', '飽きた!', 'ぴえん'];
+
+// Ambient "chat" flavor — shown as a speech bubble when two nearby recruited
+// birds happen to pause together (see BirdState.chatLine, useWorldStore's
+// tick). Deliberately generic/interchangeable (not per-character) since two
+// arbitrary birds can be the pair on any given roll.
+export const CHAT_LINES = [
+  'ねえねえ、今日はどうだった?',
+  'それ、いいね!',
+  'また今度遊ぼうね',
+  'ちょっと一休みしよっか',
+  'お腹すいてきたね',
+  'この街、好きだなあ',
+];
 
 // One short line shown in the join announcement when a dormant bird
 // actually joins the town (see game/recruitment.ts / RecruitmentModal).

@@ -304,6 +304,35 @@ export const OFFLINE_TICKS_PER_GATHER: Record<Personality, number> = {
 export const HOUSE_FOOD_CAP = 5;
 export const HOUSE_TREASURE_CAP = 5;
 
+// ---- Phase 11: park/bathhouse "play", detour/chat flavor, inspiration ----
+// Below this happiness, a bird is more drawn to detouring/playing/chatting —
+// the request ties all three to how content the bird currently is, not just
+// personality.
+export const HAPPINESS_LOW_THRESHOLD = 40;
+// How long a bird lingers at a park/bathhouse before moving on — same shape
+// as LEISURE_DWELL_TICKS.
+export const PLAY_DWELL_TICKS = 3;
+// Each tick a bird is about to freshly pick its next thing to do, this is
+// the chance it takes a little detour instead (see ai.ts's executeDetour) —
+// deliberately only rolled at that same decision point, never interrupting
+// a pursuit already underway (job/combat/mining stay untouched).
+export const DETOUR_CHANCE_BASE = 0.02;
+export const DETOUR_CHANCE_LOW_MOOD = 0.06;
+export const DETOUR_DWELL_TICKS = 2;
+// Two nearby recruited birds occasionally pause to "chat" — a cosmetic
+// speech-bubble overlay only (see BirdState.chatLine), checked once per tick
+// per pair within this distance of each other.
+export const CHAT_PROXIMITY_DIST = 0.06;
+export const CHAT_CHANCE_BASE = 0.015;
+export const CHAT_CHANCE_LOW_MOOD_MULT = 2;
+// Each tick spent actually playing (see ai.ts's executePlay), independent
+// rolls for a small stat bump ("中程度") and, far rarer, a whole new
+// permanent skill ("かなり低い") — see data/skills.ts.
+export const INSPIRATION_STAT_CHANCE = 0.05;
+export const INSPIRATION_SKILL_CHANCE = 0.006;
+export const INSPIRATION_STAT_GAIN = 1;
+export const INSPIRATION_HP_GAIN = 3;
+
 export const STARTING_GOLD = 300;
 export const STARTING_MATERIALS = {
   wood: 0,

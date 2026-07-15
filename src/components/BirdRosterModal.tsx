@@ -8,6 +8,7 @@ import { ITEM_DEF_MAP } from '../data/items';
 import { getMoodDef } from '../data/moods';
 import { getBirdGoalLabel, getBirdStatusLabel } from '../game/birdStatus';
 import { getEffectiveStats } from '../game/birdStats';
+import { BIRD_SKILL_DEF_MAP } from '../data/skills';
 import { expToNextLevel } from '../game/config';
 import { AnimatedPressable } from './AnimatedPressable';
 import { CharacterAvatar } from './CharacterAvatar';
@@ -76,6 +77,20 @@ export function BirdRosterModal({ visible, onClose, birds }: Props) {
                     <Text style={styles.meterItem}>🍚満腹度 {Math.round(bird.satiety)}</Text>
                     <Text style={styles.meterItem}>😊ご機嫌度 {Math.round(bird.happiness)}</Text>
                   </View>
+
+                  {bird.skills.length > 0 && (
+                    <View style={styles.inventoryRow}>
+                      {bird.skills.map((skillId) => {
+                        const skill = BIRD_SKILL_DEF_MAP[skillId];
+                        if (!skill) return null;
+                        return (
+                          <Text style={styles.skillBadge} key={skillId}>
+                            💡{skill.name}
+                          </Text>
+                        );
+                      })}
+                    </View>
+                  )}
 
                   <View style={styles.equipRow}>
                     {EQUIP_SLOT_ORDER.map(({ slot, emptyIcon }) => {
@@ -180,4 +195,15 @@ const styles = StyleSheet.create({
   inventoryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
   emptyInventory: { fontSize: 10, color: theme.textMuted },
   inventoryItem: { fontSize: 11, fontWeight: '700', color: theme.textPrimary },
+  skillBadge: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: theme.gold,
+    backgroundColor: theme.card,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: theme.gold,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
 });

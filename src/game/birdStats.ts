@@ -1,5 +1,6 @@
 import { BirdState, EquipSlot, ItemId } from '../types';
 import { ITEM_DEF_MAP } from '../data/items';
+import { BIRD_SKILL_DEF_MAP } from '../data/skills';
 
 const EQUIP_SLOTS: EquipSlot[] = ['weapon', 'armor', 'hat', 'shield'];
 
@@ -10,11 +11,12 @@ export interface EffectiveStats {
   luck: number;
 }
 
-// Base stats plus whatever's currently equipped — the numbers actually used
-// in combat and shown on the roster card. speed/luck aren't consumed by any
-// mechanic yet (movement is still a flat global constant, and nothing rolls
-// against luck), but they're computed the same way so wiring them in later
-// is just changing the call site, not the data model.
+// Base stats plus whatever's currently equipped plus any permanent skills
+// (see data/skills.ts) — the numbers actually used in combat and shown on
+// the roster card. speed/luck aren't consumed by any mechanic yet (movement
+// is still a flat global constant, and nothing rolls against luck), but
+// they're computed the same way so wiring them in later is just changing the
+// call site, not the data model.
 export function getEffectiveStats(bird: BirdState): EffectiveStats {
   let atk = bird.atk;
   let defense = bird.defense;
@@ -25,6 +27,17 @@ export function getEffectiveStats(bird: BirdState): EffectiveStats {
     const itemId = bird.equipment[slot];
     if (!itemId) continue;
     const bonus = ITEM_DEF_MAP[itemId].statBonus;
+    if (!bonus) continue;
+    atk += bonus.atk ?? 0;
+    defense += bonus.defense ?? 0;
+    speed += bonus.speed ?? 0;
+    luck += bonus.luck ?? 0;
+  }
+
+  // A skill behaves like an invisible extra piece of equipment that can
+  // never be unequipped — same merge, just over a different source list.
+  for (const skillId of bird.skills) {
+    const bonus = BIRD_SKILL_DEF_MAP[skillId]?.statBonus;
     if (!bonus) continue;
     atk += bonus.atk ?? 0;
     defense += bonus.defense ?? 0;

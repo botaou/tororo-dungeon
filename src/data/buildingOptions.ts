@@ -64,6 +64,24 @@ export const BUILDING_OPTIONS: BuildingOption[] = [
     shopKind: null,
     cost: { gold: 100, materialId: 'mushroom', materialAmount: 5 },
   },
+  {
+    id: 'park',
+    name: '公園',
+    emoji: '🌳',
+    description: '売買機能はありませんが、鳥たちが気分転換に遊びに来る場所になります。',
+    buildingKind: 'park',
+    shopKind: null,
+    cost: { gold: 150, materialId: 'wood', materialAmount: 8 },
+  },
+  {
+    id: 'bathhouse',
+    name: '水浴び場',
+    emoji: '🛁',
+    description: '売買機能はありませんが、鳥たちが水浴びをして遊びに来る場所になります。',
+    buildingKind: 'bathhouse',
+    shopKind: null,
+    cost: { gold: 150, materialId: 'waterweed', materialAmount: 8 },
+  },
 ];
 
 export function getBuildingOption(id: string | null): BuildingOption | null {

@@ -22,6 +22,7 @@ import { TownLevelUpModal } from '../components/TownLevelUpModal';
 import { PlotUnlockModal } from '../components/PlotUnlockModal';
 import { ConstructionModal } from '../components/ConstructionModal';
 import { RecipeUnlockModal } from '../components/RecipeUnlockModal';
+import { SkillUnlockModal } from '../components/SkillUnlockModal';
 import { TownStatusModal } from '../components/TownStatusModal';
 import { HouseInventoryModal } from '../components/HouseInventoryModal';
 import { ActivityLogPanel } from '../components/ActivityLogPanel';
@@ -84,6 +85,8 @@ export function TownScreen() {
   // world.recipeUnlockEvents isn't persisted either, so starting at 0 never
   // replays a stale backlog.
   const [shownRecipeUnlockCount, setShownRecipeUnlockCount] = useState(0);
+  // Same pattern again for Phase 11's skillUnlockEvents (also not persisted).
+  const [shownSkillUnlockCount, setShownSkillUnlockCount] = useState(0);
 
   useEffect(() => {
     if (world.birds.length === 0) initWorld();
@@ -94,18 +97,19 @@ export function TownScreen() {
   const activeBirds = world.birds.filter((b) => b.isRecruited);
   const dormantDefIds = world.birds.filter((b) => !b.isRecruited).map((b) => b.defId);
 
-  // RecruitmentModal/TownLevelUpModal/RecipeUnlockModal each render their own
-  // <Modal> the instant their queued event is non-null, completely
-  // independent of whatever the player currently has open — a request-board
-  // check, a shop, a construction menu, etc. A background world tick can
-  // queue one of these at any moment, so without this guard it could pop
-  // open *while* another <Modal> is already visible, presenting two native
-  // iOS modals at once. That's a known react-native/iOS fragility (real-
-  // device report: taps go dead after navigating between screens, fixed
-  // only by a full app restart) — so these three are only allowed to
-  // actually show once nothing else is open, in a fixed priority order.
-  // Nothing is lost by delaying them: the underlying arrays/counters are
-  // untouched, so each still shows exactly once, just possibly a beat later.
+  // RecruitmentModal/TownLevelUpModal/RecipeUnlockModal/SkillUnlockModal each
+  // render their own <Modal> the instant their queued event is non-null,
+  // completely independent of whatever the player currently has open — a
+  // request-board check, a shop, a construction menu, etc. A background
+  // world tick can queue one of these at any moment, so without this guard
+  // it could pop open *while* another <Modal> is already visible,
+  // presenting two native iOS modals at once. That's a known react-native/
+  // iOS fragility (real-device report: taps go dead after navigating
+  // between screens, fixed only by a full app restart) — so these four are
+  // only allowed to actually show once nothing else is open, in a fixed
+  // priority order. Nothing is lost by delaying them: the underlying
+  // arrays/counters are untouched, so each still shows exactly once, just
+  // possibly a beat later.
   const anyOtherModalOpen =
     boardVisible ||
     openShop !== null ||
@@ -121,6 +125,10 @@ export function TownScreen() {
   const pendingLevelUp = anyOtherModalOpen || pendingRecruit ? null : levelUpEvents[shownLevelUpCount] ?? null;
   const pendingRecipeUnlock =
     anyOtherModalOpen || pendingRecruit || pendingLevelUp ? null : world.recipeUnlockEvents[shownRecipeUnlockCount] ?? null;
+  const pendingSkillUnlock =
+    anyOtherModalOpen || pendingRecruit || pendingLevelUp || pendingRecipeUnlock
+      ? null
+      : world.skillUnlockEvents[shownSkillUnlockCount] ?? null;
 
   const handlePost = (preset: JobPreset) => {
     postRequest(preset);
@@ -296,6 +304,8 @@ export function TownScreen() {
       />
 
       <RecipeUnlockModal event={pendingRecipeUnlock} onClose={() => setShownRecipeUnlockCount((c) => c + 1)} />
+
+      <SkillUnlockModal event={pendingSkillUnlock} onClose={() => setShownSkillUnlockCount((c) => c + 1)} />
     </SafeAreaView>
   );
 }

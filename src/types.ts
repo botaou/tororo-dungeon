@@ -317,16 +317,35 @@ export type ActivityKind =
   | 'buyingGear'
   | 'merchantSelling'
   | 'merchantBuying'
-  | 'recovering';
+  | 'recovering'
+  // Phase 11: a short aimless stroll near town (see ai.ts's executeDetour),
+  // and playing at a constructed park/bathhouse (see executePlay).
+  | 'strolling'
+  | 'playing';
 
 // A pursuit goal a bird's AI is actively working toward. A job is just a
 // mining/treasure pursuit restricted to a specific request's material and
 // tagged with which request it fulfills (see BirdState.currentJobId).
-export type TargetKind = 'enemy' | 'mining' | 'treasure' | 'river' | 'pond' | 'explore' | 'rest' | 'shop' | 'townHall';
+// 'detour' and 'play' are Phase 11 additions — see ai.ts's executeDetour/
+// executePlay.
+export type TargetKind =
+  | 'enemy'
+  | 'mining'
+  | 'treasure'
+  | 'river'
+  | 'pond'
+  | 'explore'
+  | 'rest'
+  | 'shop'
+  | 'townHall'
+  | 'detour'
+  | 'play';
 
-// The four things every bird can choose to do — personality only weights
+// The five things every bird can choose to do — personality only weights
 // how likely each one is to be picked, it never rules one out entirely.
-export type ActivityCategory = 'combat' | 'mining' | 'explore' | 'rest';
+// 'play' (Phase 11) only ever gets picked if at least one park/bathhouse has
+// been constructed (see ai.ts's pickCategory).
+export type ActivityCategory = 'combat' | 'mining' | 'explore' | 'rest' | 'play';
 
 export interface BirdState {
   defId: string; // birds are fixed individuals, defId doubles as identity
@@ -404,6 +423,21 @@ export interface BirdState {
   // to do — persisted so it commits to a direction instead of jittering.
   wanderX: number | null;
   wanderY: number | null;
+  // Phase 11's ひらめき (inspiration) system: permanent skill ids acquired
+  // while playing at a park/bathhouse (see data/skills.ts, ai.ts's
+  // executePlay) — persisted (see BirdWallet), unlike the two fields below.
+  skills: string[];
+  // Ephemeral flavor-text speech bubble — reused for both the ambient
+  // "two nearby birds chat" event (set from useWorldStore's tick, since only
+  // it sees every bird at once) and the lightweight "💡ひらめいた" cue for a
+  // stat-up inspiration (set from ai.ts's executePlay). Never persisted
+  // (not part of BirdWallet), same as wanderX/wanderY/moodChangedAt above —
+  // it's just this session's transient presentation, not real progress.
+  // chatLineSetAt lets BirdSprite detect a *new* line even when the text
+  // happens to repeat (see WorldMap.tsx's BirdSprite, which watches this
+  // timestamp the same way it already watches bird.hp for the retreat line).
+  chatLine: string | null;
+  chatLineSetAt: number;
 }
 
 export type JobStatus = 'open' | 'inProgress' | 'done';
@@ -506,6 +540,13 @@ export interface WorldState {
   // itself is rebuilt fresh each launch via initWorld), so there's never a
   // backlog of already-seen unlocks to replay on a later session.
   recipeUnlockEvents: { recipeId: string; source: RecipeSource }[];
+  // Same queued-event pattern, for Phase 11's rare "skill acquired" event
+  // (see data/skills.ts, ai.ts's executePlay) — a stat-up inspiration is
+  // common enough to just be a log line + speech bubble (see
+  // BirdState.chatLine), but a new skill gets its own notification modal,
+  // same weight as a recipe unlock. Not persisted, same reasoning as
+  // recipeUnlockEvents above.
+  skillUnlockEvents: { birdName: string; skillId: string }[];
 }
 
 // Which of the 4 routes (see game/recipeUnlocks.ts) taught the player a
@@ -517,9 +558,12 @@ export type RecipeSource = 'merchant' | 'gift' | 'quest' | 'combat';
 
 // What a constructed building looks like on the map. 'workshop' and
 // 'warehouse' remain purely cosmetic leftovers with no construction option
-// pointing at them yet; 'shop' and 'garden' are real, buildable outcomes
-// (see data/buildingOptions.ts).
-export type BuildingKind = 'workshop' | 'shop' | 'warehouse' | 'garden';
+// pointing at them yet; 'shop', 'garden', 'park' and 'bathhouse' are real,
+// buildable outcomes (see data/buildingOptions.ts). 'park'/'bathhouse' are
+// Phase 11's play destinations — decorative like 'garden' (no shopKind), but
+// distinguished from it since AI targeting needs to find them specifically
+// (see data/townGrid.ts's getAllAmenityPositions).
+export type BuildingKind = 'workshop' | 'shop' | 'warehouse' | 'garden' | 'park' | 'bathhouse';
 
 export interface PlotUnlockCost {
   gold: number;

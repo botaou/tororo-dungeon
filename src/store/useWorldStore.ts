@@ -26,8 +26,10 @@ import {
   TREASURE_DEFS,
 } from '../data/world';
 import { rollRandomMood } from '../data/moods';
-import { AiWorld, separateBirds, stepBird } from '../game/ai';
+import { AiWorld, InspirationStat, separateBirds, stepBird } from '../game/ai';
 import { addCappedInventory, addItemCapped } from '../game/inventoryCap';
+import { BIRD_SKILL_DEF_MAP } from '../data/skills';
+import { CHAT_LINES } from '../game/thoughts';
 import { respawnPosition, stepEnemy } from '../game/enemyAi';
 import { AttackAssignment, applyHealing, resolveAttacks } from '../game/combat';
 import { scoreRequestAcceptance, tryAcceptRequest } from '../game/requests';
@@ -53,10 +55,14 @@ import {
 import { MATERIAL_SELL_PRICE } from '../data/marketPrices';
 import {
   ACTIVITY_LOG_MAX,
+  CHAT_CHANCE_BASE,
+  CHAT_CHANCE_LOW_MOOD_MULT,
+  CHAT_PROXIMITY_DIST,
   ENEMY_RESPAWN_MS,
   expToNextLevel,
   FEED_RESTOCK_CHECK_CHANCE,
   FEED_RESTOCK_TARGET,
+  HAPPINESS_LOW_THRESHOLD,
   LEVEL_UP_ATK_GAIN,
   LEVEL_UP_DEFENSE_GAIN,
   LEVEL_UP_HP_GAIN,
@@ -96,7 +102,19 @@ import { useGameTimeStore } from './useGameTimeStore';
 import { useQuestStore } from './useQuestStore';
 import { useRecipeStore } from './useRecipeStore';
 import { useTownStore } from './useTownStore';
-import { getAllShopPositions, getTownLevel, getTownZoneRadius } from '../data/townGrid';
+import { getAllAmenityPositions, getAllShopPositions, getTownLevel, getTownZoneRadius } from '../data/townGrid';
+
+const INSPIRATION_STAT_LABEL: Record<InspirationStat, string> = {
+  atk: '攻撃力',
+  defense: '防御力',
+  speed: '素早さ',
+  luck: '運',
+  maxHp: 'HP',
+};
+
+// The two flavor phrasings for a fresh detour's log line (see
+// ai.ts's executeDetour) — picked randomly each time one starts.
+const DETOUR_LOG_LINES = ['が街をぶらぶら歩いている', 'が花を眺めている'];
 
 let uidCounter = 0;
 function uid(prefix: string): string {
@@ -209,10 +227,13 @@ function buildInitialWorld(): WorldState {
       equipment: { ...wallet.equipment },
       houseFood: { ...wallet.houseFood },
       houseTreasureIds: [...wallet.houseTreasureIds],
+      skills: [...wallet.skills],
       level: wallet.level,
       exp: wallet.exp,
       wanderX: null,
       wanderY: null,
+      chatLine: null,
+      chatLineSetAt: 0,
     };
   });
 
@@ -227,6 +248,7 @@ function buildInitialWorld(): WorldState {
     merchant: null,
     recruitmentEvents: [],
     recipeUnlockEvents: [],
+    skillUnlockEvents: [],
   };
 }
 
@@ -386,6 +408,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     merchant: null,
     recruitmentEvents: [],
     recipeUnlockEvents: [],
+    skillUnlockEvents: [],
   },
 
   initWorld: () => set({ world: buildInitialWorld() }),
@@ -694,6 +717,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       merchant,
       townZoneRadius: currentTownZoneRadius,
       playerGold: usePlayerStore.getState().gold,
+      amenityPositions: getAllAmenityPositions(useTownStore.getState().plots),
     };
 
     const allAssignments: AttackAssignment[] = [];
@@ -707,6 +731,11 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     // finalizeStandaloneJob (which merges its own roll in separately, since
     // it commits its own set() call outside tick() entirely).
     const newRecipeUnlockEvents: { recipeId: string; source: 'gift' | 'quest' | 'combat' }[] = [];
+    // Phase 11: queued the same way (see outcome.inspiration's handling
+    // below) — only a new *skill* gets its own notification modal; a plain
+    // stat-up inspiration is common enough to just be a log line + the
+    // lightweight chat-bubble cue ai.ts's executePlay already set directly.
+    const newSkillUnlockEvents: { birdName: string; skillId: string }[] = [];
     function tryRecipeUnlock(chance: number, source: 'gift' | 'quest' | 'combat', birdName: string | null) {
       const result = maybeUnlockRandomRecipe(chance, source);
       if (!result) return;
@@ -789,6 +818,32 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         newLog.push(
           makeLogEntry(bird.name, 'buyFood', `${bird.name}が家に備蓄していた${ITEM_DEF_MAP[outcome.ateHouseFood].name}を食べた`)
         );
+      }
+      if (outcome.startedPlaying) {
+        const placeLabel = outcome.startedPlaying === 'park' ? '公園' : '水浴び場';
+        newLog.push(makeLogEntry(bird.name, 'play', `${bird.name}が${placeLabel}で遊んでいる`));
+      }
+      if (outcome.detourStarted) {
+        const line = DETOUR_LOG_LINES[Math.floor(Math.random() * DETOUR_LOG_LINES.length)];
+        newLog.push(makeLogEntry(bird.name, 'detour', `${bird.name}${line}`));
+      }
+      if (outcome.inspiration) {
+        if (outcome.inspiration.kind === 'skill') {
+          const skillDef = BIRD_SKILL_DEF_MAP[outcome.inspiration.skillId];
+          newLog.push(
+            makeLogEntry(bird.name, 'inspiration', `${bird.name}は遊んでいるうちに、新しいスキル「${skillDef.name}」をひらめいた!`)
+          );
+          newSkillUnlockEvents.push({ birdName: bird.name, skillId: outcome.inspiration.skillId });
+        } else {
+          const statLabel = INSPIRATION_STAT_LABEL[outcome.inspiration.stat];
+          newLog.push(
+            makeLogEntry(
+              bird.name,
+              'inspiration',
+              `${bird.name}は遊んでいるうちに、何かひらめいた!(${statLabel}+${outcome.inspiration.amount})`
+            )
+          );
+        }
       }
       if (outcome.sellAttempt) {
         // A bird offers one material at a time (see pickSellOffer in ai.ts).
@@ -1025,6 +1080,32 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     const healedBirds = healer ? applyHealing(nextBirds, healer.defId, getEffectiveStats(healer).atk) : nextBirds;
     const finalBirds = separateBirds(healedBirds);
 
+    // Phase 11's ambient "chat" flavor: two nearby recruited birds
+    // occasionally pause to exchange a line — purely a cosmetic speech-
+    // bubble overlay (see BirdState.chatLine), never touching movement or
+    // activity state. This has to live here rather than in ai.ts's stepBird
+    // (which only ever sees one bird at a time) since only the tick loop has
+    // every bird's final position at once. Checked after separateBirds so
+    // positions are this tick's real, final ones.
+    for (let i = 0; i < finalBirds.length; i++) {
+      const a = finalBirds[i];
+      if (!a.isRecruited || a.hp <= 0) continue;
+      for (let j = i + 1; j < finalBirds.length; j++) {
+        const b = finalBirds[j];
+        if (!b.isRecruited || b.hp <= 0) continue;
+        if (Math.hypot(a.x - b.x, a.y - b.y) > CHAT_PROXIMITY_DIST) continue;
+        const moodBoost =
+          a.happiness <= HAPPINESS_LOW_THRESHOLD || b.happiness <= HAPPINESS_LOW_THRESHOLD
+            ? CHAT_CHANCE_LOW_MOOD_MULT
+            : 1;
+        if (Math.random() >= CHAT_CHANCE_BASE * moodBoost) continue;
+        a.chatLine = CHAT_LINES[Math.floor(Math.random() * CHAT_LINES.length)];
+        a.chatLineSetAt = now;
+        b.chatLine = CHAT_LINES[Math.floor(Math.random() * CHAT_LINES.length)];
+        b.chatLineSetAt = now;
+      }
+    }
+
     // Check each not-yet-recruited starter's own trigger — town-level for
     // Vivi, the one-off quest for Haku, and a chance map encounter (Mone's
     // has an alternate combat-milestone path too) for Tororo/Mone. Flipping
@@ -1066,6 +1147,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         equipment: b.equipment,
         houseFood: b.houseFood,
         houseTreasureIds: b.houseTreasureIds,
+        skills: b.skills,
         level: b.level,
         exp: b.exp,
         atk: b.atk,
@@ -1097,6 +1179,8 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
           newRecipeUnlockEvents.length > 0
             ? [...world.recipeUnlockEvents, ...newRecipeUnlockEvents]
             : world.recipeUnlockEvents,
+        skillUnlockEvents:
+          newSkillUnlockEvents.length > 0 ? [...world.skillUnlockEvents, ...newSkillUnlockEvents] : world.skillUnlockEvents,
       },
     });
   },

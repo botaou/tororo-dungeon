@@ -27,6 +27,10 @@ export interface BirdWallet {
   // HouseInventoryModal.
   houseFood: Partial<Record<ItemId, number>>;
   houseTreasureIds: ItemId[];
+  // Permanent skill ids acquired via Phase 11's play-session "ひらめき" roll
+  // (see data/skills.ts, ai.ts's executePlay) — unlike BirdState's ephemeral
+  // chatLine/chatLineSetAt, this genuinely persists.
+  skills: string[];
   level: number;
   exp: number;
   atk: number;
@@ -51,6 +55,7 @@ function defaultWallet(defId: string): BirdWallet {
     equipment: { weapon: null, armor: null, hat: null, shield: null },
     houseFood: {},
     houseTreasureIds: [],
+    skills: [],
     level: 1,
     exp: 0,
     atk: def.baseAtk,

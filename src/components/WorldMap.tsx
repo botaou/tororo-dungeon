@@ -798,6 +798,29 @@ function BirdSprite({
     prevHpRef.current = bird.hp;
   }, [bird.hp, bubbleOpacity]);
 
+  // Phase 11's ambient "chat" bubble — reused for both the two-birds-chat
+  // event and the lightweight "💡ひらめいた" stat-inspiration cue (see
+  // BirdState.chatLine/chatLineSetAt, useWorldStore's tick / ai.ts's
+  // executePlay). Watches chatLineSetAt (not chatLine itself) so a *new*
+  // line still shows even if the text happens to repeat — same shape as the
+  // retreat-line effect above, just keyed off a timestamp instead of hp.
+  const [chatBubbleLine, setChatBubbleLine] = useState<string | null>(null);
+  const chatBubbleOpacity = useRef(new Animated.Value(0)).current;
+  const prevChatSetAtRef = useRef(bird.chatLineSetAt);
+  useEffect(() => {
+    if (bird.chatLineSetAt !== prevChatSetAtRef.current && bird.chatLine) {
+      setChatBubbleLine(bird.chatLine);
+      chatBubbleOpacity.setValue(1);
+      Animated.sequence([
+        Animated.delay(2200),
+        Animated.timing(chatBubbleOpacity, { toValue: 0, duration: 400, useNativeDriver: true }),
+      ]).start(({ finished }) => {
+        if (finished) setChatBubbleLine(null);
+      });
+    }
+    prevChatSetAtRef.current = bird.chatLineSetAt;
+  }, [bird.chatLineSetAt, bird.chatLine, chatBubbleOpacity]);
+
   // Constant-speed walk: each update is one tick's worth of travel, animated
   // linearly over exactly one tick so consecutive steps chain into smooth,
   // non-teleporting motion instead of an easing snap.
@@ -835,7 +858,9 @@ function BirdSprite({
     bird.activity === 'carrying' ||
     bird.activity === 'selling' ||
     bird.activity === 'merchantSelling' ||
-    bird.activity === 'recovering';
+    bird.activity === 'recovering' ||
+    bird.activity === 'strolling' ||
+    bird.activity === 'playing';
 
   useEffect(() => {
     if (isSulking || isPassiveActivity) return;
@@ -872,10 +897,16 @@ function BirdSprite({
         { transform: [{ translateX: pos.x }, { translateY: Animated.add(pos.y, Animated.add(bobY, hopY)) }] },
       ]}
     >
-      {retreatLine && (
+      {retreatLine ? (
         <Animated.View style={[styles.speechBubble, { opacity: bubbleOpacity }]}>
           <Text style={styles.speechBubbleText}>{retreatLine}</Text>
         </Animated.View>
+      ) : (
+        chatBubbleLine && (
+          <Animated.View style={[styles.speechBubble, { opacity: chatBubbleOpacity }]}>
+            <Text style={styles.speechBubbleText}>{chatBubbleLine}</Text>
+          </Animated.View>
+        )
       )}
       <TouchableWithoutFeedback onPress={onPress}>
         <View style={styles.tapArea}>
@@ -897,6 +928,7 @@ function BirdSprite({
           {(bird.activity === 'selling' || bird.activity === 'merchantSelling') && (
             <Text style={styles.carryBadge}>💰</Text>
           )}
+          {bird.activity === 'playing' && <Text style={styles.carryBadge}>🎉</Text>}
           <Text style={styles.nameTag}>{bird.name}</Text>
           <View style={styles.miniBarTrack}>
             <View style={[styles.miniBarFill, { width: `${ratio * 100}%`, backgroundColor: def.color }]} />
