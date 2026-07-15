@@ -3,37 +3,42 @@ import { TOWN_X, TOWN_Y } from './world';
 import { getBuildingOption } from './buildingOptions';
 
 // A grid of buildable land around the town hall (the existing 🏘️ marker,
-// which sits on the center cell and isn't a plot itself). The inner two
-// rings (rows/cols -2..2) keep their original spacing exactly — nothing
-// hand-placed around them (houses, decor, the merchant spot) needs to move.
-// A 3rd outer ring adds a further 24 plots at a smaller extra step (not a
-// full further CELL unit — the coordinate canvas doesn't have room for
-// that), gated behind minTownLevel so the buildable land visibly grows
-// alongside the town's own development stage (see PHASE-6's zoning pass).
-// The 4 orthogonal (N/S/E/W) ring-1 plots start unlocked; everything else
-// costs gold + a material to claim, scaling with ring distance, so the town
-// keeps visibly growing well past the first few plots.
-const CELL_W = 0.195;
-const CELL_H = 0.1;
-// How far past the ring-2 edge the ring-3 outer layer sits — deliberately
-// less than a full CELL_W/CELL_H step so it still fits within the safe
-// 0..1 canvas instead of running off-screen.
-const OUTER_STEP_X = 0.075;
-const OUTER_STEP_Y = 0.04;
+// which sits on the center cell and isn't a plot itself). A 3rd outer ring
+// adds a further 24 plots at a smaller extra step (not a full further CELL
+// unit — the coordinate canvas doesn't have room for that), gated behind
+// minTownLevel so the buildable land visibly grows alongside the town's own
+// development stage (see PHASE-6's zoning pass). The 4 orthogonal (N/S/E/W)
+// ring-1 plots start unlocked; everything else costs gold + a material to
+// claim, scaling with ring distance, so the town keeps visibly growing well
+// past the first few plots.
+//
+// Real-device request: once real building art replaced the old emoji icons
+// (see data/buildingImages.ts), the original spacing below (CELL_W=0.195,
+// CELL_H=0.1) left buildings looking scattered across bare grass rather
+// than a "properly zoned town" — a reference image showed buildings tightly
+// clustered around the town hall with roads/paths visibly connecting them.
+// Shrunk to ~1/3 the original spacing (chosen by the same numeric-search
+// approach as the fence/plot geometry elsewhere in this file — see the
+// verification notes in this session's commit) so the same 48-plot grid
+// occupies a much smaller, denser footprint; nothing about the grid's own
+// logic (plot count, unlock costs, ring gating) changed, only how tightly
+// packed the *pixels* are.
+const CELL_W = 65 / 900; // ≈0.0722 — 900 is WorldMap's WORLD_CANVAS_WIDTH
+const CELL_H = 65 / 1400; // ≈0.0464 — 1400 is WorldMap's WORLD_CANVAS_HEIGHT
+// How far past the ring-2 edge the ring-3 outer layer sits. Used to be a
+// deliberately *smaller* step than a full CELL_W/CELL_H (so ring-3 still
+// fit within the safe 0..1 canvas) — that constraint only mattered back
+// when CELL_W/CELL_H were much bigger (0.195/0.1); at today's much smaller
+// cell size a full further step is nowhere near the canvas edge, and a
+// numeric check caught a real bug the smaller step introduced: with a
+// 44px plot sprite (see WorldMap's PLOT_BUILT_SIZE) but only a 26px outer
+// step, ring-2 and ring-3 plots along the same row/column visually
+// overlapped (~18px). A full step restores a comfortable ~21px gap there
+// instead.
+const OUTER_STEP_X = CELL_W;
+const OUTER_STEP_Y = CELL_H;
 // Ring-3 plots can't even be attempted until the town reaches this level.
 const OUTER_RING_MIN_TOWN_LEVEL = 3;
-
-// The two permanent shops (SHOP_PLOT_ID/FEED_SHOP_PLOT_ID below) sit on
-// ring-1's N/S axis (row ±1, col 0). The plain ring-1 offset (CELL_H, 0.1)
-// left them uncomfortably close to the town zone's smallest ellipse (town
-// level 1's ry is 0.108 — under 10% margin, and the shop sprite's own
-// rendered footprint eats into that further), so real devices showed them
-// visibly poking past the drawn boundary. Pulling them in to this smaller,
-// dedicated offset keeps them safely inside at every town level — the zone
-// only ever grows from level 1, never shrinks, so "safe at the smallest
-// tier" is enough to guarantee "safe forever" without any level-aware
-// shop-repositioning logic.
-const SHOP_AXIS_OFFSET = 0.075;
 
 function axisOffset(v: number, cell: number, outerStep: number): number {
   if (Math.abs(v) <= 2) return v * cell;
@@ -66,9 +71,15 @@ function buildPlotDefs(): TownPlotDef[] {
 
       const ringDist = Math.max(Math.abs(row), Math.abs(col));
       const unlockedByDefault = ringDist <= 1 && (row === 0 || col === 0); // orthogonal ring-1 neighbors
-      const isShopCell = col === 0 && Math.abs(row) === 1;
+      // The two permanent shops (SHOP_PLOT_ID/FEED_SHOP_PLOT_ID) sit on this
+      // same ring-1 N/S axis — they used to need a dedicated, smaller offset
+      // here to clear the (much larger, pre-density-pass) town zone ellipse
+      // safely; now that both the grid and the zone were resized together
+      // (see this file's own notes above and getTownZoneRadius's), the
+      // plain ring-1 offset already clears it with margin, so no special
+      // case is needed anymore.
       const x = TOWN_X + axisOffset(col, CELL_W, OUTER_STEP_X);
-      const y = isShopCell ? TOWN_Y + Math.sign(row) * SHOP_AXIS_OFFSET : TOWN_Y + axisOffset(row, CELL_H, OUTER_STEP_Y);
+      const y = TOWN_Y + axisOffset(row, CELL_H, OUTER_STEP_Y);
 
       let unlockCost: TownPlotDef['unlockCost'] = null;
       if (!unlockedByDefault) {
@@ -166,10 +177,18 @@ export function getAllAmenityPositions(plots: Record<string, TownPlotState>): Am
 }
 
 // Where the visiting merchant sets up — a fixed spot off the buildable
-// grid's diagonal plots, southeast of the town hall, clear of both
-// permanent shops (which sit on the N/S axis). Not a real plot: nothing
-// is ever built here, it's just where the temporary stall appears/vanishes.
-export const MERCHANT_SPOT = { x: TOWN_X + 0.11, y: TOWN_Y + 0.11 };
+// grid's plots, clear of both permanent shops (which sit on the N/S axis),
+// the bird houses, and the town hall. Not a real plot: nothing is ever
+// built here, it's just where the temporary stall appears/vanishes.
+// Repositioned alongside the density rework above (see houses.ts for the
+// matching bird-house repositioning, including why this uses real
+// rectangle-overlap math rather than a circle-distance approximation) — a
+// randomized clearance search (with the merchant's own render box shrunk
+// too, see WorldMap's merchant styles) found this spot, well west and
+// slightly south of center, keeps only a small, shallow overlap (a few px,
+// well inside the "acceptable exception" precedent above) against the
+// now much tighter grid.
+export const MERCHANT_SPOT = { x: TOWN_X - 0.1083, y: TOWN_Y + 0.0464 };
 
 export function shopKindForPlot(plotId: string): ShopKind | null {
   return (Object.keys(SHOP_PLOT_IDS) as ShopKind[]).find((k) => SHOP_PLOT_IDS[k] === plotId) ?? null;
@@ -238,17 +257,18 @@ export function getTownLevelDef(level: number): TownLevelDef {
 // only ~0.27 away from town center, so any radius past that would draw the
 // town zone right on top of it — a "monster wandered into town" look, and
 // (since EnemySprite renders without pointerEvents="none") a real tap-
-// blocking risk for whatever it happens to overlap. At rx=0.22/ry=0.145,
-// the closest field content (wolf_b) still clears with plenty of margin
-// (its ellipse-membership fraction is ~1.41, i.e. ~41% outside the
-// boundary), while the always-unlocked ring-1 plots (both real shops
-// included, at 0.1/0.195 from center), the merchant spot, and all 4 bird
-// houses sit comfortably inside. Ring-1's own *diagonal* plots and all of
-// ring-2/ring-3 intentionally sit past the drawn edge — the zone is a soft
-// "core of town" visual, not a requirement every buildable tile has to sit
-// inside (construction eligibility is governed by plot-unlock state +
-// minTownLevel alone, see TownScreen's handlePlotPress).
-const TOWN_ZONE_RADIUS = { rx: 0.22, ry: 0.145 };
+// blocking risk for whatever it happens to overlap. Bumped slightly (from
+// rx=0.22/ry=0.145) alongside the density rework above, since the much
+// tighter plot grid needs a slightly bigger ellipse to still comfortably
+// wrap ring-2 — at rx=0.235/ry=0.152, wolf_b (the closest field content)
+// still clears with solid margin (ellipse-membership fraction ~1.24, i.e.
+// ~24% outside the boundary), while every ring-1/ring-2 plot, both real
+// shops, the merchant spot, and all 4 bird houses sit comfortably inside.
+// Ring-3's 4 extreme corner plots intentionally sit just past the drawn
+// edge — the zone is a soft "core of town" visual, not a requirement every
+// buildable tile has to sit inside (construction eligibility is governed by
+// plot-unlock state + minTownLevel alone, see TownScreen's handlePlotPress).
+const TOWN_ZONE_RADIUS = { rx: 0.235, ry: 0.152 };
 
 export function getTownZoneRadius(): { rx: number; ry: number } {
   return TOWN_ZONE_RADIUS;

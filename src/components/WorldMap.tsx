@@ -83,8 +83,11 @@ const GROUND_TILE_SIZE = 60;
 
 // Display footprint for a constructed plot's real building art (shops,
 // park/bathhouse) — bigger than the plain 36px plot chip since actual
-// building illustrations read as cramped/illegible at that size.
-const PLOT_BUILT_SIZE = 64;
+// building illustrations read as cramped/illegible at that size. Shrunk
+// from 64 alongside the town-density rework (see data/townGrid.ts's
+// CELL_W/CELL_H notes) so the tighter 65px grid spacing has room for a
+// visible gap between neighboring buildings instead of them touching.
+const PLOT_BUILT_SIZE = 44;
 
 // A quick, seedable pseudo-random 0..1 generator (mulberry32) — used so each
 // cell's tile-variant pick is deterministic (stable across re-renders once
@@ -272,22 +275,25 @@ export function WorldMap({
   // A ring of fence posts traced around the town zone ellipse — a
   // real-device request for a clearer, more structural-looking boundary
   // than the plain dashed line above gives on its own ("参考画像は柵で
-  // 区切られている"). POST_COUNT (20) and PHASE_DEG (10°) were picked by a
-  // numeric search over the fixed zone radius above: they're the
-  // combination that keeps every post at least ~30px clear of the always-
-  // present town fixtures a post could otherwise land right on top of
-  // (the two orthogonal ring-1 plots, the two shops, the merchant spot,
-  // all 4 houses) — a naive evenly-spaced ring landed a post almost exactly
-  // on the ring-1 E/W plots at some counts. Ring-1's own *diagonal* plots
-  // intentionally sit just outside this ring (see TOWN_ZONE_RADIUS's
-  // comment) so posts pass moderately close to those by design, not by
-  // oversight.
+  // 区切られている"). Bumped from 20 to 48 posts alongside the density
+  // rework (real-device follow-up: "外周の柵を隙間なく配置する" — the
+  // reference image shows an unbroken ring, but 20 posts around this
+  // ellipse's ~1330px circumference left ~63px between 30px-wide panels,
+  // reading as widely spaced dots rather than a fence). 48 posts averages
+  // ~28px of arc between them — slightly less than each panel's own 30px
+  // width, so neighboring panels overlap a couple px instead of gapping.
+  // Fence posts are purely decorative (pointerEvents="none" below), so
+  // unlike every other density change in this file, packing them this
+  // tight has no tap-target implications to verify — only ring-3's 4
+  // extreme corner plots sit outside this boundary by design (see
+  // TOWN_ZONE_RADIUS's comment), and the fence itself renders behind
+  // those on the map already.
   const fenceNodes = useMemo(() => {
     const cx = TOWN_X * fieldWidth;
     const cy = TOWN_Y * fieldHeight;
     const rx = zoneWidth / 2;
     const ry = zoneHeight / 2;
-    const POST_COUNT = 20;
+    const POST_COUNT = 48;
     const PHASE_DEG = 10;
     const FENCE_W = 30;
     const FENCE_H = 19; // matches fence_wood_short.png's own aspect ratio (95x59 native)
@@ -394,7 +400,7 @@ export function WorldMap({
 
       <AnimatedPressable
         onPress={onTownHallPress}
-        style={[styles.town, { left: TOWN_X * fieldWidth - 46, top: TOWN_Y * fieldHeight - 46 }]}
+        style={[styles.town, { left: TOWN_X * fieldWidth - 32, top: TOWN_Y * fieldHeight - 32 }]}
       >
         <Image source={TOWNHALL_IMAGES[townLevel]} resizeMode="contain" style={styles.townImage} />
         <Text style={styles.townLabel}>{townLevelDef.name}</Text>
@@ -426,7 +432,7 @@ export function WorldMap({
         return (
           <AnimatedPressable
             key={b.defId}
-            style={[styles.house, { left: pos.x * fieldWidth - 30, top: pos.y * fieldHeight - 30 }]}
+            style={[styles.house, { left: pos.x * fieldWidth - 18, top: pos.y * fieldHeight - 18 }]}
             onPress={() => onHousePress(b.defId)}
           >
             {houseImage ? (
@@ -555,7 +561,17 @@ function MerchantSprite({
   const minutesLeft = Math.max(0, Math.ceil((merchant.departsAt - Date.now()) / 60_000));
 
   return (
-    <AnimatedPressable onPress={onPress} style={[styles.sprite, { left: x, top: y }]}>
+    // Centered on (x,y) via its own fixed-size box rather than the shared,
+    // top-left-anchored `sprite` style other generic map sprites (Rock/
+    // Enemy/Treasure/Shopkeeper) use — the density rework needed to reason
+    // about the merchant's actual footprint precisely (see townGrid.ts's
+    // MERCHANT_SPOT comment), which only works if (x,y) is the box's
+    // center, matching the convention already used for the town hall/
+    // houses/plot buildings.
+    <AnimatedPressable
+      onPress={onPress}
+      style={[styles.merchantBox, { left: x - 16, top: y - 21 }]}
+    >
       <Animated.View style={{ transform: [{ translateY: bobY }] }}>
         <Image source={MERCHANT_TENT_IMAGE} resizeMode="contain" style={styles.merchantTentImage} />
       </Animated.View>
@@ -1072,8 +1088,8 @@ const styles = StyleSheet.create({
   // to the box's bottom edge keeps every level standing on the same spot.
   town: {
     position: 'absolute',
-    width: 92,
-    height: 92,
+    width: 64,
+    height: 64,
     alignItems: 'center',
     justifyContent: 'flex-end',
   },
@@ -1096,8 +1112,8 @@ const styles = StyleSheet.create({
   // images themselves (see data/buildingImages.ts's HOUSE_IMAGES).
   house: {
     position: 'absolute',
-    width: 60,
-    height: 60,
+    width: 36,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'flex-end',
   },
@@ -1174,7 +1190,11 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1.5 },
     textShadowRadius: 2,
   },
-  merchantTentImage: { width: 54, height: 43 },
+  // Shrunk from 54x43 alongside the density rework — see townGrid.ts's
+  // MERCHANT_SPOT comment for why this got its own (smaller) box instead
+  // of the shared `sprite` style.
+  merchantBox: { position: 'absolute', width: 32, height: 42, alignItems: 'center', justifyContent: 'center' },
+  merchantTentImage: { width: 26, height: 21 },
   pickaxe: { position: 'absolute', top: -8, right: 0, fontSize: 14 },
   carryBadge: { position: 'absolute', top: -10, right: -4, fontSize: 15 },
   sulkBadge: { position: 'absolute', top: -10, left: -4, fontSize: 14 },

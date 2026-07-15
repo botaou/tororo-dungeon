@@ -155,12 +155,25 @@ export const LEISURE_SPOT_DEFS: LeisureSpotDef[] = [
   { id: 'pond_1', name: '池', emoji: '🪷', kind: 'pond', x: 0.45, y: 0.88 },
 ];
 
-// Purely decorative foliage just beyond the land grid's corners — no
-// gameplay effect, just makes the (now much bigger) town read as a cozy
-// village edge instead of a bare grid of plots.
+// Purely decorative foliage — no gameplay effect (rendered pointerEvents=
+// "none", see WorldMap), just makes the town read as a cozy village rather
+// than a bare grid of plots. Repositioned + expanded alongside the town-
+// density rework: the plot grid shrunk a lot (see townGrid.ts's CELL_W/
+// CELL_H), so the original 4 corner trees/flowers (placed just beyond the
+// old, much bigger grid's corners) ended up floating well outside the new
+// zone fence entirely. The 4 corner pieces are pulled in to sit just
+// inside the new fence line instead, and 4 more (reusing the same pond/
+// flower-bed motifs the request asked for — 🪷 already is this project's
+// pond icon, see LEISURE_SPOT_DEFS's pond_1) fill the small open gaps
+// between the town hall and the ring-1 diagonal plots, so the now much
+// denser town doesn't read as bare road between buildings.
 export const TOWN_DECOR: { emoji: string; x: number; y: number }[] = [
-  { emoji: '🌳', x: TOWN_X - 0.2, y: TOWN_Y - 0.15 },
-  { emoji: '🌳', x: TOWN_X + 0.2, y: TOWN_Y - 0.15 },
-  { emoji: '🌸', x: TOWN_X - 0.2, y: TOWN_Y + 0.15 },
-  { emoji: '🌷', x: TOWN_X + 0.2, y: TOWN_Y + 0.15 },
+  { emoji: '🌳', x: TOWN_X - 0.16, y: TOWN_Y - 0.103 }, // NW, near the fence
+  { emoji: '🌳', x: TOWN_X + 0.16, y: TOWN_Y - 0.103 }, // NE, near the fence
+  { emoji: '🌸', x: TOWN_X - 0.16, y: TOWN_Y + 0.103 }, // SW, near the fence
+  { emoji: '🌷', x: TOWN_X + 0.16, y: TOWN_Y + 0.103 }, // SE, near the fence
+  { emoji: '🪷', x: TOWN_X - 0.1083, y: TOWN_Y - 0.0232 }, // small pond, inner gap
+  { emoji: '🪷', x: TOWN_X + 0.1083, y: TOWN_Y + 0.0232 }, // small pond, inner gap
+  { emoji: '🌼', x: TOWN_X + 0.1083, y: TOWN_Y - 0.0232 }, // flower bed, inner gap
+  { emoji: '🌼', x: TOWN_X - 0.1083, y: TOWN_Y + 0.0232 }, // flower bed, inner gap
 ];
