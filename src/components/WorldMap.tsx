@@ -1018,7 +1018,7 @@ function BirdSprite({
               opacity: isSulking ? 0.6 : 1,
             }}
           >
-            <CharacterAvatar characterId={bird.defId} emoji={def.emoji} color={def.color} size={44} />
+            <CharacterAvatar characterId={bird.defId} emoji={def.emoji} color={def.color} size={44} cosmeticId={bird.cosmeticId} />
           </Animated.View>
           {isSulking && <Text style={styles.sulkBadge}>😤</Text>}
           {showMineSwing && <Text style={styles.pickaxe}>⛏️</Text>}

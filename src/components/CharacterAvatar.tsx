@@ -3,6 +3,7 @@ import { Image, StyleSheet, Text, View } from 'react-native';
 
 import { BIRD_BASE_SPRITES } from '../game/birdBaseSprites';
 import { CHARACTER_IMAGES } from '../game/characterImages';
+import { getCosmeticDef } from '../data/cosmetics';
 import { cuteShadow } from '../theme';
 
 interface Props {
@@ -10,9 +11,21 @@ interface Props {
   emoji: string;
   color: string;
   size?: number;
+  // A bird's currently-equipped costume (BirdState.cosmeticId), if any —
+  // optional since not every caller has a live bird (e.g. RecruitmentModal/
+  // CharacterSelectScreen show a character def before it even has a
+  // wallet). See data/cosmetics.ts: this is a full standing-bird
+  // illustration like base.png, so it *replaces* the base sprite below
+  // wholesale rather than layering on top of it.
+  cosmeticId?: string | null;
 }
 
-export function CharacterAvatar({ characterId, emoji, color, size = 40 }: Props) {
+export function CharacterAvatar({ characterId, emoji, color, size = 40, cosmeticId }: Props) {
+  const cosmetic = getCosmeticDef(cosmeticId ?? null);
+  if (cosmetic) {
+    return <Image source={cosmetic.imageAsset} style={{ width: size, height: size }} resizeMode="contain" />;
+  }
+
   // The full 2-head-tall standing sprite (assets/birds/{id}/base.png) takes
   // priority once it exists — it's drawn whole (no crop/circle), since a
   // full body doesn't fit a round mask the way the face-icon fallback does.

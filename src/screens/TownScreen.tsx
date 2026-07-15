@@ -44,6 +44,7 @@ export function TownScreen() {
   const withdrawFoodFromHouse = useWorldStore((s) => s.withdrawFoodFromHouse);
   const favoriteTreasure = useWorldStore((s) => s.favoriteTreasure);
   const unfavoriteTreasure = useWorldStore((s) => s.unfavoriteTreasure);
+  const setCosmetic = useWorldStore((s) => s.setCosmetic);
   const plots = useTownStore((s) => s.plots);
   const developmentPoints = useTownStore((s) => s.developmentPoints);
   const levelUpEvents = useTownStore((s) => s.levelUpEvents);
@@ -253,7 +254,12 @@ export function TownScreen() {
         items={items}
       />
 
-      <BirdRosterModal visible={rosterVisible} onClose={() => setRosterVisible(false)} birds={activeBirds} />
+      <BirdRosterModal
+        visible={rosterVisible}
+        onClose={() => setRosterVisible(false)}
+        birds={activeBirds}
+        onSetCosmetic={setCosmetic}
+      />
 
       <TownStatusModal
         visible={townStatusVisible}

@@ -226,6 +226,7 @@ function buildInitialWorld(): WorldState {
       inventory: { ...wallet.inventory },
       items: { ...wallet.items },
       equipment: { ...wallet.equipment },
+      cosmeticId: wallet.cosmeticId,
       houseFood: { ...wallet.houseFood },
       houseTreasureIds: [...wallet.houseTreasureIds],
       skills: [...wallet.skills],
@@ -343,6 +344,12 @@ interface WorldActions {
   withdrawFoodFromHouse: (defId: string, itemId: ItemId, amount: number) => boolean;
   favoriteTreasure: (defId: string, itemId: ItemId) => boolean;
   unfavoriteTreasure: (defId: string, itemId: ItemId) => boolean;
+  // Look-only costume change (see data/cosmetics.ts) — always available,
+  // never validated against ownership/cost (out of scope for now, see
+  // COSMETIC_ITEMS's own comment), and never touches stats. Pass null to
+  // unequip back to the bird's plain look. Returns false only if defId
+  // doesn't match a known bird.
+  setCosmetic: (defId: string, cosmeticId: string | null) => boolean;
 }
 
 // Shared by reportCraftCompleted and deliverToMerchant — both are player-
@@ -558,6 +565,16 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       items: { ...bird.items, [itemId]: (bird.items[itemId] ?? 0) + 1 },
       houseTreasureIds: nextTreasureIds,
     };
+    set({ world: { ...world, birds: nextBirds } });
+    return true;
+  },
+
+  setCosmetic: (defId, cosmeticId) => {
+    const { world } = get();
+    const birdIndex = world.birds.findIndex((b) => b.defId === defId);
+    if (birdIndex === -1) return false;
+    const nextBirds = [...world.birds];
+    nextBirds[birdIndex] = { ...world.birds[birdIndex], cosmeticId };
     set({ world: { ...world, birds: nextBirds } });
     return true;
   },
@@ -1164,6 +1181,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         inventory: b.inventory,
         items: b.items,
         equipment: b.equipment,
+        cosmeticId: b.cosmeticId,
         houseFood: b.houseFood,
         houseTreasureIds: b.houseTreasureIds,
         skills: b.skills,

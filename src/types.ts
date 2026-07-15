@@ -65,6 +65,17 @@ export type ItemType = 'craft' | 'convertible';
 // item go in" never needs a separate lookup table.
 export type EquipSlot = 'weapon' | 'armor' | 'hat' | 'shield';
 
+// Cosmetic-only "costume" catalog (see data/cosmetics.ts) — a completely
+// separate slot from EquipSlot above: a bird has at most *one* cosmetic
+// equipped at a time (BirdState.cosmeticId/BirdWallet.cosmeticId), it
+// carries no ItemStatBonus, and it isn't tracked as owned inventory the
+// way weapon/armor/hat/shield items are — every cosmetic is always
+// available to any bird to wear or remove freely (how a player *acquires*
+// one, e.g. a shop/gacha/event, is intentionally out of scope for now; see
+// data/cosmetics.ts's own comment). One shared image per cosmetic is reused
+// across all 4 birds rather than a per-bird recolor.
+export type CosmeticCategory = 'costume' | 'outfit' | 'cute' | 'event' | 'theme' | 'seasonal';
+
 // Which physical shop building this is. 'general' (hats/shields) and 'feed'
 // always exist on a fixed town plot from the start; 'weapon'/'armor' don't
 // have a fixed plot at all — they only come into being once the player
@@ -411,6 +422,11 @@ export interface BirdState {
   // see game/birdStats.ts's maybeAutoEquip. Never auto-replaces something
   // already equipped; extra copies just sit unequipped in `items`.
   equipment: Record<EquipSlot, ItemId | null>;
+  // Purely cosmetic "costume" (see data/cosmetics.ts) — entirely separate
+  // from `equipment` above: never affects getEffectiveStats, freely
+  // changeable at any time via useWorldStore's setCosmetic (a direct
+  // player action, unlike `equipment`'s auto-equip-only flow).
+  cosmeticId: string | null;
   // A bird's own house storage — player-managed, tapped into via the
   // HouseInventoryModal, distinct from the automatic inventory/items above.
   // Food stashed here is eaten (see ai.ts's stepShopFood) before a hungry

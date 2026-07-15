@@ -1,10 +1,11 @@
 import React from 'react';
-import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { BirdState, EquipSlot, ItemId, MaterialId } from '../types';
 import { CHARACTERS } from '../data/characters';
 import { MATERIAL_ICON } from '../data/materials';
 import { ITEM_DEF_MAP } from '../data/items';
+import { COSMETIC_ITEMS } from '../data/cosmetics';
 import { getMoodDef } from '../data/moods';
 import { getBirdGoalLabel, getBirdStatusLabel } from '../game/birdStatus';
 import { getEffectiveStats } from '../game/birdStats';
@@ -25,9 +26,13 @@ interface Props {
   visible: boolean;
   onClose: () => void;
   birds: BirdState[];
+  // Look-only costume change (see data/cosmetics.ts) — always available to
+  // any bird, no cost/ownership check (out of scope for this pass), never
+  // touches the stats shown in statsRow above.
+  onSetCosmetic: (defId: string, cosmeticId: string | null) => void;
 }
 
-export function BirdRosterModal({ visible, onClose, birds }: Props) {
+export function BirdRosterModal({ visible, onClose, birds, onSetCosmetic }: Props) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
@@ -49,7 +54,7 @@ export function BirdRosterModal({ visible, onClose, birds }: Props) {
               return (
                 <View key={c.id} style={[styles.card, { borderColor: c.color }]}>
                   <View style={styles.cardHeader}>
-                    <CharacterAvatar characterId={c.id} emoji={c.emoji} color={c.color} size={48} />
+                    <CharacterAvatar characterId={c.id} emoji={c.emoji} color={c.color} size={48} cosmeticId={bird.cosmeticId} />
                     <View style={styles.cardHeaderText}>
                       <Text style={styles.cardName}>
                         {bird.name} <Text style={styles.cardLevel}>Lv{bird.level}</Text>
@@ -108,6 +113,38 @@ export function BirdRosterModal({ visible, onClose, birds }: Props) {
                       );
                     })}
                   </View>
+
+                  <Text style={styles.cosmeticSectionLabel}>
+                    👗見た目装備(コスチューム) — ステータスには影響しません
+                  </Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.cosmeticRow}>
+                    <AnimatedPressable
+                      style={[styles.cosmeticChip, !bird.cosmeticId && styles.cosmeticChipActive]}
+                      onPress={() => onSetCosmetic(bird.defId, null)}
+                    >
+                      <View style={styles.cosmeticChipEmptyIcon}>
+                        <Text style={styles.cosmeticChipEmptyIconText}>🚫</Text>
+                      </View>
+                      <Text style={styles.cosmeticChipLabel} numberOfLines={1}>
+                        なし
+                      </Text>
+                    </AnimatedPressable>
+                    {COSMETIC_ITEMS.map((cosmetic) => {
+                      const isActive = bird.cosmeticId === cosmetic.id;
+                      return (
+                        <AnimatedPressable
+                          key={cosmetic.id}
+                          style={[styles.cosmeticChip, isActive && styles.cosmeticChipActive]}
+                          onPress={() => onSetCosmetic(bird.defId, isActive ? null : cosmetic.id)}
+                        >
+                          <Image source={cosmetic.imageAsset} style={styles.cosmeticChipImage} resizeMode="contain" />
+                          <Text style={styles.cosmeticChipLabel} numberOfLines={1}>
+                            {cosmetic.name}
+                          </Text>
+                        </AnimatedPressable>
+                      );
+                    })}
+                  </ScrollView>
 
                   <View style={styles.inventoryRow}>
                     {owned.length === 0 && ownedItems.length === 0 ? (
@@ -192,6 +229,23 @@ const styles = StyleSheet.create({
   equipIcon: { fontSize: 16 },
   equipIconEmpty: { opacity: 0.3 },
   equipLabel: { fontSize: 9, color: theme.textMuted, maxWidth: 60 },
+  cosmeticSectionLabel: { fontSize: 10, fontWeight: '700', color: theme.textMuted, marginTop: 8 },
+  cosmeticRow: { marginTop: 4 },
+  cosmeticChip: {
+    width: 56,
+    alignItems: 'center',
+    backgroundColor: theme.card,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: theme.cardBorder,
+    paddingVertical: 4,
+    marginRight: 6,
+  },
+  cosmeticChipActive: { borderColor: theme.gold, backgroundColor: theme.cardAlt },
+  cosmeticChipImage: { width: 40, height: 40 },
+  cosmeticChipEmptyIcon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  cosmeticChipEmptyIconText: { fontSize: 18, opacity: 0.5 },
+  cosmeticChipLabel: { fontSize: 8, color: theme.textMuted, maxWidth: 52, textAlign: 'center' },
   inventoryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
   emptyInventory: { fontSize: 10, color: theme.textMuted },
   inventoryItem: { fontSize: 11, fontWeight: '700', color: theme.textPrimary },

@@ -23,6 +23,9 @@ export interface BirdWallet {
   inventory: Record<MaterialId, number>;
   items: Partial<Record<ItemId, number>>;
   equipment: Record<EquipSlot, ItemId | null>;
+  // Purely cosmetic — see BirdState.cosmeticId (types.ts) and
+  // data/cosmetics.ts. Never affects atk/maxHp/defense/speed/luck below.
+  cosmeticId: string | null;
   // See BirdState's matching fields (types.ts) — house storage, managed by
   // HouseInventoryModal.
   houseFood: Partial<Record<ItemId, number>>;
@@ -53,6 +56,7 @@ function defaultWallet(defId: string): BirdWallet {
     inventory: { ...STARTING_MATERIALS },
     items: {},
     equipment: { weapon: null, armor: null, hat: null, shield: null },
+    cosmeticId: null,
     houseFood: {},
     houseTreasureIds: [],
     skills: [],
