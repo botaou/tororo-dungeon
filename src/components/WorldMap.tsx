@@ -30,6 +30,7 @@ import { HOUSE_POSITIONS } from '../data/houses';
 import { MATERIAL_ICON } from '../data/materials';
 import { TILE_IMAGES, TILE_REPEAT_IMAGES } from '../data/tileImages';
 import { getBuildingOption } from '../data/buildingOptions';
+import { AMENITY_IMAGES, FENCE_IMAGE, HOUSE_IMAGES, MERCHANT_TENT_IMAGE, SHOP_IMAGES, TOWNHALL_IMAGES } from '../data/buildingImages';
 import { CharacterAvatar } from './CharacterAvatar';
 import { AnimatedPressable } from './AnimatedPressable';
 import { TICK_MS } from '../game/config';
@@ -79,6 +80,11 @@ const FIELD_ZONE_PATCHES: {
 // a patch's own size changes (see the useMemo calls below), not every game
 // tick.
 const GROUND_TILE_SIZE = 60;
+
+// Display footprint for a constructed plot's real building art (shops,
+// park/bathhouse) — bigger than the plain 36px plot chip since actual
+// building illustrations read as cramped/illegible at that size.
+const PLOT_BUILT_SIZE = 64;
 
 // A quick, seedable pseudo-random 0..1 generator (mulberry32) — used so each
 // cell's tile-variant pick is deterministic (stable across re-renders once
@@ -283,15 +289,30 @@ export function WorldMap({
     const ry = zoneHeight / 2;
     const POST_COUNT = 20;
     const PHASE_DEG = 10;
+    const FENCE_W = 30;
+    const FENCE_H = 19; // matches fence_wood_short.png's own aspect ratio (95x59 native)
     const posts: React.ReactNode[] = [];
     for (let i = 0; i < POST_COUNT; i++) {
       const theta = ((i / POST_COUNT) * 360 + PHASE_DEG) * (Math.PI / 180);
       const x = cx + rx * Math.cos(theta);
       const y = cy + ry * Math.sin(theta);
+      // Rotate each panel to sit tangent to the ellipse at its own point
+      // (the tangent of a parametric ellipse at angle theta), so the fence
+      // reads as one continuous ring rather than identical flat panels
+      // facing the same direction all the way around.
+      const tangentDeg = (Math.atan2(ry * Math.cos(theta), -rx * Math.sin(theta)) * 180) / Math.PI;
       posts.push(
-        <Text key={i} pointerEvents="none" style={[styles.fencePost, { left: x - 9, top: y - 9 }]}>
-          🪵
-        </Text>
+        <View
+          key={i}
+          pointerEvents="none"
+          style={[styles.fencePost, { left: x - FENCE_W / 2, top: y - FENCE_H / 2, width: FENCE_W, height: FENCE_H }]}
+        >
+          <Image
+            source={FENCE_IMAGE}
+            resizeMode="contain"
+            style={[styles.fencePostImage, { transform: [{ rotate: `${tangentDeg}deg` }] }]}
+          />
+        </View>
       );
     }
     return posts;
@@ -362,6 +383,7 @@ export function WorldMap({
             state={shopKind ? { ...state, unlocked: true, building: 'shop' } : state}
             shopEmoji={shopKind ? SHOP_DEFS[shopKind].emoji : undefined}
             shopName={shopKind ? SHOP_DEFS[shopKind].name : undefined}
+            shopImage={shopKind ? SHOP_IMAGES[shopKind] : undefined}
             levelLocked={levelLocked}
             x={def.x * fieldWidth}
             y={def.y * fieldHeight}
@@ -372,9 +394,9 @@ export function WorldMap({
 
       <AnimatedPressable
         onPress={onTownHallPress}
-        style={[styles.town, { left: TOWN_X * fieldWidth - 34, top: TOWN_Y * fieldHeight - 34 }]}
+        style={[styles.town, { left: TOWN_X * fieldWidth - 46, top: TOWN_Y * fieldHeight - 46 }]}
       >
-        <Text style={styles.townEmoji}>{townLevelDef.emoji}</Text>
+        <Image source={TOWNHALL_IMAGES[townLevel]} resizeMode="contain" style={styles.townImage} />
         <Text style={styles.townLabel}>{townLevelDef.name}</Text>
       </AnimatedPressable>
 
@@ -400,13 +422,18 @@ export function WorldMap({
         const pos = HOUSE_POSITIONS[b.defId];
         if (!pos) return null;
         const def = getCharacterDef(b.defId);
+        const houseImage = HOUSE_IMAGES[b.defId];
         return (
           <AnimatedPressable
             key={b.defId}
-            style={[styles.house, { left: pos.x * fieldWidth - 18, top: pos.y * fieldHeight - 18, borderColor: def.color }]}
+            style={[styles.house, { left: pos.x * fieldWidth - 30, top: pos.y * fieldHeight - 30 }]}
             onPress={() => onHousePress(b.defId)}
           >
-            <Text style={styles.houseEmoji}>🏠</Text>
+            {houseImage ? (
+              <Image source={houseImage} resizeMode="contain" style={styles.houseImage} />
+            ) : (
+              <Text style={styles.plotBuildingIcon}>🏠</Text>
+            )}
             <Text style={styles.houseTag}>{def.emoji}</Text>
           </AnimatedPressable>
         );
@@ -530,7 +557,7 @@ function MerchantSprite({
   return (
     <AnimatedPressable onPress={onPress} style={[styles.sprite, { left: x, top: y }]}>
       <Animated.View style={{ transform: [{ translateY: bobY }] }}>
-        <Text style={styles.emojiLarge}>🏕️</Text>
+        <Image source={MERCHANT_TENT_IMAGE} resizeMode="contain" style={styles.merchantTentImage} />
       </Animated.View>
       <Text style={styles.nameTag}>商人</Text>
       <Text style={styles.tag}>残り{minutesLeft}分</Text>
@@ -609,6 +636,7 @@ function PlotSprite({
   state,
   shopEmoji,
   shopName,
+  shopImage,
   levelLocked,
   x,
   y,
@@ -618,6 +646,7 @@ function PlotSprite({
   state: TownPlotState;
   shopEmoji?: string;
   shopName?: string;
+  shopImage?: number;
   levelLocked: boolean;
   x: number;
   y: number;
@@ -659,6 +688,11 @@ function PlotSprite({
   // but render as 🛠️/🌾 respectively once matched back to their option.
   const constructedOption = getBuildingOption(state.constructedBuildingId);
   const buildingIcon = constructedOption?.emoji ?? (state.building ? BUILDING_ICON[state.building] : '·');
+  // 'park'/'bathhouse' (Phase 11) have real art (see data/buildingImages.ts);
+  // 'garden' and the cosmetic workshop/warehouse fallbacks don't, and keep
+  // the emoji-in-a-card look below.
+  const amenityImage = constructedOption ? AMENITY_IMAGES[constructedOption.id] : undefined;
+  const buildingImage = shopImage ?? amenityImage;
   // A real-device request: a constructed building (in particular the new
   // park/bathhouse — see Phase 11) was hard to tell apart from any other
   // small emoji dotted around the map, since only the bare icon rendered
@@ -666,6 +700,32 @@ function PlotSprite({
   // merchant/town-hall sprites already have — makes what's actually built
   // here unambiguous at a glance.
   const label = shopName ?? constructedOption?.name;
+
+  if (buildingImage) {
+    // Real building art — a bigger, bottom-anchored (no card background)
+    // box, same idea as the town-hall/house sprites: the art already has
+    // its own ground shadow, so a background chip behind it would look
+    // like a sticker rather than a building standing on the plot.
+    return (
+      <>
+        <AnimatedPressable
+          style={[styles.plotBuilt, { left: x - PLOT_BUILT_SIZE / 2, top: y - PLOT_BUILT_SIZE / 2 }]}
+          onPress={onPress}
+        >
+          <Image source={buildingImage} resizeMode="contain" style={styles.plotBuiltImage} />
+        </AnimatedPressable>
+        {label && (
+          <Text
+            pointerEvents="none"
+            style={[styles.plotBuildingLabel, { left: x - 30, top: y + PLOT_BUILT_SIZE / 2 + 1 }]}
+            numberOfLines={1}
+          >
+            {label}
+          </Text>
+        )}
+      </>
+    );
+  }
 
   return (
     <>
@@ -1002,35 +1062,47 @@ const styles = StyleSheet.create({
   },
   roadHorizontal: { position: 'absolute', height: 8, borderRadius: 2, backgroundColor: theme.road, opacity: 0.75 },
   roadVertical: { position: 'absolute', width: 8, borderRadius: 2, backgroundColor: theme.road, opacity: 0.75 },
-  fencePost: { position: 'absolute', fontSize: 18 },
+  fencePost: { position: 'absolute' },
+  fencePostImage: { width: '100%', height: '100%' },
+  // Bottom-anchored (justifyContent: 'flex-end', no background/border card)
+  // rather than the old fixed-size chip — the 5 town-hall images have very
+  // different aspect ratios (a squat ボロ役場 vs. the towered トロロ自然
+  // 保護本部), so centering them in a fixed box would leave each one's own
+  // "ground line" at a different height. Anchoring the image's bottom edge
+  // to the box's bottom edge keeps every level standing on the same spot.
   town: {
     position: 'absolute',
-    width: 68,
-    height: 68,
-    borderRadius: 20,
-    backgroundColor: theme.card,
-    borderWidth: 2.5,
-    borderColor: theme.gold,
+    width: 92,
+    height: 92,
     alignItems: 'center',
-    justifyContent: 'center',
-    ...cuteShadow,
+    justifyContent: 'flex-end',
   },
-  townEmoji: { fontSize: 30 },
-  townLabel: { fontSize: 8, fontWeight: '700', color: theme.textMuted, position: 'absolute', bottom: 4 },
+  townImage: { width: '100%', height: '100%' },
+  townLabel: {
+    position: 'absolute',
+    bottom: -14,
+    fontSize: 9,
+    fontWeight: '700',
+    color: theme.textPrimary,
+    backgroundColor: 'rgba(255,255,255,0.75)',
+    borderRadius: 6,
+    paddingHorizontal: 4,
+  },
   decor: { position: 'absolute', fontSize: 20, opacity: 0.9 },
+  // Same bottom-anchored, no-background-chip approach as `town` above —
+  // the house art already includes its own ground/shadow, so the old
+  // per-bird border-color chip (the previous way "whose house is this"
+  // was shown) is replaced entirely by the 4 differently-colored house
+  // images themselves (see data/buildingImages.ts's HOUSE_IMAGES).
   house: {
     position: 'absolute',
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: theme.card,
-    borderWidth: 2.5,
+    width: 60,
+    height: 60,
     alignItems: 'center',
-    justifyContent: 'center',
-    ...cuteShadow,
+    justifyContent: 'flex-end',
   },
-  houseEmoji: { fontSize: 16 },
-  houseTag: { position: 'absolute', bottom: -6, right: -6, fontSize: 12 },
+  houseImage: { width: '100%', height: '100%' },
+  houseTag: { position: 'absolute', bottom: -2, right: -2, fontSize: 14 },
   plot: {
     position: 'absolute',
     width: 36,
@@ -1054,6 +1126,17 @@ const styles = StyleSheet.create({
   plotLockIcon: { fontSize: 16 },
   plotCostText: { fontSize: 8, fontWeight: '700', color: theme.textMuted, marginTop: 1 },
   plotBuildingIcon: { fontSize: 22, color: theme.textMuted },
+  // Real building art (shops, park/bathhouse) — bottom-anchored like the
+  // town-hall/house sprites, no card background (the art has its own
+  // ground shadow already).
+  plotBuilt: {
+    position: 'absolute',
+    width: PLOT_BUILT_SIZE,
+    height: PLOT_BUILT_SIZE,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  plotBuiltImage: { width: '100%', height: '100%' },
   plotBuildingLabel: {
     position: 'absolute',
     width: 60,
@@ -1091,6 +1174,7 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1.5 },
     textShadowRadius: 2,
   },
+  merchantTentImage: { width: 54, height: 43 },
   pickaxe: { position: 'absolute', top: -8, right: 0, fontSize: 14 },
   carryBadge: { position: 'absolute', top: -10, right: -4, fontSize: 15 },
   sulkBadge: { position: 'absolute', top: -10, left: -4, fontSize: 14 },
