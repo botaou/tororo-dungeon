@@ -14,24 +14,38 @@ interface Props {
   // A bird's currently-equipped costume (BirdState.cosmeticId), if any —
   // optional since not every caller has a live bird (e.g. RecruitmentModal/
   // CharacterSelectScreen show a character def before it even has a
-  // wallet). See data/cosmetics.ts: this is a full standing-bird
-  // illustration like base.png, so it *replaces* the base sprite below
-  // wholesale rather than layering on top of it.
+  // wallet). See data/cosmetics.ts: this is a costume-only overlay (no bird
+  // baked in), layered on top of the bird's own base sprite below rather
+  // than replacing it, so the wearer's own face/color always shows through
+  // whatever gap the costume has.
   cosmeticId?: string | null;
 }
 
 export function CharacterAvatar({ characterId, emoji, color, size = 40, cosmeticId }: Props) {
-  const cosmetic = getCosmeticDef(cosmeticId ?? null);
-  if (cosmetic) {
-    return <Image source={cosmetic.imageAsset} style={{ width: size, height: size }} resizeMode="contain" />;
-  }
-
   // The full 2-head-tall standing sprite (assets/birds/{id}/base.png) takes
   // priority once it exists — it's drawn whole (no crop/circle), since a
   // full body doesn't fit a round mask the way the face-icon fallback does.
   const baseSprite = BIRD_BASE_SPRITES[characterId];
   if (baseSprite) {
-    return <Image source={baseSprite} style={{ width: size, height: size }} resizeMode="contain" />;
+    const cosmetic = getCosmeticDef(cosmeticId ?? null);
+    return (
+      <View style={{ width: size, height: size }}>
+        <Image source={baseSprite} style={{ width: size, height: size }} resizeMode="contain" />
+        {cosmetic && (
+          <Image
+            source={cosmetic.imageAsset}
+            resizeMode="stretch"
+            style={{
+              position: 'absolute',
+              width: size * cosmetic.widthFrac,
+              height: size * cosmetic.heightFrac,
+              left: size * cosmetic.centerXFrac - (size * cosmetic.widthFrac) / 2,
+              top: size * cosmetic.centerYFrac - (size * cosmetic.heightFrac) / 2,
+            }}
+          />
+        )}
+      </View>
+    );
   }
 
   const source = CHARACTER_IMAGES[characterId];

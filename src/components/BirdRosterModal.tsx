@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { BirdState, EquipSlot, ItemId, MaterialId } from '../types';
 import { CHARACTERS } from '../data/characters';
@@ -137,7 +137,13 @@ export function BirdRosterModal({ visible, onClose, birds, onSetCosmetic }: Prop
                           style={[styles.cosmeticChip, isActive && styles.cosmeticChipActive]}
                           onPress={() => onSetCosmetic(bird.defId, isActive ? null : cosmetic.id)}
                         >
-                          <Image source={cosmetic.imageAsset} style={styles.cosmeticChipImage} resizeMode="contain" />
+                          <CharacterAvatar
+                            characterId={c.id}
+                            emoji={c.emoji}
+                            color={c.color}
+                            size={40}
+                            cosmeticId={cosmetic.id}
+                          />
                           <Text style={styles.cosmeticChipLabel} numberOfLines={1}>
                             {cosmetic.name}
                           </Text>
@@ -242,7 +248,6 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   cosmeticChipActive: { borderColor: theme.gold, backgroundColor: theme.cardAlt },
-  cosmeticChipImage: { width: 40, height: 40 },
   cosmeticChipEmptyIcon: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   cosmeticChipEmptyIconText: { fontSize: 18, opacity: 0.5 },
   cosmeticChipLabel: { fontSize: 8, color: theme.textMuted, maxWidth: 52, textAlign: 'center' },
