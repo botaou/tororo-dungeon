@@ -4,6 +4,15 @@ import { Personality } from '../types';
 
 export const TICK_MS = 1_000;
 
+// Temporary visual debug aid (real-device report: costume/enemy art still
+// looked clipped/overflowing after a fix that measurement showed should have
+// resolved it) — draws a 1px red outline around the exact box each sprite is
+// clipped to (CharacterAvatar's overflow:hidden box, EnemySprite's image),
+// so a screenshot can show directly whether art crosses that boundary
+// instead of relying on judging it by eye. Flip back to false once a report
+// is confirmed resolved (or confirmed as a stale-bundle false alarm).
+export const DEBUG_SHOW_SPRITE_BOUNDS = true;
+
 // How many ticks a bird spends animating a mining/treasure/job encounter
 // before it auto-resolves and it moves on.
 export const ENCOUNTER_HOLD_TICKS = 2;

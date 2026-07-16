@@ -34,7 +34,7 @@ import { AMENITY_IMAGES, FENCE_IMAGE, HOUSE_IMAGES, MERCHANT_TENT_IMAGE, SHOP_IM
 import { ENEMY_IMAGES, FIELD_OBJECT_AFTER_IMAGES, FIELD_OBJECT_IMAGES } from '../data/fieldImages';
 import { CharacterAvatar } from './CharacterAvatar';
 import { AnimatedPressable } from './AnimatedPressable';
-import { TICK_MS } from '../game/config';
+import { DEBUG_SHOW_SPRITE_BOUNDS, TICK_MS } from '../game/config';
 import { RETREAT_LINES } from '../game/thoughts';
 import { MONE_ENCOUNTER_SPOT, TORORO_ENCOUNTER_SPOT } from '../game/recruitment';
 import { cuteShadow, theme } from '../theme';
@@ -622,7 +622,11 @@ function RockSprite({ node, x, y }: { node: MiningNodeInstance; x: number; y: nu
     >
       {!node.collected && <Image source={TILE_IMAGES.dirtPatchRound} resizeMode="contain" style={styles.rockAccent} />}
       {image ? (
-        <Image source={image} resizeMode="contain" style={styles.fieldObjectImage} />
+        <Image
+          source={image}
+          resizeMode="contain"
+          style={[styles.fieldObjectImage, DEBUG_SHOW_SPRITE_BOUNDS && styles.debugBorder]}
+        />
       ) : (
         <Text style={styles.emojiLarge}>{fallbackEmoji}</Text>
       )}
@@ -838,6 +842,7 @@ function EnemySprite({ enemy, x, y }: { enemy: EnemyInstance; x: number; y: numb
       pointerEvents="none"
       style={[
         styles.sprite,
+        DEBUG_SHOW_SPRITE_BOUNDS && styles.debugBorder,
         {
           transform: [
             { translateX: Animated.add(pos.x, shake.interpolate({ inputRange: [-1, 1], outputRange: [-6, 6] })) },
@@ -856,7 +861,11 @@ function EnemySprite({ enemy, x, y }: { enemy: EnemyInstance; x: number; y: numb
       />
       {enemy.hp > 0 && <Text style={styles.enemyStrengthBadge}>{strengthStars}</Text>}
       {ENEMY_IMAGES[enemy.name] ? (
-        <Image source={ENEMY_IMAGES[enemy.name]} resizeMode="contain" style={styles.enemyImage} />
+        <Image
+          source={ENEMY_IMAGES[enemy.name]}
+          resizeMode="contain"
+          style={[styles.enemyImage, DEBUG_SHOW_SPRITE_BOUNDS && styles.debugBorder]}
+        />
       ) : (
         <Text style={styles.emojiLarge}>{enemy.emoji}</Text>
       )}
@@ -1203,6 +1212,10 @@ const styles = StyleSheet.create({
   // (they range from tall trees to a wide pond) instead of stretching it.
   fieldObjectImage: { width: 40, height: 40 },
   enemyImage: { width: 36, height: 36 },
+  // See DEBUG_SHOW_SPRITE_BOUNDS in game/config.ts — outlines the exact
+  // image box a sprite is asked to render into, so a screenshot can show
+  // directly whether the art is being clipped by that box or not.
+  debugBorder: { borderWidth: 1, borderColor: 'red' },
   leisureSprite: { opacity: 0.85 },
   tapArea: { alignItems: 'center' },
   // A soft shadow helps flat-shaded icons (mining nodes, treasure, etc.)

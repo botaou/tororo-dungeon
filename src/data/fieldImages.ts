@@ -58,13 +58,26 @@ export const FIELD_OBJECT_AFTER_IMAGES: Partial<Record<MaterialId, number>> = {
 // second reference sheet's 森エリア (the first sheet has no wolf-like
 // enemy at all).
 //
-// Real-device report: オオカミ rendered visibly cut off in the field. Its
-// source crop (enemy_wolf.png) was only 53x70 — roughly half the linear
-// resolution of enemy_bat.png/enemy_slime.png (~106-114px) — because the
-// second reference sheet packs more columns into the same width, so its
-// character art is natively smaller. Re-extracted at 2x (LANCZOS upscale
-// during the crop, not a naive stretch of the old file) so it's no longer
-// the noticeably lower-fidelity/smaller-margin one of the three.
+// Real-device report: オオカミ rendered visibly cut off in the field —
+// initially treated as a resolution problem (the first crop was only
+// 53x70, half the linear resolution of enemy_bat.png/enemy_slime.png at
+// ~106-114px) and "fixed" by re-extracting at 2x. That didn't actually
+// address it: a second real-device report showed the exact same hard,
+// flat-edged clip through the middle of the wolf's face — impossible for
+// resizeMode="contain" to produce (it only ever scales the whole image
+// down to fit, never crops), which pointed back at the source PNG itself.
+// Re-examining that first crop against the original reference sheet showed
+// it wasn't actually a resolution issue at all — the crop region had
+// bled into part of a *second*, larger wolf illustration positioned
+// immediately behind/beside ウルフル in the sheet, baking a ghost
+// second-body into the right side of the image. Re-cropped from the
+// original reference sheet using this file's usual column-boundary method
+// (detecting each label's text connected-components and splitting at the
+// midpoint between neighboring labels, since eyeballing cell edges is what
+// caused this same class of bug for other field assets too — see the
+// building/tile note in this file's history) — the new crop is a single
+// clean wolf with no ghosting, still upscaled 2x to match bat/slime's
+// resolution.
 export const ENEMY_IMAGES: Record<string, number> = {
   スライム: require('../../assets/field/enemy_slime.png'),
   コウモリ: require('../../assets/field/enemy_bat.png'),

@@ -4,6 +4,7 @@ import { Image, StyleSheet, Text, View } from 'react-native';
 import { BIRD_BASE_SPRITES } from '../game/birdBaseSprites';
 import { CHARACTER_IMAGES } from '../game/characterImages';
 import { getCosmeticDef } from '../data/cosmetics';
+import { DEBUG_SHOW_SPRITE_BOUNDS } from '../game/config';
 import { cuteShadow } from '../theme';
 
 interface Props {
@@ -35,7 +36,14 @@ export function CharacterAvatar({ characterId, emoji, color, size = 40, cosmetic
       // sulk/pickaxe emoji at top:-10/-8, just outside its own avatar box),
       // so anything that *did* slip past the edge would visibly collide
       // with them instead of just looking slightly off.
-      <View style={{ width: size, height: size, overflow: 'hidden' }}>
+      <View
+        style={{
+          width: size,
+          height: size,
+          overflow: 'hidden',
+          ...(DEBUG_SHOW_SPRITE_BOUNDS ? { borderWidth: 1, borderColor: 'red' } : null),
+        }}
+      >
         <Image source={baseSprite} style={{ width: size, height: size }} resizeMode="contain" />
         {cosmetic && (
           <Image
