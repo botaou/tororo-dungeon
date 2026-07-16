@@ -57,6 +57,14 @@ export const FIELD_OBJECT_AFTER_IMAGES: Partial<Record<MaterialId, number>> = {
 // and コウモリ come from the reference sheet's 森/鉱山エリア, オオカミ from a
 // second reference sheet's 森エリア (the first sheet has no wolf-like
 // enemy at all).
+//
+// Real-device report: オオカミ rendered visibly cut off in the field. Its
+// source crop (enemy_wolf.png) was only 53x70 — roughly half the linear
+// resolution of enemy_bat.png/enemy_slime.png (~106-114px) — because the
+// second reference sheet packs more columns into the same width, so its
+// character art is natively smaller. Re-extracted at 2x (LANCZOS upscale
+// during the crop, not a naive stretch of the old file) so it's no longer
+// the noticeably lower-fidelity/smaller-margin one of the three.
 export const ENEMY_IMAGES: Record<string, number> = {
   スライム: require('../../assets/field/enemy_slime.png'),
   コウモリ: require('../../assets/field/enemy_bat.png'),

@@ -82,6 +82,24 @@ import { CosmeticCategory } from '../types';
 // shows the same bird-dependent misfit, this is why: there's no per-bird
 // override in this data shape, only a single compromise value tuned to
 // clear the biggest head in the roster.
+//
+// Correction #5 (real-device report: theme_sunflower still covering Haku's
+// eyes; costume_parrot still showing a fragment of the baked-in face on
+// real hardware): two more bugs slipped through the previous verification
+// pass because it never checked the 48px size BirdRosterModal's header
+// avatar actually renders at (only 44/40/32 had been re-checked) — at 48px
+// theme_sunflower's scale=0.85/offsetY=-0.32 genuinely did sit low enough
+// to cover the eyes on every bird, it just hadn't been looked at closely
+// enough at any size to notice. Shrunk it to scale=0.65/offsetY=-0.394 so
+// its (fully opaque, no-face-hole) brim clears every bird's eye-line with
+// only its petal tips clipping at the top — same trade-off precedent as
+// Correction #2. Separately, costume_parrot's face-hole mask (Correction
+// #4) was positioned too far right/down, leaving the baked-in bird's own
+// eye and cheek untouched on the left edge of the hole — any other bird
+// wearing it showed that fragment instead of (or blended with) its own
+// face. Widened the mask ellipse to fully cover the original face. Both
+// re-verified at all 4 real render sizes (48/44/40/32) across all 4 birds
+// this time, not just the sizes checked previously.
 export interface CosmeticItemDef {
   id: string;
   name: string;
@@ -224,10 +242,10 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     name: 'ひまわり',
     category: 'theme',
     imageAsset: require('../../assets/cosmetics/theme_sunflower.png'),
-    scale: 0.85,
+    scale: 0.65,
     aspect: 0.5652,
     offsetX: 0,
-    offsetY: -0.32,
+    offsetY: -0.394,
     unlockedByDefault: false,
   },
   {
