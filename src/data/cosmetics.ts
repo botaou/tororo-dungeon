@@ -40,18 +40,48 @@ import { CosmeticCategory } from '../types';
 // Correction #3 (real-device report: "おおきなインコ" showing only a head,
 // badly offset): costume_parrot.png and theme_sunflower.png's *source PNGs*
 // had a lot of dead transparent canvas below/around the actual hood art
-// (e.g. parrot was a 150x177 canvas but the hood only occupied the top
-// 150x115 — the rest was blank padding). Every other item's source PNG is
-// tightly cropped to its content (~97-100% of the canvas is opaque), so its
-// stored aspect (raw canvas height/width) matches the art's own shape. For
-// these two it didn't: the stored aspect described a taller box than the
-// art actually needed, so the tuned offsetY (meant to center the *art*)
+// (e.g. parrot was a 150x177 canvas but the visible art only occupied the
+// top 150x115 — the rest was blank padding). Every other item's source PNG
+// is tightly cropped to its content (~97-100% of the canvas is opaque), so
+// its stored aspect (raw canvas height/width) matches the art's own shape.
+// For these two it didn't: the stored aspect described a taller box than
+// the art actually needed, so the tuned offsetY (meant to center the *art*)
 // ended up centering a box whose bottom third was invisible padding,
 // shifting the visible hood too high and clipping it against
 // overflow:hidden. Fixed by cropping both PNGs to their true content
-// bounds and re-deriving scale/aspect/offsetY from the cropped art. Any
-// future costume source art should be cropped the same way before its
-// aspect is measured.
+// bounds and re-deriving scale/aspect/offsetY from the cropped art.
+//
+// Correction #4 (real-device report: "このインコは全身の着ぐるみだったはず"):
+// correction #3's crop was aimed at the wrong target for costume_parrot.
+// Diffing against the pre-Correction-#1 source (git history) showed the
+// original reference art was a full-body parrot kigurumi (hood *and*
+// wings/tail continuing all the way down, exactly like costume_penguin) —
+// Correction #1's baked-in-identity mask had wrongly erased that entire
+// lower two-thirds, mistaking the suit's own body for "the plain bird
+// underneath" that needed removing. What actually needed removing was only
+// the small face circle inside the hood opening (the example bird's own
+// face). Re-derived costume_parrot.png from the git-history original,
+// masking just that face circle so the full kigurumi body/wings/tail stay
+// intact — same treatment costume_penguin already had, so both now share
+// its scale/offsetY. (theme_sunflower's original was checked too and, as
+// expected from its category being a themed hat rather than a kigurumi
+// suit, its original really was just a bird wearing a sunflower-shaped
+// hood — the hood-only crop from Correction #3 was correct for it and is
+// unchanged here.)
+//
+// Also from that report: several head-hugging items (event_santa_cape,
+// theme_ladybug, event_party_dress, seasonal_spring, seasonal_winter, all
+// offsetY 0.0859) covered Vivi's/Mone's eyes while sitting fine on
+// Haku/Tororo. The 4 birds' base sprites don't actually share identical
+// head proportions within the shared 256x256 convention — measured head-top
+// (first opaque row) is y=26 (vivi) / 34 (haku) / 37 (tororo) / 27 (mone),
+// a ~4% swing that a hood/hat anchored by a single fixed offsetY can't
+// absorb once it's tuned tight enough to hug the eye-line on every bird.
+// Shifted those 5 items' offsetY up to 0.03 — clears Vivi/Mone's eyes
+// without floating noticeably on Haku/Tororo. If a future head-hugging item
+// shows the same bird-dependent misfit, this is why: there's no per-bird
+// override in this data shape, only a single compromise value tuned to
+// clear the biggest head in the roster.
 export interface CosmeticItemDef {
   id: string;
   name: string;
@@ -95,10 +125,10 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     name: 'おおきなインコ',
     category: 'costume',
     imageAsset: require('../../assets/cosmetics/costume_parrot.png'),
-    scale: 0.72,
-    aspect: 0.7718,
+    scale: 0.6973,
+    aspect: 1.18,
     offsetX: 0,
-    offsetY: -0.13,
+    offsetY: -0.0781,
     unlockedByDefault: true,
   },
   {
@@ -164,7 +194,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     scale: 0.6474,
     aspect: 1.0189,
     offsetX: 0,
-    offsetY: 0.0859,
+    offsetY: 0.03,
     unlockedByDefault: false,
   },
   {
@@ -175,7 +205,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     scale: 0.6474,
     aspect: 1.2223,
     offsetX: 0,
-    offsetY: 0.0859,
+    offsetY: 0.03,
     unlockedByDefault: false,
   },
   {
@@ -186,7 +216,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     scale: 0.6474,
     aspect: 1.2089,
     offsetX: 0,
-    offsetY: 0.0859,
+    offsetY: 0.03,
     unlockedByDefault: false,
   },
   {
@@ -208,7 +238,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     scale: 0.6474,
     aspect: 1.0631,
     offsetX: 0,
-    offsetY: 0.0859,
+    offsetY: 0.03,
     unlockedByDefault: false,
   },
   {
@@ -219,7 +249,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     scale: 0.6474,
     aspect: 1.1868,
     offsetX: 0,
-    offsetY: 0.0859,
+    offsetY: 0.03,
     unlockedByDefault: false,
   },
 ];
