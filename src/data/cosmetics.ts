@@ -179,7 +179,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     scale: 0.6309,
     aspect: 1.03,
     offsetX: 0,
-    offsetY: 0.1445,
+    offsetY: 0.2915,
     unlockedByDefault: false,
   },
   {
@@ -190,7 +190,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     scale: 0.6309,
     aspect: 0.875,
     offsetX: 0,
-    offsetY: 0.1445,
+    offsetY: 0.2446,
     unlockedByDefault: false,
   },
   {
@@ -201,7 +201,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     scale: 0.6309,
     aspect: 0.9434,
     offsetX: 0,
-    offsetY: 0.1445,
+    offsetY: 0.2652,
     unlockedByDefault: false,
   },
   {
@@ -234,7 +234,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     scale: 0.6474,
     aspect: 1.2089,
     offsetX: 0,
-    offsetY: 0.03,
+    offsetY: -0.18,
     unlockedByDefault: false,
   },
   {
