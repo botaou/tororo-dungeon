@@ -6,6 +6,7 @@ import { CHARACTERS } from '../data/characters';
 import { MATERIAL_ICON } from '../data/materials';
 import { ITEM_DEF_MAP } from '../data/items';
 import { COSMETIC_ITEMS } from '../data/cosmetics';
+import { useCosmeticStore } from '../store/useCosmeticStore';
 import { getMoodDef } from '../data/moods';
 import { getBirdGoalLabel, getBirdStatusLabel } from '../game/birdStatus';
 import { getEffectiveStats } from '../game/birdStats';
@@ -33,6 +34,13 @@ interface Props {
 }
 
 export function BirdRosterModal({ visible, onClose, birds, onSetCosmetic }: Props) {
+  const unlockedCosmeticIds = useCosmeticStore((s) => s.unlockedCosmeticIds);
+  // Only ever offers already-unlocked costumes for wearing — the rest need
+  // to be found/dropped/crafted then gifted first (see
+  // CostumeCollectionModal, useCosmeticStore).
+  const wearableCosmetics = COSMETIC_ITEMS.filter((c) => unlockedCosmeticIds.includes(c.id));
+  const lockedCount = COSMETIC_ITEMS.length - wearableCosmetics.length;
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
@@ -129,7 +137,7 @@ export function BirdRosterModal({ visible, onClose, birds, onSetCosmetic }: Prop
                         なし
                       </Text>
                     </AnimatedPressable>
-                    {COSMETIC_ITEMS.map((cosmetic) => {
+                    {wearableCosmetics.map((cosmetic) => {
                       const isActive = bird.cosmeticId === cosmetic.id;
                       return (
                         <AnimatedPressable
@@ -151,6 +159,9 @@ export function BirdRosterModal({ visible, onClose, birds, onSetCosmetic }: Prop
                       );
                     })}
                   </ScrollView>
+                  {lockedCount > 0 && (
+                    <Text style={styles.cosmeticLockedHint}>🔒 あと{lockedCount}点は🎁コスチューム図鑑から</Text>
+                  )}
 
                   <View style={styles.inventoryRow}>
                     {owned.length === 0 && ownedItems.length === 0 ? (
@@ -236,6 +247,7 @@ const styles = StyleSheet.create({
   equipIconEmpty: { opacity: 0.3 },
   equipLabel: { fontSize: 9, color: theme.textMuted, maxWidth: 60 },
   cosmeticSectionLabel: { fontSize: 10, fontWeight: '700', color: theme.textMuted, marginTop: 8 },
+  cosmeticLockedHint: { fontSize: 9, color: theme.textMuted, marginTop: 2 },
   cosmeticRow: { marginTop: 4 },
   cosmeticChip: {
     width: 56,

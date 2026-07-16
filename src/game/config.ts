@@ -237,6 +237,12 @@ export const MERCHANT_RECIPE_OFFER_CHANCE = 0.35;
 // higher chance than the two ambient rolls.
 export const RECIPE_GIFT_CHANCE = 0.04; // per gather completion
 export const RECIPE_COMBAT_CHANCE = 0.04; // per enemy kill
+
+// Costume-ticket ambient routes (see game/cosmeticUnlocks.ts) — same shape
+// as the recipe routes above (a small per-event chance), kept slightly
+// rarer since a costume is a bigger, more novel reward than a recipe.
+export const COSMETIC_FIND_CHANCE = 0.025; // per gather completion
+export const COSMETIC_DROP_CHANCE = 0.025; // per enemy kill
 export const RECIPE_QUEST_CHANCE = 0.2; // per job-board request completed
 // The "market usage fee" split when a bird sells a convertible item to the
 // merchant — half the sale price goes to the bird, half to the town.

@@ -7,10 +7,10 @@ import { CosmeticCategory } from '../types';
 // naming was a labeling mistake in the source material, not an actual
 // per-bird restriction: every entry here is shared across all 4 birds.
 //
-// Correction (real-device report, see this commit): the first pass of this
-// catalog just swapped the reference sheet's own crops in as a full-body
-// replacement for the bird's own base sprite. That broke in two different
-// ways depending on category:
+// Correction #1 (real-device report): the first pass of this catalog just
+// swapped the reference sheet's own crops in as a full-body replacement for
+// the bird's own base sprite. That broke in two different ways depending on
+// category:
 //   - 着ぐるみ/お祝い/テーマ/季節 drew a full bird IN the costume, with that
 //     bird's own face/colors baked in (the sheet is nominally "ビビ", so it
 //     was literally Vivi's face/colors) — any other bird wearing it showed
@@ -18,12 +18,24 @@ import { CosmeticCategory } from '../types';
 //   - おしゃれな服/かわいい服 drew the garment alone with no bird at all —
 //     equipping one made the bird disappear, just a floating dress.
 // Fixed by converting every item into a costume-*only* asset (masking out
-// whichever bird was baked into the first 8 — see the git history for the
+// whichever bird was baked into the first 8 — see git history for the
 // per-item alpha masks that job needed, since a simple color-based cutout
 // wasn't reliable given how much the "keep" and "discard" regions overlapped
-// in tone) and layering it on top of the wearer's OWN base sprite at
-// render time (CharacterAvatar) instead of replacing it. Any bird's own
-// face/color now always shows through whatever hole/gap the costume has.
+// in tone) and layering it on top of the wearer's OWN base sprite at render
+// time (CharacterAvatar) instead of replacing it.
+//
+// Correction #2 (real-device report): the offsetX/offsetY/scale below were
+// tuned only by compositing over a bare 256x256 canvas — that missed how
+// tight the box actually is in-game (WorldMap's BirdSprite renders this at
+// size=44, with a sulk/pickaxe emoji sitting just *outside* the box at
+// top:-10/-8), so items scaled close to the box's own edges either clipped
+// against those neighbors or just looked crowded. Fixed two ways: (a)
+// CharacterAvatar's avatar box now has overflow:'hidden', so nothing can
+// ever bleed into a sibling element again regardless of tuning error; (b)
+// every item's scale was pulled in ~15% with the same offsets re-verified
+// to stay within the box (a couple still clip a px or two of pure
+// decoration — a sparkle tip, a hat's very top edge — at this size, judged
+// an acceptable trade for not looking cramped).
 export interface CosmeticItemDef {
   id: string;
   name: string;
@@ -31,19 +43,22 @@ export interface CosmeticItemDef {
   // Costume-only art (no bird baked in) — a hood/hat/cape/dress with a
   // transparent gap wherever the wearer's own face or body should show.
   imageAsset: number;
-  // Where/how big to draw imageAsset when layered on top of a 256x256 base
-  // sprite (assets/birds/*/base.png's own canvas convention — see that
-  // folder's README for foot-line/center conventions the two share).
-  // widthFrac/heightFrac size the image as a fraction of the render size;
-  // centerXFrac/centerYFrac place its center the same way. Derived by
-  // compositing each item over vivi/base.png (the sheet's own nominal
-  // reference bird) and tuning by eye, then confirmed unchanged on a
-  // different-colored bird (haku) since all 4 base sprites share the same
-  // proportions/anchor.
-  widthFrac: number;
-  heightFrac: number;
-  centerXFrac: number;
-  centerYFrac: number;
+  // Position/size on the avatar box, independently tunable per item (see
+  // this file's "Correction #2" note above for why each of these needed
+  // its own value rather than one shared constant). scale is the image's
+  // rendered width as a fraction of the box size; height follows from the
+  // asset's own native aspect ratio (aspect = native height/width) so it's
+  // never distorted. offsetX/offsetY place the image's center relative to
+  // the box's own center, also as a fraction of box size (0 = centered).
+  scale: number;
+  aspect: number;
+  offsetX: number;
+  offsetY: number;
+  // Whether every save starts with this costume already wearable. Only 1-2
+  // items should be true — everything else needs to be found while
+  // gathering, dropped by an enemy, crafted, or gifted in by the player
+  // (see useCosmeticStore, game/cosmeticUnlocks.ts) before it can be worn.
+  unlockedByDefault: boolean;
 }
 
 export const COSMETIC_CATEGORY_LABELS: Record<CosmeticCategory, string> = {
@@ -57,129 +72,139 @@ export const COSMETIC_CATEGORY_LABELS: Record<CosmeticCategory, string> = {
 
 // A sample of ~2 items per category, not the reference sheet's full set
 // (per the request's own "まずは各カテゴリから数点ずつのサンプル実装で構いま
-// せん" allowance) — how a player actually *acquires* one (shop/gacha/event)
-// is intentionally out of scope for this pass, so every sample here is
-// simply available to any bird from the start.
+// せん" allowance).
 export const COSMETIC_ITEMS: CosmeticItemDef[] = [
   {
     id: 'costume_parrot',
     name: 'おおきなインコ',
     category: 'costume',
     imageAsset: require('../../assets/cosmetics/costume_parrot.png'),
-    widthFrac: 0.7227,
-    heightFrac: 0.8527,
-    centerXFrac: 0.5,
-    centerYFrac: 0.3047,
+    scale: 0.6143,
+    aspect: 1.1799,
+    offsetX: 0,
+    offsetY: -0.17,
+    unlockedByDefault: true,
   },
   {
     id: 'costume_penguin',
     name: 'ペンギン',
     category: 'costume',
     imageAsset: require('../../assets/cosmetics/costume_penguin.png'),
-    widthFrac: 0.8203,
-    heightFrac: 0.9878,
-    centerXFrac: 0.5,
-    centerYFrac: 0.4219,
+    scale: 0.6973,
+    aspect: 1.2042,
+    offsetX: 0,
+    offsetY: -0.0781,
+    unlockedByDefault: false,
   },
   {
     id: 'outfit_flower_dress',
     name: 'お花のワンピース',
     category: 'outfit',
     imageAsset: require('../../assets/cosmetics/outfit_flower_dress.png'),
-    widthFrac: 0.7422,
-    heightFrac: 0.6386,
-    centerXFrac: 0.5,
-    centerYFrac: 0.6445,
+    scale: 0.6309,
+    aspect: 0.8604,
+    offsetX: 0,
+    offsetY: 0.1445,
+    unlockedByDefault: true,
   },
   {
     id: 'outfit_sailor',
     name: 'セーラー服',
     category: 'outfit',
     imageAsset: require('../../assets/cosmetics/outfit_sailor.png'),
-    widthFrac: 0.7422,
-    heightFrac: 0.7645,
-    centerXFrac: 0.5,
-    centerYFrac: 0.6445,
+    scale: 0.6309,
+    aspect: 1.03,
+    offsetX: 0,
+    offsetY: 0.1445,
+    unlockedByDefault: false,
   },
   {
     id: 'cute_leaf_tunic',
     name: 'リーフチュニック',
     category: 'cute',
     imageAsset: require('../../assets/cosmetics/cute_leaf_tunic.png'),
-    widthFrac: 0.7422,
-    heightFrac: 0.6494,
-    centerXFrac: 0.5,
-    centerYFrac: 0.6445,
+    scale: 0.6309,
+    aspect: 0.875,
+    offsetX: 0,
+    offsetY: 0.1445,
+    unlockedByDefault: false,
   },
   {
     id: 'cute_fluffy_sweater',
     name: 'ふわふわセーター',
     category: 'cute',
     imageAsset: require('../../assets/cosmetics/cute_fluffy_sweater.png'),
-    widthFrac: 0.7422,
-    heightFrac: 0.7002,
-    centerXFrac: 0.5,
-    centerYFrac: 0.6445,
+    scale: 0.6309,
+    aspect: 0.9434,
+    offsetX: 0,
+    offsetY: 0.1445,
+    unlockedByDefault: false,
   },
   {
     id: 'event_party_dress',
     name: 'パーティードレス',
     category: 'event',
     imageAsset: require('../../assets/cosmetics/event_party_dress.png'),
-    widthFrac: 0.7617,
-    heightFrac: 0.7761,
-    centerXFrac: 0.5,
-    centerYFrac: 0.5859,
+    scale: 0.6474,
+    aspect: 1.0189,
+    offsetX: 0,
+    offsetY: 0.0859,
+    unlockedByDefault: false,
   },
   {
     id: 'event_santa_cape',
     name: 'サンタケープ',
     category: 'event',
     imageAsset: require('../../assets/cosmetics/event_santa_cape.png'),
-    widthFrac: 0.7617,
-    heightFrac: 0.931,
-    centerXFrac: 0.5,
-    centerYFrac: 0.5859,
+    scale: 0.6474,
+    aspect: 1.2223,
+    offsetX: 0,
+    offsetY: 0.0859,
+    unlockedByDefault: false,
   },
   {
     id: 'theme_ladybug',
     name: 'てんとう虫',
     category: 'theme',
     imageAsset: require('../../assets/cosmetics/theme_ladybug.png'),
-    widthFrac: 0.7617,
-    heightFrac: 0.9208,
-    centerXFrac: 0.5,
-    centerYFrac: 0.5859,
+    scale: 0.6474,
+    aspect: 1.2089,
+    offsetX: 0,
+    offsetY: 0.0859,
+    unlockedByDefault: false,
   },
   {
     id: 'theme_sunflower',
     name: 'ひまわり',
     category: 'theme',
     imageAsset: require('../../assets/cosmetics/theme_sunflower.png'),
-    widthFrac: 0.7227,
-    heightFrac: 0.8869,
-    centerXFrac: 0.5,
-    centerYFrac: 0.2344,
+    scale: 0.6143,
+    aspect: 1.2272,
+    offsetX: 0,
+    offsetY: -0.19,
+    unlockedByDefault: false,
   },
   {
     id: 'seasonal_spring',
     name: '春(桜)',
     category: 'seasonal',
     imageAsset: require('../../assets/cosmetics/seasonal_spring.png'),
-    widthFrac: 0.7617,
-    heightFrac: 0.8098,
-    centerXFrac: 0.5,
-    centerYFrac: 0.5859,
+    scale: 0.6474,
+    aspect: 1.0631,
+    offsetX: 0,
+    offsetY: 0.0859,
+    unlockedByDefault: false,
   },
   {
     id: 'seasonal_winter',
     name: '冬(雪だるま)',
     category: 'seasonal',
     imageAsset: require('../../assets/cosmetics/seasonal_winter.png'),
-    widthFrac: 0.7617,
-    heightFrac: 0.904,
-    centerXFrac: 0.5,
-    centerYFrac: 0.5859,
+    scale: 0.6474,
+    aspect: 1.1868,
+    offsetX: 0,
+    offsetY: 0.0859,
+    unlockedByDefault: false,
   },
 ];
 

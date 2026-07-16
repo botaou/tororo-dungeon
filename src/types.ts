@@ -579,12 +579,26 @@ export interface WorldState {
   // same weight as a recipe unlock. Not persisted, same reasoning as
   // recipeUnlockEvents above.
   skillUnlockEvents: { birdName: string; skillId: string }[];
+  // Same queued-event pattern, for a newly-*obtained* costume ticket (see
+  // game/cosmeticUnlocks.ts, useCosmeticStore) — fires on find/drop/craft,
+  // i.e. when a ticket lands in the player's warehouse, not when it's later
+  // gifted to actually unlock the costume for wearing (that's a deliberate
+  // player action with its own immediate UI feedback, so it doesn't need a
+  // separate announcement). Not persisted, same reasoning as
+  // recipeUnlockEvents above.
+  cosmeticTicketEvents: { cosmeticId: string; source: CosmeticSource }[];
 }
 
 // Which of the 4 routes (see game/recipeUnlocks.ts) taught the player a
 // given recipe — recorded purely for potential future display (e.g. "found
 // via combat"), not read by any gameplay logic yet.
 export type RecipeSource = 'merchant' | 'gift' | 'quest' | 'combat';
+
+// Which of the 3 ambient/craft routes (see game/cosmeticUnlocks.ts) put a
+// costume *ticket* (CosmeticTicketState) in the player's warehouse — the
+// 4th route, a player gifting an owned ticket to unlock the costume, is a
+// deliberate action rather than a discovery, so it has no source label.
+export type CosmeticSource = 'find' | 'drop' | 'craft';
 
 // ---- Town expansion (land grid) ----
 

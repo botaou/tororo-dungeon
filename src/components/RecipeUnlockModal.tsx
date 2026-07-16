@@ -3,7 +3,9 @@ import { Modal, StyleSheet, Text, View } from 'react-native';
 
 import { RecipeSource } from '../types';
 import { CRAFTING_RECIPES } from '../data/recipes';
+import { COSTUME_RECIPES } from '../data/costumeRecipes';
 import { ITEM_DEF_MAP } from '../data/items';
+import { COSMETIC_ITEM_MAP } from '../data/cosmetics';
 import { AnimatedPressable } from './AnimatedPressable';
 import { theme } from '../theme';
 
@@ -25,17 +27,22 @@ const SOURCE_LABEL: Record<RecipeSource, string> = {
 // backlog-replay risk the way there was with useTownStore's levelUpEvents.
 export function RecipeUnlockModal({ event, onClose }: Props) {
   if (!event) return null;
-  const recipe = CRAFTING_RECIPES.find((r) => r.id === event.recipeId);
-  if (!recipe) return null;
-  const itemDef = ITEM_DEF_MAP[recipe.resultItemId];
+  // A recipe-unlock event can now surface either an item recipe or a
+  // costume recipe (see game/recipeUnlocks.ts's combined discovery pool) —
+  // costumes have no emoji of their own, so a plain 👗 stands in for it.
+  const itemRecipe = CRAFTING_RECIPES.find((r) => r.id === event.recipeId);
+  const costumeRecipe = COSTUME_RECIPES.find((r) => r.id === event.recipeId);
+  if (!itemRecipe && !costumeRecipe) return null;
+  const emoji = itemRecipe ? ITEM_DEF_MAP[itemRecipe.resultItemId].emoji : '👗';
+  const name = itemRecipe ? ITEM_DEF_MAP[itemRecipe.resultItemId].name : COSMETIC_ITEM_MAP[costumeRecipe!.cosmeticId].name;
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.sheet}>
           <Text style={styles.title}>📜 新しいレシピを手に入れた!</Text>
-          <Text style={styles.emoji}>{itemDef.emoji}</Text>
-          <Text style={styles.name}>{itemDef.name}</Text>
+          <Text style={styles.emoji}>{emoji}</Text>
+          <Text style={styles.name}>{name}</Text>
           <Text style={styles.sourceText}>{SOURCE_LABEL[event.source]}</Text>
           <AnimatedPressable style={styles.closeButton} onPress={onClose}>
             <Text style={styles.closeButtonText}>やった!</Text>

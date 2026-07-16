@@ -25,6 +25,8 @@ import { RecipeUnlockModal } from '../components/RecipeUnlockModal';
 import { SkillUnlockModal } from '../components/SkillUnlockModal';
 import { TownStatusModal } from '../components/TownStatusModal';
 import { HouseInventoryModal } from '../components/HouseInventoryModal';
+import { CostumeCollectionModal } from '../components/CostumeCollectionModal';
+import { CosmeticTicketModal } from '../components/CosmeticTicketModal';
 import { ActivityLogPanel } from '../components/ActivityLogPanel';
 import { JobPreset } from '../data/jobPresets';
 import { PlotUnlockCost, ShopKind } from '../types';
@@ -56,6 +58,7 @@ export function TownScreen() {
   const [inventoryVisible, setInventoryVisible] = useState(false);
   const [rosterVisible, setRosterVisible] = useState(false);
   const [craftingVisible, setCraftingVisible] = useState(false);
+  const [costumeCollectionVisible, setCostumeCollectionVisible] = useState(false);
   const [merchantVisible, setMerchantVisible] = useState(false);
   const [townStatusVisible, setTownStatusVisible] = useState(false);
   // Which bird's house is currently open (see HouseInventoryModal) — null
@@ -88,6 +91,8 @@ export function TownScreen() {
   const [shownRecipeUnlockCount, setShownRecipeUnlockCount] = useState(0);
   // Same pattern again for Phase 11's skillUnlockEvents (also not persisted).
   const [shownSkillUnlockCount, setShownSkillUnlockCount] = useState(0);
+  // Same pattern again for cosmeticTicketEvents (also not persisted).
+  const [shownCosmeticTicketCount, setShownCosmeticTicketCount] = useState(0);
 
   useEffect(() => {
     if (world.birds.length === 0) initWorld();
@@ -117,6 +122,7 @@ export function TownScreen() {
     inventoryVisible ||
     rosterVisible ||
     craftingVisible ||
+    costumeCollectionVisible ||
     merchantVisible ||
     townStatusVisible ||
     houseTarget !== null ||
@@ -130,6 +136,10 @@ export function TownScreen() {
     anyOtherModalOpen || pendingRecruit || pendingLevelUp || pendingRecipeUnlock
       ? null
       : world.skillUnlockEvents[shownSkillUnlockCount] ?? null;
+  const pendingCosmeticTicket =
+    anyOtherModalOpen || pendingRecruit || pendingLevelUp || pendingRecipeUnlock || pendingSkillUnlock
+      ? null
+      : world.cosmeticTicketEvents[shownCosmeticTicketCount] ?? null;
 
   const handlePost = (preset: JobPreset) => {
     postRequest(preset);
@@ -195,6 +205,9 @@ export function TownScreen() {
           <AnimatedPressable style={styles.inventoryButton} onPress={() => setCraftingVisible(true)}>
             <Text style={styles.inventoryButtonText}>🔨</Text>
           </AnimatedPressable>
+          <AnimatedPressable style={styles.inventoryButton} onPress={() => setCostumeCollectionVisible(true)}>
+            <Text style={styles.inventoryButtonText}>🎁</Text>
+          </AnimatedPressable>
           <AnimatedPressable style={styles.inventoryButton} onPress={() => setInventoryVisible(true)}>
             <Text style={styles.inventoryButtonText}>🎒</Text>
           </AnimatedPressable>
@@ -245,6 +258,8 @@ export function TownScreen() {
       <ShopModal visible={openShop !== null} onClose={() => setOpenShop(null)} shopKind={openShop} />
 
       <CraftingModal visible={craftingVisible} onClose={() => setCraftingVisible(false)} />
+
+      <CostumeCollectionModal visible={costumeCollectionVisible} onClose={() => setCostumeCollectionVisible(false)} />
 
       <PlayerInventoryModal
         visible={inventoryVisible}
@@ -312,6 +327,8 @@ export function TownScreen() {
       <RecipeUnlockModal event={pendingRecipeUnlock} onClose={() => setShownRecipeUnlockCount((c) => c + 1)} />
 
       <SkillUnlockModal event={pendingSkillUnlock} onClose={() => setShownSkillUnlockCount((c) => c + 1)} />
+
+      <CosmeticTicketModal event={pendingCosmeticTicket} onClose={() => setShownCosmeticTicketCount((c) => c + 1)} />
     </SafeAreaView>
   );
 }

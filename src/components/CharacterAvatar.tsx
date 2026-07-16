@@ -29,7 +29,13 @@ export function CharacterAvatar({ characterId, emoji, color, size = 40, cosmetic
   if (baseSprite) {
     const cosmetic = getCosmeticDef(cosmeticId ?? null);
     return (
-      <View style={{ width: size, height: size }}>
+      // overflow: 'hidden' is a hard safety net — a costume's offset/scale
+      // is tuned to sit fully inside this box, but the box sits right next
+      // to sibling badges in some callers (WorldMap's BirdSprite has a
+      // sulk/pickaxe emoji at top:-10/-8, just outside its own avatar box),
+      // so anything that *did* slip past the edge would visibly collide
+      // with them instead of just looking slightly off.
+      <View style={{ width: size, height: size, overflow: 'hidden' }}>
         <Image source={baseSprite} style={{ width: size, height: size }} resizeMode="contain" />
         {cosmetic && (
           <Image
@@ -37,10 +43,10 @@ export function CharacterAvatar({ characterId, emoji, color, size = 40, cosmetic
             resizeMode="stretch"
             style={{
               position: 'absolute',
-              width: size * cosmetic.widthFrac,
-              height: size * cosmetic.heightFrac,
-              left: size * cosmetic.centerXFrac - (size * cosmetic.widthFrac) / 2,
-              top: size * cosmetic.centerYFrac - (size * cosmetic.heightFrac) / 2,
+              width: size * cosmetic.scale,
+              height: size * cosmetic.scale * cosmetic.aspect,
+              left: size * (0.5 + cosmetic.offsetX) - (size * cosmetic.scale) / 2,
+              top: size * (0.5 + cosmetic.offsetY) - (size * cosmetic.scale * cosmetic.aspect) / 2,
             }}
           />
         )}

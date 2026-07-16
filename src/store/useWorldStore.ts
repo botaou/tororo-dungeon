@@ -3,6 +3,7 @@ import { create } from 'zustand';
 import {
   ActivityLogEntry,
   BirdState,
+  CosmeticSource,
   EnemyInstance,
   ItemId,
   JobRequest,
@@ -83,6 +84,8 @@ import {
   HOUSE_TREASURE_CAP,
   MOOD_REFRESH_MS,
   OVERFLOW_SELL_MAX_GOLD_PER_TRIP,
+  COSMETIC_DROP_CHANCE,
+  COSMETIC_FIND_CHANCE,
   RECIPE_COMBAT_CHANCE,
   RECIPE_GIFT_CHANCE,
   RECIPE_QUEST_CHANCE,
@@ -96,6 +99,7 @@ import {
   TREASURE_RESPAWN_MS,
 } from '../game/config';
 import { maybeUnlockRandomRecipe, rollMerchantRecipeOffer } from '../game/recipeUnlocks';
+import { maybeAwardCosmeticTicket } from '../game/cosmeticUnlocks';
 import { CRAFTING_RECIPES } from '../data/recipes';
 import { usePlayerStore } from './usePlayerStore';
 import { BirdWallet, useBirdEconomyStore } from './useBirdEconomyStore';
@@ -252,6 +256,7 @@ function buildInitialWorld(): WorldState {
     recruitmentEvents: [],
     recipeUnlockEvents: [],
     skillUnlockEvents: [],
+    cosmeticTicketEvents: [],
   };
 }
 
@@ -418,6 +423,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     recruitmentEvents: [],
     recipeUnlockEvents: [],
     skillUnlockEvents: [],
+    cosmeticTicketEvents: [],
   },
 
   initWorld: () => set({ world: buildInitialWorld() }),
@@ -764,6 +770,19 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       );
     }
 
+    // Costume-ticket ambient routes (see game/cosmeticUnlocks.ts) — same
+    // queued-event/logging shape as tryRecipeUnlock above, just awarding a
+    // ticket (see useCosmeticStore) instead of an instant unlock.
+    const newCosmeticTicketEvents: { cosmeticId: string; source: CosmeticSource }[] = [];
+    function tryCosmeticTicket(chance: number, source: CosmeticSource, birdName: string | null) {
+      const result = maybeAwardCosmeticTicket(chance);
+      if (!result) return;
+      newCosmeticTicketEvents.push({ cosmeticId: result.cosmeticId, source });
+      newLog.push(
+        makeLogEntry(birdName, 'cosmetic', `${birdName ? birdName + 'が' : ''}コスチューム「${result.name}」を見つけた!`)
+      );
+    }
+
     for (const bird of nextBirds) {
       if (!bird.isRecruited) continue;
       const def = getCharacterDef(bird.defId);
@@ -785,6 +804,8 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         // Recipe-unlock route 2 ("鳥が見つけてプレゼント") — a small chance
         // on any successful gather, free-roam or job alike.
         tryRecipeUnlock(RECIPE_GIFT_CHANCE, 'gift', bird.name);
+        // Costume "find" route — same granularity as the recipe roll above.
+        tryCosmeticTicket(COSMETIC_FIND_CHANCE, 'find', bird.name);
       }
       if (outcome.treasureCollectedUid) {
         // Treasure gold goes straight to the finding bird (handled in ai.ts)
@@ -960,6 +981,8 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       // Recipe-unlock route 4 ("討伐報酬") — once per kill, not per
       // participant, same granularity as the security-fee/toll above.
       tryRecipeUnlock(RECIPE_COMBAT_CHANCE, 'combat', null);
+      // Costume "drop" route — same granularity as the recipe roll above.
+      tryCosmeticTicket(COSMETIC_DROP_CHANCE, 'drop', null);
       // 'hunt' job progress — only counts toward the bird that actually
       // accepted the job (mirrors gather, where the accepting bird is the
       // one that has to do the delivering), not just anyone who helped.
@@ -1218,6 +1241,10 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
             : world.recipeUnlockEvents,
         skillUnlockEvents:
           newSkillUnlockEvents.length > 0 ? [...world.skillUnlockEvents, ...newSkillUnlockEvents] : world.skillUnlockEvents,
+        cosmeticTicketEvents:
+          newCosmeticTicketEvents.length > 0
+            ? [...world.cosmeticTicketEvents, ...newCosmeticTicketEvents]
+            : world.cosmeticTicketEvents,
       },
     });
   },

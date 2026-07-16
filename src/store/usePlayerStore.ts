@@ -5,8 +5,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ItemId, MaterialId, PlayerState, ShopKind } from '../types';
 import { STARTING_GOLD, STARTING_MATERIALS } from '../game/config';
 import { CRAFTING_RECIPES } from '../data/recipes';
+import { COSTUME_RECIPES } from '../data/costumeRecipes';
 import { MATERIAL_SELL_PRICE } from '../data/marketPrices';
 import { useRecipeStore } from './useRecipeStore';
+import { useCosmeticStore } from './useCosmeticStore';
 
 interface PlayerActions {
   addGold: (amount: number) => void;
@@ -38,6 +40,11 @@ interface PlayerActions {
   // out of the town warehouse to produce one crafted item. Returns false
   // (no state change) if the town doesn't have enough of any material.
   craftItem: (recipeId: string) => boolean;
+  // Same idea as craftItem, but for a costume recipe (data/costumeRecipes.ts)
+  // — spends the material cost out of the town warehouse, but the output is
+  // a costume *ticket* (see useCosmeticStore.addTicket), not a warehouse
+  // item; the player still has to gift it to actually unlock the costume.
+  craftCosmetic: (recipeId: string) => boolean;
   // Move `amount` units of a warehouse item onto a shop's shelf, making it
   // actually purchasable. Returns false if the warehouse doesn't have enough.
   stockItem: (shopKind: ShopKind, itemId: ItemId, amount: number) => boolean;
@@ -142,6 +149,25 @@ export const usePlayerStore = create<PlayerStore>()(
         const nextItems = { ...items };
         nextItems[recipe.resultItemId] = (nextItems[recipe.resultItemId] ?? 0) + 1;
         set({ materials: nextMaterials, items: nextItems });
+        return true;
+      },
+
+      craftCosmetic: (recipeId) => {
+        const recipe = COSTUME_RECIPES.find((r) => r.id === recipeId);
+        if (!recipe) return false;
+        if (!useRecipeStore.getState().isRecipeUnlocked(recipeId)) return false;
+        const { materials } = get();
+        const canAfford = (Object.entries(recipe.materialCost) as [MaterialId, number][]).every(
+          ([materialId, amount]) => (materials[materialId] ?? 0) >= amount
+        );
+        if (!canAfford) return false;
+
+        const nextMaterials = { ...materials };
+        (Object.entries(recipe.materialCost) as [MaterialId, number][]).forEach(([materialId, amount]) => {
+          nextMaterials[materialId] = (nextMaterials[materialId] ?? 0) - amount;
+        });
+        set({ materials: nextMaterials });
+        useCosmeticStore.getState().addTicket(recipe.cosmeticId);
         return true;
       },
 
