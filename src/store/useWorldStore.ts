@@ -44,6 +44,7 @@ import {
   WOLF_ENEMY_NAME,
 } from '../game/recruitment';
 import { getEffectiveStats, maybeAutoEquip } from '../game/birdStats';
+import { useCosmeticStore } from './useCosmeticStore';
 import { MATERIAL_LABEL } from '../data/materials';
 import { describeJobTarget, JOB_KIND_UNIT_LABEL, JobPreset } from '../data/jobPresets';
 import {
@@ -230,7 +231,10 @@ function buildInitialWorld(): WorldState {
       inventory: { ...wallet.inventory },
       items: { ...wallet.items },
       equipment: { ...wallet.equipment },
-      cosmeticId: wallet.cosmeticId,
+      cosmeticId:
+        wallet.cosmeticId != null && useCosmeticStore.getState().isCosmeticUnlocked(wallet.cosmeticId)
+          ? wallet.cosmeticId
+          : null,
       houseFood: { ...wallet.houseFood },
       houseTreasureIds: [...wallet.houseTreasureIds],
       skills: [...wallet.skills],
@@ -576,6 +580,11 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
   },
 
   setCosmetic: (defId, cosmeticId) => {
+    // Reject anything the player hasn't actually unlocked yet (see
+    // useCosmeticStore) — never trust a caller-supplied id, since a stale
+    // persisted value or a future UI path could otherwise re-introduce the
+    // "wearing something you don't own" bug.
+    if (cosmeticId !== null && !useCosmeticStore.getState().isCosmeticUnlocked(cosmeticId)) return false;
     const { world } = get();
     const birdIndex = world.birds.findIndex((b) => b.defId === defId);
     if (birdIndex === -1) return false;

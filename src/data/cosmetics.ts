@@ -36,6 +36,22 @@ import { CosmeticCategory } from '../types';
 // to stay within the box (a couple still clip a px or two of pure
 // decoration — a sparkle tip, a hat's very top edge — at this size, judged
 // an acceptable trade for not looking cramped).
+//
+// Correction #3 (real-device report: "おおきなインコ" showing only a head,
+// badly offset): costume_parrot.png and theme_sunflower.png's *source PNGs*
+// had a lot of dead transparent canvas below/around the actual hood art
+// (e.g. parrot was a 150x177 canvas but the hood only occupied the top
+// 150x115 — the rest was blank padding). Every other item's source PNG is
+// tightly cropped to its content (~97-100% of the canvas is opaque), so its
+// stored aspect (raw canvas height/width) matches the art's own shape. For
+// these two it didn't: the stored aspect described a taller box than the
+// art actually needed, so the tuned offsetY (meant to center the *art*)
+// ended up centering a box whose bottom third was invisible padding,
+// shifting the visible hood too high and clipping it against
+// overflow:hidden. Fixed by cropping both PNGs to their true content
+// bounds and re-deriving scale/aspect/offsetY from the cropped art. Any
+// future costume source art should be cropped the same way before its
+// aspect is measured.
 export interface CosmeticItemDef {
   id: string;
   name: string;
@@ -79,10 +95,10 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     name: 'おおきなインコ',
     category: 'costume',
     imageAsset: require('../../assets/cosmetics/costume_parrot.png'),
-    scale: 0.6143,
-    aspect: 1.1799,
+    scale: 0.72,
+    aspect: 0.7718,
     offsetX: 0,
-    offsetY: -0.17,
+    offsetY: -0.13,
     unlockedByDefault: true,
   },
   {
@@ -178,10 +194,10 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     name: 'ひまわり',
     category: 'theme',
     imageAsset: require('../../assets/cosmetics/theme_sunflower.png'),
-    scale: 0.6143,
-    aspect: 1.2272,
+    scale: 0.85,
+    aspect: 0.5652,
     offsetX: 0,
-    offsetY: -0.19,
+    offsetY: -0.32,
     unlockedByDefault: false,
   },
   {
