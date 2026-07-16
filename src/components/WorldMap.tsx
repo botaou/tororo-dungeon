@@ -31,6 +31,7 @@ import { MATERIAL_ICON } from '../data/materials';
 import { TILE_IMAGES, TILE_REPEAT_IMAGES } from '../data/tileImages';
 import { getBuildingOption } from '../data/buildingOptions';
 import { AMENITY_IMAGES, FENCE_IMAGE, HOUSE_IMAGES, MERCHANT_TENT_IMAGE, SHOP_IMAGES, TOWNHALL_IMAGES } from '../data/buildingImages';
+import { ENEMY_IMAGES, FIELD_OBJECT_AFTER_IMAGES, FIELD_OBJECT_IMAGES } from '../data/fieldImages';
 import { CharacterAvatar } from './CharacterAvatar';
 import { AnimatedPressable } from './AnimatedPressable';
 import { TICK_MS } from '../game/config';
@@ -582,19 +583,29 @@ function MerchantSprite({
 }
 
 function RockSprite({ node, x, y }: { node: MiningNodeInstance; x: number; y: number }) {
-  const crumble = useRef(new Animated.Value(node.collected ? 1 : 0)).current;
+  // Drives a brief pop-in when the node first flips to collected, rather
+  // than the node just vanishing until its respawn timer clears (the old
+  // behavior — this component used to `return null` the instant `collected`
+  // went true, before the fade-out animation it kicked off ever had a
+  // chance to render a single frame, so that animation was dead code).
+  // Now the harvested-state art (see data/fieldImages.ts's
+  // FIELD_OBJECT_AFTER_IMAGES — a stump, a small rock, mined-out ripples,
+  // etc.) pops in in its place and stays until the node respawns.
+  const pop = useRef(new Animated.Value(node.collected ? 1 : 0)).current;
   const hasAnimatedRef = useRef(node.collected);
 
   useEffect(() => {
     if (node.collected && !hasAnimatedRef.current) {
       hasAnimatedRef.current = true;
-      Animated.timing(crumble, { toValue: 1, duration: 350, useNativeDriver: true }).start();
+      Animated.timing(pop, { toValue: 1, duration: 350, useNativeDriver: true }).start();
+    } else if (!node.collected) {
+      hasAnimatedRef.current = false;
+      pop.setValue(0);
     }
-  }, [node.collected, crumble]);
+  }, [node.collected, pop]);
 
-  if (node.collected) return null;
-
-  const icon = node.resource === 'wood' ? '🌳' : node.resource === 'ore' ? '🪨' : '🍄';
+  const image = node.collected ? FIELD_OBJECT_AFTER_IMAGES[node.resource] : FIELD_OBJECT_IMAGES[node.resource];
+  const fallbackEmoji = MATERIAL_ICON[node.resource];
 
   return (
     <Animated.View
@@ -604,14 +615,18 @@ function RockSprite({ node, x, y }: { node: MiningNodeInstance; x: number; y: nu
         {
           left: x,
           top: y,
-          opacity: crumble.interpolate({ inputRange: [0, 1], outputRange: [1, 0.25] }),
-          transform: [{ scale: crumble.interpolate({ inputRange: [0, 1], outputRange: [1, 0.7] }) }],
+          opacity: node.collected ? pop.interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] }) : 1,
+          transform: [{ scale: node.collected ? pop.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1] }) : 1 }],
         },
       ]}
     >
-      <Image source={TILE_IMAGES.dirtPatchRound} resizeMode="contain" style={styles.rockAccent} />
-      <Text style={styles.emojiLarge}>{icon}</Text>
-      <Text style={styles.tag}>+{node.amount}</Text>
+      {!node.collected && <Image source={TILE_IMAGES.dirtPatchRound} resizeMode="contain" style={styles.rockAccent} />}
+      {image ? (
+        <Image source={image} resizeMode="contain" style={styles.fieldObjectImage} />
+      ) : (
+        <Text style={styles.emojiLarge}>{fallbackEmoji}</Text>
+      )}
+      {!node.collected && <Text style={styles.tag}>+{node.amount}</Text>}
     </Animated.View>
   );
 }
@@ -840,7 +855,11 @@ function EnemySprite({ enemy, x, y }: { enemy: EnemyInstance; x: number; y: numb
         ]}
       />
       {enemy.hp > 0 && <Text style={styles.enemyStrengthBadge}>{strengthStars}</Text>}
-      <Text style={styles.emojiLarge}>{enemy.emoji}</Text>
+      {ENEMY_IMAGES[enemy.name] ? (
+        <Image source={ENEMY_IMAGES[enemy.name]} resizeMode="contain" style={styles.enemyImage} />
+      ) : (
+        <Text style={styles.emojiLarge}>{enemy.emoji}</Text>
+      )}
       {enemy.hp > 0 && (
         <View style={styles.miniBarTrack}>
           <View style={[styles.miniBarFill, { width: `${ratio * 100}%`, backgroundColor: theme.red }]} />
@@ -1178,6 +1197,12 @@ const styles = StyleSheet.create({
   // A faint dug-out patch behind a mining node's icon (see data/tileImages.ts)
   // — purely decorative, sits underneath the emoji/amount text.
   rockAccent: { position: 'absolute', width: 40, height: 40, top: -6, left: 8, opacity: 0.55 },
+  // Field-object/enemy illustrations (see data/fieldImages.ts) — sized to
+  // read clearly at the map's zoom level without dwarfing neighboring
+  // sprites; resizeMode="contain" keeps each asset's own aspect ratio
+  // (they range from tall trees to a wide pond) instead of stretching it.
+  fieldObjectImage: { width: 40, height: 40 },
+  enemyImage: { width: 36, height: 36 },
   leisureSprite: { opacity: 0.85 },
   tapArea: { alignItems: 'center' },
   // A soft shadow helps flat-shaded icons (mining nodes, treasure, etc.)
