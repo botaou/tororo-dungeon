@@ -1220,9 +1220,13 @@ const styles = StyleSheet.create({
   // of the shared `sprite` style.
   merchantBox: { position: 'absolute', width: 32, height: 42, alignItems: 'center', justifyContent: 'center' },
   merchantTentImage: { width: 26, height: 21 },
-  pickaxe: { position: 'absolute', top: -8, right: 0, fontSize: 14 },
+  // top was -8 — real-device report showed the pickaxe swing overlapping
+  // the bird's own head (the base sprite's head sits close to the top of
+  // its 44px box by design, so 8px of clearance wasn't reliably enough,
+  // costume or no costume). Pushed out to match sulkBadge's clearance.
+  pickaxe: { position: 'absolute', top: -14, right: 0, fontSize: 14 },
   carryBadge: { position: 'absolute', top: -10, right: -4, fontSize: 15 },
-  sulkBadge: { position: 'absolute', top: -10, left: -4, fontSize: 14 },
+  sulkBadge: { position: 'absolute', top: -14, left: -4, fontSize: 14 },
   speechBubble: {
     position: 'absolute',
     top: -34,
