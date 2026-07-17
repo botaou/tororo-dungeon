@@ -178,6 +178,46 @@ export type CosmeticRenderType = 'fullBody' | 'overlay';
 // edge stops just short of that to avoid pulling in shoulder/wing pixels).
 export const FACE_PATCH_CROP = { x0: 0.26, y0: 0.08, x1: 0.74, y1: 0.56 };
 
+// Correction #9 (real-device report: face patch no longer distorted after
+// Correction #8, but noticeably smaller than the reference sheet's example
+// renders, leaving a wide ring of empty hole around a tiny face): each
+// fullBody item's facePatch.scale used to target roughly 1.08x the
+// costume's own measured hole diameter (a small safety margin, the excess
+// meant to be hidden behind the costume's opaque ring). That's technically
+// correct but reads as "small face floating in a big hole" rather than the
+// reference sheet's look, where the face fills the hole edge-to-edge with
+// no visible margin. Bumped the multiplier to ~1.5x (all 5 items' scale
+// values below reflect this) — re-verified via the same compositing
+// simulation used for Correction #7/#8 that the larger patch still stays
+// within each costume's own head/hood silhouette (doesn't poke out past
+// the illustrated edge) across all 4 birds × all 4 real render sizes.
+//
+// Same report also asked to swap in a redrawn version of 3 `overlay`
+// garments (outfit_sailor/cute_leaf_tunic/cute_fluffy_sweater — the exact 3
+// item 34 had found genuinely didn't leave a face gap at all) — the user
+// supplied a new reference sheet for these where, like Correction #7's
+// kigurumi row, the collar/neckline "peekaboo" gap is painted as a flat
+// solid fill rather than real alpha transparency, so it needed the same
+// treatment: crop each garment out (background removed via edge-detected
+// "walls" + flood-filling from the image border, since these sit on a
+// blurred color-gradient backdrop rather than a flat one), then locate and
+// cut the solid-color collar-interior patch to real transparency (found via
+// a color-similarity flood fill seeded inside that patch — distinct enough
+// per-item, e.g. tan-khaki for the hoodie vs off-white body, dark green
+// collar-inside vs lighter green body for the poncho, grey-blue vs white
+// for the sailor collar — that a single global rule wasn't needed). Unlike
+// the fullBody items, `overlay` garments draw the wearer's ordinary base
+// sprite underneath (untouched, at the box's full size) and simply place
+// the garment art on top, so offsetX/offsetY here were derived directly
+// from where each garment's own cut hole sits (as a box-fraction) so it
+// lands over the wearer's actual eye-line (measured across all 4 birds'
+// base sprites, landing on a shared target of 0.36 box-fraction — slightly
+// biased toward Haku/Tororo's lower eye-line, same "biggest head in the
+// roster" compromise this file's Correction #4 note already established
+// for other head-hugging items) rather than reusing the old (pre-redraw)
+// art's offsetY values, since the new art's own collar-hole position isn't
+// the same as the old broken art's.
+
 export interface CosmeticItemDef {
   id: string;
   name: string;
@@ -245,7 +285,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     aspect: 1.2305,
     offsetX: 0,
     offsetY: -0.0781,
-    facePatch: { scale: 0.3108, offsetX: -0.0778, offsetY: -0.1118 },
+    facePatch: { scale: 0.4317, offsetX: -0.0778, offsetY: -0.1118 },
     unlockedByDefault: true,
   },
   {
@@ -258,7 +298,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     aspect: 1.2415,
     offsetX: 0,
     offsetY: -0.0781,
-    facePatch: { scale: 0.3325, offsetX: -0.0421, offsetY: -0.1241 },
+    facePatch: { scale: 0.4619, offsetX: -0.0421, offsetY: -0.1241 },
     unlockedByDefault: false,
   },
   {
@@ -271,7 +311,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     aspect: 1.271,
     offsetX: 0,
     offsetY: -0.0781,
-    facePatch: { scale: 0.3133, offsetX: -0.0413, offsetY: -0.1194 },
+    facePatch: { scale: 0.4351, offsetX: -0.0413, offsetY: -0.1194 },
     unlockedByDefault: false,
   },
   {
@@ -284,7 +324,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     aspect: 1.0927,
     offsetX: 0,
     offsetY: -0.0781,
-    facePatch: { scale: 0.2743, offsetX: -0.0947, offsetY: -0.1004 },
+    facePatch: { scale: 0.3810, offsetX: -0.0947, offsetY: -0.1004 },
     unlockedByDefault: false,
   },
   {
@@ -297,7 +337,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     aspect: 1.186,
     offsetX: 0,
     offsetY: -0.0781,
-    facePatch: { scale: 0.2877, offsetX: -0.0695, offsetY: -0.0827 },
+    facePatch: { scale: 0.3996, offsetX: -0.0695, offsetY: -0.0827 },
     unlockedByDefault: false,
   },
   {
@@ -317,11 +357,16 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     name: 'セーラー服',
     category: 'outfit',
     type: 'overlay',
+    // Re-cropped from the Correction #9 redrawn reference sheet (see this
+    // file's Correction #9 note below the FACE_PATCH_CROP export) — the
+    // collar's inner "peekaboo" gap is now cut to real alpha transparency
+    // rather than the old art's neckline sitting too high to leave any gap
+    // at all.
     imageAsset: require('../../assets/cosmetics/outfit_sailor.png'),
     scale: 0.6309,
-    aspect: 1.03,
-    offsetX: 0,
-    offsetY: 0.2915,
+    aspect: 0.8333,
+    offsetX: 0.0164,
+    offsetY: 0.0553,
     unlockedByDefault: false,
   },
   {
@@ -331,9 +376,9 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     type: 'overlay',
     imageAsset: require('../../assets/cosmetics/cute_leaf_tunic.png'),
     scale: 0.6309,
-    aspect: 0.875,
-    offsetX: 0,
-    offsetY: 0.2446,
+    aspect: 0.8333,
+    offsetX: 0.0127,
+    offsetY: 0.0465,
     unlockedByDefault: false,
   },
   {
@@ -343,9 +388,9 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     type: 'overlay',
     imageAsset: require('../../assets/cosmetics/cute_fluffy_sweater.png'),
     scale: 0.6309,
-    aspect: 0.9434,
-    offsetX: 0,
-    offsetY: 0.2652,
+    aspect: 0.8056,
+    offsetX: 0.0162,
+    offsetY: 0.0419,
     unlockedByDefault: false,
   },
   {
