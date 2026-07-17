@@ -23,7 +23,7 @@ export const BUILDING_OPTIONS: BuildingOption[] = [
     id: 'general_branch',
     name: '道具屋(出張所)',
     emoji: '🛠️',
-    description: '帽子・盾の品揃え。既存の道具屋と在庫を共有します。',
+    description: '頭・手・足装備の品揃え。既存の道具屋と在庫を共有します。',
     buildingKind: 'shop',
     shopKind: 'general',
     cost: { gold: 300, materialId: 'wood', materialAmount: 10 },

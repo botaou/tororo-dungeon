@@ -22,6 +22,52 @@ export const CRAFTING_RECIPES: CraftingRecipe[] = [
   { id: 'craft_leatherHat', resultItemId: 'leatherHat', materialCost: { feather: 3, herb: 2 }, unlockedByDefault: true },
   { id: 'craft_woodenShield', resultItemId: 'woodenShield', materialCost: { wood: 4, ore: 2 }, unlockedByDefault: true },
 
+  // Equipment expansion (see data/items.ts) — one tier-1 recipe per weapon
+  // line/armor slot is unlockedByDefault so every new slot has *something*
+  // craftable immediately; every other new tier needs the normal recipe-
+  // unlock routes (merchant/gift/quest/combat — see game/recipeUnlocks.ts),
+  // same as rustySword/leatherArmor above already did.
+  { id: 'craft_swordTraining', resultItemId: 'swordTraining', materialCost: { wood: 3 }, unlockedByDefault: true },
+  { id: 'craft_swordSilver', resultItemId: 'swordSilver', materialCost: { ore: 5, gem: 1 }, unlockedByDefault: false },
+  { id: 'craft_swordFlame', resultItemId: 'swordFlame', materialCost: { ore: 6, coal: 4, gem: 2 }, unlockedByDefault: false },
+
+  { id: 'craft_staffWood', resultItemId: 'staffWood', materialCost: { wood: 3, herb: 2 }, unlockedByDefault: true },
+  { id: 'craft_staffFlower', resultItemId: 'staffFlower', materialCost: { herb: 4, berry: 2 }, unlockedByDefault: false },
+  { id: 'craft_staffClover', resultItemId: 'staffClover', materialCost: { berry: 4, gem: 1 }, unlockedByDefault: false },
+  { id: 'craft_staffStar', resultItemId: 'staffStar', materialCost: { magicStone: 2, gem: 2, berry: 3 }, unlockedByDefault: false },
+
+  { id: 'craft_bowWood', resultItemId: 'bowWood', materialCost: { wood: 4 }, unlockedByDefault: true },
+  { id: 'craft_bowHunter', resultItemId: 'bowHunter', materialCost: { wood: 5, feather: 3 }, unlockedByDefault: false },
+  { id: 'craft_bowHeart', resultItemId: 'bowHeart', materialCost: { feather: 5, berry: 3 }, unlockedByDefault: false },
+  { id: 'craft_bowWind', resultItemId: 'bowWind', materialCost: { feather: 6, magicStone: 1, gem: 2 }, unlockedByDefault: false },
+
+  { id: 'craft_hammerWood', resultItemId: 'hammerWood', materialCost: { wood: 5 }, unlockedByDefault: true },
+  { id: 'craft_hammerIron', resultItemId: 'hammerIron', materialCost: { wood: 4, ore: 5 }, unlockedByDefault: false },
+  { id: 'craft_hammerAcorn', resultItemId: 'hammerAcorn', materialCost: { ore: 6, coal: 3 }, unlockedByDefault: false },
+  { id: 'craft_hammerFlower', resultItemId: 'hammerFlower', materialCost: { ore: 8, coal: 5, gem: 2 }, unlockedByDefault: false },
+
+  { id: 'craft_knuckleCloth', resultItemId: 'knuckleCloth', materialCost: { feather: 3 }, unlockedByDefault: true },
+  { id: 'craft_knuckleLeather', resultItemId: 'knuckleLeather', materialCost: { feather: 4, herb: 2 }, unlockedByDefault: false },
+  { id: 'craft_knuckleSpike', resultItemId: 'knuckleSpike', materialCost: { feather: 5, ore: 3 }, unlockedByDefault: false },
+  { id: 'craft_knuckleCat', resultItemId: 'knuckleCat', materialCost: { feather: 6, ore: 4, gem: 1 }, unlockedByDefault: false },
+
+  { id: 'craft_headLeaf', resultItemId: 'headLeaf', materialCost: { herb: 3 }, unlockedByDefault: true },
+  { id: 'craft_headFlower', resultItemId: 'headFlower', materialCost: { berry: 4, herb: 3 }, unlockedByDefault: false },
+  { id: 'craft_headForest', resultItemId: 'headForest', materialCost: { herb: 6, magicStone: 1, berry: 3 }, unlockedByDefault: false },
+
+  { id: 'craft_bodyCloth', resultItemId: 'bodyCloth', materialCost: { herb: 4, wood: 2 }, unlockedByDefault: true },
+  { id: 'craft_bodyTunic', resultItemId: 'bodyTunic', materialCost: { herb: 5, feather: 3 }, unlockedByDefault: false },
+  { id: 'craft_bodyDress', resultItemId: 'bodyDress', materialCost: { berry: 5, herb: 5, gem: 1 }, unlockedByDefault: false },
+
+  { id: 'craft_handCloth', resultItemId: 'handCloth', materialCost: { herb: 3, wood: 2 }, unlockedByDefault: true },
+  { id: 'craft_handMitten', resultItemId: 'handMitten', materialCost: { herb: 4, berry: 3 }, unlockedByDefault: false },
+  { id: 'craft_handFlowerGlove', resultItemId: 'handFlowerGlove', materialCost: { berry: 5, herb: 4, gem: 1 }, unlockedByDefault: false },
+
+  { id: 'craft_footCloth', resultItemId: 'footCloth', materialCost: { herb: 3, wood: 2 }, unlockedByDefault: true },
+  { id: 'craft_footLeather', resultItemId: 'footLeather', materialCost: { wood: 4, herb: 3 }, unlockedByDefault: false },
+  { id: 'craft_footFlower', resultItemId: 'footFlower', materialCost: { berry: 4, herb: 4 }, unlockedByDefault: false },
+  { id: 'craft_footForest', resultItemId: 'footForest', materialCost: { herb: 6, magicStone: 1 }, unlockedByDefault: false },
+
   // Premium feed — shelved at the feed shop once crafted, same as the
   // items above are shelved at the general shop.
   { id: 'craft_nutritionBiscuit', resultItemId: 'nutritionBiscuit', materialCost: { berry: 4, herb: 2 }, unlockedByDefault: true },

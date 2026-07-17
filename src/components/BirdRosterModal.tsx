@@ -4,7 +4,7 @@ import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { BirdState, EquipSlot, ItemId, MaterialId } from '../types';
 import { CHARACTERS } from '../data/characters';
 import { MATERIAL_ICON } from '../data/materials';
-import { ITEM_DEF_MAP } from '../data/items';
+import { ITEM_DEF_MAP, RARITY_COLORS } from '../data/items';
 import { COSMETIC_ITEMS } from '../data/cosmetics';
 import { useCosmeticStore } from '../store/useCosmeticStore';
 import { getMoodDef } from '../data/moods';
@@ -18,9 +18,10 @@ import { theme } from '../theme';
 
 const EQUIP_SLOT_ORDER: { slot: EquipSlot; emptyIcon: string }[] = [
   { slot: 'weapon', emptyIcon: '🗡️' },
-  { slot: 'armor', emptyIcon: '🛡️' },
-  { slot: 'hat', emptyIcon: '🧢' },
-  { slot: 'shield', emptyIcon: '🛡' },
+  { slot: 'head', emptyIcon: '🧢' },
+  { slot: 'body', emptyIcon: '🛡️' },
+  { slot: 'hand', emptyIcon: '🧤' },
+  { slot: 'foot', emptyIcon: '👟' },
 ];
 
 interface Props {
@@ -86,6 +87,16 @@ export function BirdRosterModal({ visible, onClose, birds, onSetCosmetic }: Prop
                     <Text style={styles.statItem}>🏃{stats.speed}</Text>
                     <Text style={styles.statItem}>🍀{stats.luck}</Text>
                   </View>
+                  {(stats.mp > 0 || stats.cri > 0 || stats.eva > 0) && (
+                    <View style={styles.statsRow}>
+                      {stats.mp > 0 && <Text style={styles.statItem}>💧MP{stats.mp}</Text>}
+                      {stats.cri > 0 && <Text style={styles.statItem}>💥CRI{stats.cri}%</Text>}
+                      {stats.eva > 0 && <Text style={styles.statItem}>💨EVA{stats.eva}%</Text>}
+                    </View>
+                  )}
+                  {stats.activeSetBonusLabel && (
+                    <Text style={styles.setBonusLabel}>✨ {stats.activeSetBonusLabel}</Text>
+                  )}
                   <View style={styles.statsRow}>
                     <Text style={styles.meterItem}>🍚満腹度 {Math.round(bird.satiety)}</Text>
                     <Text style={styles.meterItem}>😊ご機嫌度 {Math.round(bird.happiness)}</Text>
@@ -110,7 +121,10 @@ export function BirdRosterModal({ visible, onClose, birds, onSetCosmetic }: Prop
                       const equippedId = bird.equipment[slot];
                       const equipDef = equippedId ? ITEM_DEF_MAP[equippedId] : null;
                       return (
-                        <View style={styles.equipSlot} key={slot}>
+                        <View
+                          style={[styles.equipSlot, equipDef && { borderColor: RARITY_COLORS[equipDef.rarity] }]}
+                          key={slot}
+                        >
                           <Text style={[styles.equipIcon, !equipDef && styles.equipIconEmpty]}>
                             {equipDef?.emoji ?? emptyIcon}
                           </Text>
@@ -232,6 +246,7 @@ const styles = StyleSheet.create({
   statsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 6 },
   statItem: { fontSize: 12, fontWeight: '700', color: theme.textPrimary },
   meterItem: { fontSize: 11, fontWeight: '700', color: theme.textSecondary },
+  setBonusLabel: { fontSize: 11, fontWeight: '700', color: theme.gold, marginTop: 4 },
   equipRow: { flexDirection: 'row', gap: 6, marginTop: 8 },
   equipSlot: {
     flex: 1,

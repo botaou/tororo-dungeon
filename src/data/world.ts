@@ -21,19 +21,28 @@ export const TOWN_RADIUS = 0.12;
 // Convertible-treasure chances are deliberately much lower than gear
 // chances — they're a rare windfall for the town's merchant income, not a
 // reliable source.
+// Equipment expansion (see data/items.ts): each table's normal-tier drop
+// stays as it was, plus one new uncommon/rare-tier addition at a notably
+// lower chance — so the new higher tiers are discoverable through combat
+// too, not just crafting/the merchant, without a full drop-table rebalance
+// (explicitly out of scope for this pass).
 const SLIME_DROPS: DropEntry[] = [
   { kind: 'material', materialId: 'herb', amount: 1, chance: 0.25 },
   { kind: 'item', itemId: 'leatherArmor', chance: 0.03 },
+  { kind: 'item', itemId: 'bodyTunic', chance: 0.01 },
   { kind: 'item', itemId: 'luckyCharm', chance: 0.01 },
 ];
 const BAT_DROPS: DropEntry[] = [
   { kind: 'material', materialId: 'feather', amount: 1, chance: 0.3 },
   { kind: 'item', itemId: 'rustySword', chance: 0.04 },
+  { kind: 'item', itemId: 'bowHeart', chance: 0.015 },
   { kind: 'item', itemId: 'luckyCharm', chance: 0.02 },
 ];
 const WOLF_DROPS: DropEntry[] = [
   { kind: 'material', materialId: 'gem', amount: 1, chance: 0.2 },
   { kind: 'item', itemId: 'rustySword', chance: 0.08 },
+  { kind: 'item', itemId: 'swordSilver', chance: 0.025 },
+  { kind: 'item', itemId: 'swordFlame', chance: 0.008 },
   { kind: 'item', itemId: 'ancientGem', chance: 0.03 },
   { kind: 'item', itemId: 'goldBar', chance: 0.015 },
   { kind: 'item', itemId: 'royalJewelry', chance: 0.005 },

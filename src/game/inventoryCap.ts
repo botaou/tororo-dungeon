@@ -31,7 +31,7 @@ export function addCappedInventory(
   inventory[materialId] = (inventory[materialId] ?? 0) + added;
 }
 
-const EQUIP_CATEGORIES = ['weapon', 'armor', 'hat', 'shield'];
+const EQUIP_CATEGORIES = ['weapon', 'head', 'body', 'hand', 'foot'];
 
 export interface CappedItemAddResult {
   added: number; // how many actually landed in bird.items
@@ -40,8 +40,8 @@ export interface CappedItemAddResult {
 
 // Adds `amount` of an item to a bird's `items`. Non-equip categories (food,
 // convertible treasure) are uncapped here, same as always — this only
-// bites for weapon/armor/hat/shield, where a real-device report found 193
-// spare copies of one weapon piled up from repeated combat drops (see
+// bites for weapon/head/body/hand/foot, where a real-device report found
+// 193 spare copies of one weapon piled up from repeated combat drops (see
 // EQUIPMENT_SPARE_CAP's comment in config.ts). Past the cap, the extra
 // copy is auto-sold for gold on the spot (credited straight to the bird —
 // no town split, unlike a real merchant sale, since this is closer to

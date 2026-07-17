@@ -16,7 +16,7 @@ import {
   STARTING_SATIETY,
 } from '../game/config';
 
-const EQUIP_CATEGORIES = ['weapon', 'armor', 'hat', 'shield'];
+const EQUIP_CATEGORIES = ['weapon', 'head', 'body', 'hand', 'foot'];
 
 export interface BirdWallet {
   gold: number;
@@ -55,7 +55,7 @@ function defaultWallet(defId: string): BirdWallet {
     gold: 0,
     inventory: { ...STARTING_MATERIALS },
     items: {},
-    equipment: { weapon: null, armor: null, hat: null, shield: null },
+    equipment: { weapon: null, head: null, body: null, hand: null, foot: null },
     cosmeticId: null,
     houseFood: {},
     houseTreasureIds: [],
@@ -107,6 +107,25 @@ export const useBirdEconomyStore = create<BirdEconomyState & BirdEconomyActions>
         const base = defaultWallet(defId);
         const saved = get().wallets[defId];
         const merged = { ...base, ...(saved ?? {}) };
+        // Equipment expansion (see data/items.ts) replaced the weapon/armor/
+        // hat/shield 4-slot layout with weapon/head/body/hand/foot — since
+        // `merged.equipment` above is a full shallow overwrite (not a deep
+        // merge), an existing save's old-shaped equipment object completely
+        // replaces `base`'s new-shaped one, leaving head/body/hand/foot all
+        // undefined and silently un-equipping whatever the player already
+        // had on (the item itself isn't lost — it's still in `items` — just
+        // no longer sitting in an equipment slot). Remap the old keys into
+        // the new ones once here so an existing tester doesn't lose their
+        // current loadout: hat→head, armor→body, shield→hand (the same
+        // repurposing data/items.ts's woodenShield itself went through).
+        const legacyEquipment = merged.equipment as unknown as Partial<Record<'armor' | 'hat' | 'shield', ItemId | null>>;
+        merged.equipment = {
+          weapon: merged.equipment.weapon ?? null,
+          head: merged.equipment.head ?? legacyEquipment.hat ?? null,
+          body: merged.equipment.body ?? legacyEquipment.armor ?? null,
+          hand: merged.equipment.hand ?? legacyEquipment.shield ?? null,
+          foot: merged.equipment.foot ?? null,
+        };
         // atk/maxHp were added after level-up growth already existed (see
         // useWorldStore's grantExp, which was bumping bird.atk/bird.maxHp on
         // the in-memory session state the whole time but had nowhere

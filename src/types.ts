@@ -22,10 +22,50 @@ export type MaterialId =
 // A small, hand-picked catalog (see data/items.ts) rather than a generic
 // item system, since only a handful exist so far.
 export type ItemId =
+  // Equipment expansion (see data/items.ts's Correction note): 4 tiers per
+  // weapon type/armor slot, normal→rare (epic+ and set-exclusive pieces are
+  // deliberately out of scope for this pass — see the request's own "変わり
+  // 種武器・伝説の武器は別途" carve-out). The original 4 starter items
+  // (rustySword/leatherArmor/leatherHat/woodenShield) are kept as-is and
+  // simply slot into this tier chain as each line's tier-2 entry, so
+  // existing recipes/job presets/drop tables referencing them by id never
+  // needed to change.
+  | 'swordTraining'
   | 'rustySword'
-  | 'leatherArmor'
+  | 'swordSilver'
+  | 'swordFlame'
+  | 'staffWood'
+  | 'staffFlower'
+  | 'staffClover'
+  | 'staffStar'
+  | 'bowWood'
+  | 'bowHunter'
+  | 'bowHeart'
+  | 'bowWind'
+  | 'hammerWood'
+  | 'hammerIron'
+  | 'hammerAcorn'
+  | 'hammerFlower'
+  | 'knuckleCloth'
+  | 'knuckleLeather'
+  | 'knuckleSpike'
+  | 'knuckleCat'
+  | 'headLeaf'
   | 'leatherHat'
+  | 'headFlower'
+  | 'headForest'
+  | 'bodyCloth'
+  | 'leatherArmor'
+  | 'bodyTunic'
+  | 'bodyDress'
+  | 'handCloth'
   | 'woodenShield'
+  | 'handMitten'
+  | 'handFlowerGlove'
+  | 'footCloth'
+  | 'footLeather'
+  | 'footFlower'
+  | 'footForest'
   | 'luckyCharm'
   | 'ancientGem'
   // Convertible-only treasure — never equippable/consumable, never shelved
@@ -48,10 +88,10 @@ export type ItemId =
   | 'luckyTreat';
 
 // What genre of shop carries an item — also which shop building it can be
-// crafted "at" (see data/shops.ts) and shelved into. weapon/armor/hat/shield
-// double as the four equipment slots (see EquipSlot) — rare/food are goods,
-// not gear, and can't be equipped.
-export type ItemCategory = 'weapon' | 'armor' | 'hat' | 'shield' | 'rare' | 'food';
+// crafted "at" (see data/shops.ts) and shelved into. weapon/head/body/hand/
+// foot double as the five equipment slots (see EquipSlot) — rare/food are
+// goods, not gear, and can't be equipped.
+export type ItemCategory = 'weapon' | 'head' | 'body' | 'hand' | 'foot' | 'rare' | 'food';
 
 // 'craft' items are usable (equippable gear or consumable food) and flow
 // through the normal player warehouse → shop shelf pipeline. 'convertible'
@@ -60,27 +100,47 @@ export type ItemCategory = 'weapon' | 'armor' | 'hat' | 'shield' | 'rare' | 'foo
 // player's warehouse; a bird sells one straight out of its own inventory.
 export type ItemType = 'craft' | 'convertible';
 
-// The four equipment slots a bird has, one item each. Deliberately the same
+// The five equipment slots a bird has, one item each. Deliberately the same
 // literal values as their matching ItemCategory so "which slot does this
-// item go in" never needs a separate lookup table.
-export type EquipSlot = 'weapon' | 'armor' | 'hat' | 'shield';
+// item go in" never needs a separate lookup table. Replaces the original
+// weapon/armor/hat/shield 4-slot layout (see data/items.ts's Correction
+// note) — the reference sheet driving this expansion has no shield-
+// equivalent slot at all, so `woodenShield` was folded into `hand` instead
+// of keeping a 5th slot with only one item ever in it.
+export type EquipSlot = 'weapon' | 'head' | 'body' | 'hand' | 'foot';
+
+// Which of the 5 weapon lines a `weapon`-category item belongs to — display/
+// flavor only today (there's no per-line combat mechanic, e.g. staff MP
+// effects aren't actually implemented; see ItemStatBonus's mp/cri/eva
+// comment), but keeps "5 types, one weapon slot" honest: a bird can only
+// ever have one weapon equipped regardless of type, exactly matching the
+// request's own "5系統のうち1つを選んで装備".
+export type WeaponType = 'sword' | 'staff' | 'bow' | 'hammer' | 'knuckle';
+
+// 6-tier rarity ladder (see data/items.ts's RARITY_LABELS/RARITY_COLORS for
+// display). Only 'normal'/'uncommon'/'rare' are populated with real items in
+// this pass — 'epic'/'legendary'/'mythic' exist in the type now so the next
+// pass (higher-tier gear, per the request's own staged rollout) is a data-
+// only addition, no schema change.
+export type Rarity = 'normal' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythic';
 
 // Cosmetic-only "costume" catalog (see data/cosmetics.ts) — a completely
 // separate slot from EquipSlot above: a bird has at most *one* cosmetic
 // equipped at a time (BirdState.cosmeticId/BirdWallet.cosmeticId), it
 // carries no ItemStatBonus, and it isn't tracked as owned inventory the
-// way weapon/armor/hat/shield items are — every cosmetic is always
+// way weapon/head/body/hand/foot items are — every cosmetic is always
 // available to any bird to wear or remove freely (how a player *acquires*
 // one, e.g. a shop/gacha/event, is intentionally out of scope for now; see
 // data/cosmetics.ts's own comment). One shared image per cosmetic is reused
 // across all 4 birds rather than a per-bird recolor.
 export type CosmeticCategory = 'costume' | 'outfit' | 'cute' | 'event' | 'theme' | 'seasonal';
 
-// Which physical shop building this is. 'general' (hats/shields) and 'feed'
-// always exist on a fixed town plot from the start; 'weapon'/'armor' don't
-// have a fixed plot at all — they only come into being once the player
-// constructs one (see data/buildingOptions.ts), so they start the game
-// completely unavailable rather than merely locked-and-visible.
+// Which physical shop building this is. 'general' (head/hand/foot gear) and
+// 'feed' always exist on a fixed town plot from the start; 'weapon'/'armor'
+// (armor meaning 'body' specifically) don't have a fixed plot at all — they
+// only come into being once the player constructs one (see data/
+// buildingOptions.ts), so they start the game completely unavailable rather
+// than merely locked-and-visible.
 export type ShopKind = 'general' | 'feed' | 'weapon' | 'armor';
 
 // Forward-looking, currently-unused bonus hooks a food item could carry —
@@ -91,14 +151,52 @@ export interface ItemEffects {
   expBonusPercent?: number;
 }
 
-// Stat bonuses an equippable item (weapon/armor/hat/shield) grants while
+// Stat bonuses an equippable item (weapon/head/body/hand/foot) grants while
 // equipped — added on top of the wearer's own base stats (see
-// game/birdStats.ts's getEffectiveStats).
+// game/birdStats.ts's getEffectiveStats). mp/cri/eva are new alongside this
+// equipment expansion (the request's own "ATK/DEF/HP/MP/SPD/LUK/CRI/EVA"
+// stat list) — like speed/luck already were, they're computed and shown on
+// the roster card but have no consuming mechanic yet (no MP resource, no
+// crit/evasion roll in combat): adding the actual systems those would need
+// is a much bigger, separate change than "expand the equipment catalog",
+// so for now they follow the exact same "real data, display-only" precedent
+// speed/luck already established rather than half-building a combat rework
+// under an equipment-data request. hp is similar but merges into effective
+// maxHp (see getEffectiveStats) since maxHp already existed as a real stat.
 export interface ItemStatBonus {
   atk?: number;
   defense?: number;
   speed?: number;
   luck?: number;
+  hp?: number;
+  mp?: number;
+  cri?: number; // percentage points, e.g. 5 means +5%
+  eva?: number; // percentage points
+}
+
+// A themed run of gear (see data/equipmentSets.ts) — equipping several
+// pieces tagged with the same setId grants an extra bonus on top of each
+// piece's own statBonus once enough are worn at once. Data-structure-only
+// for this pass per the request's own "今回は仕組みだけ" — only a couple of
+// EQUIPMENT_SETS entries carry a real bonus; most gear has no setId at all.
+export interface EquipmentSetBonusTier {
+  // How many pieces from this set must be equipped at once to grant this
+  // tier's bonus. Tiers are independent, not cumulative — see
+  // game/birdStats.ts's getSetBonus, which applies only the highest tier
+  // the wearer currently qualifies for.
+  piecesRequired: number;
+  statBonus: ItemStatBonus;
+  // Short human-readable description of the tier (shown on the roster card
+  // once a set bonus is active) — separate from ItemStatBonus since a set
+  // bonus could describe a non-stat effect in a future pass.
+  label: string;
+}
+
+export interface EquipmentSetDef {
+  id: string;
+  name: string;
+  itemIds: ItemId[];
+  bonusTiers: EquipmentSetBonusTier[];
 }
 
 export type CharacterRole = 'attacker' | 'healer';

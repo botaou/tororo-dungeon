@@ -47,6 +47,17 @@ export const useRecipeStore = create<RecipeState & RecipeActions>()(
     {
       name: 'tororo-dungeon-recipe-v1',
       storage: createJSONStorage(() => AsyncStorage),
+      // Without this, an existing save's persisted unlockedRecipeIds fully
+      // replaces the freshly-computed default list on rehydrate — so a
+      // recipe added later with unlockedByDefault:true (like this pass's 9
+      // new tier-1 equipment recipes) would never reach an existing tester,
+      // staying locked forever unless some other unlock route happened to
+      // roll it. Merging keeps everything the player already unlocked and
+      // adds in any new defaults they don't have yet.
+      merge: (persisted, current) => {
+        const persistedIds = (persisted as Partial<RecipeState>)?.unlockedRecipeIds ?? [];
+        return { ...current, unlockedRecipeIds: Array.from(new Set([...current.unlockedRecipeIds, ...persistedIds])) };
+      },
     }
   )
 );

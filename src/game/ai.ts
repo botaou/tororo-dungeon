@@ -697,16 +697,19 @@ function executeSellTrip(bird: BirdState): AiStepOutcome {
   return outcome;
 }
 
-// A bird missing any of its four equipment slots checks whichever shop
-// carries that category, in slot priority order (weapon > armor > hat >
-// shield) — weapon/armor only have a shelf (and a shopPositions entry) at
-// all once the player's actually constructed one (see data/townGrid.ts's
-// getAllShopPositions), so those categories are silently skipped until
-// then. Owning one of a category is "enough" for now (no stacking/
-// upgrading loop), keeping this a one-time self-equip rather than
-// something birds keep doing forever.
+// A bird missing any of its five equipment slots checks whichever shop
+// carries that category, in slot priority order (weapon > head > body >
+// hand > foot) — weapon/body ('armor' shop kind) only have a shelf (and a
+// shopPositions entry) at all once the player's actually constructed one
+// (see data/townGrid.ts's getAllShopPositions), so those categories are
+// silently skipped until then. Owning one of a category is "enough" for
+// now (no stacking/upgrading loop, no rarity preference), keeping this a
+// one-time self-equip rather than something birds keep doing forever —
+// candidates below span every rarity tier of that slot equally, so a bird
+// might land a rare piece its very first purchase, same as before this
+// pass's expansion just with more possible outcomes.
 function pickGearOffer(bird: BirdState, world: AiWorld): { itemId: ItemId; price: number; shopKind: ShopKind } | null {
-  for (const category of ['weapon', 'armor', 'hat', 'shield'] as const) {
+  for (const category of ['weapon', 'head', 'body', 'hand', 'foot'] as const) {
     if (bird.equipment[category]) continue;
     const shopKind = (Object.keys(SHOP_DEFS) as ShopKind[]).find((k) => SHOP_DEFS[k].categories.includes(category));
     if (!shopKind || !world.shopPositions[shopKind]) continue;

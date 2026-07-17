@@ -21,7 +21,7 @@ interface Props {
   onUnfavoriteTreasure: (defId: string, itemId: ItemId) => boolean;
 }
 
-const EQUIP_SLOTS: EquipSlot[] = ['weapon', 'armor', 'hat', 'shield'];
+const EQUIP_SLOTS: EquipSlot[] = ['weapon', 'head', 'body', 'hand', 'foot'];
 
 // A bird's own house — tapped into from its map sprite. Three sections:
 // spare equipment (read-only view of `items`, nothing to manage since
