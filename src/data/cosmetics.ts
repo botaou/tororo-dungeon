@@ -100,12 +100,49 @@ import { CosmeticCategory } from '../types';
 // face. Widened the mask ellipse to fully cover the original face. Both
 // re-verified at all 4 real render sizes (48/44/40/32) across all 4 birds
 // this time, not just the sizes checked previously.
+// Correction #6 (explicit design request, backed by re-checking the
+// original reference sheet — see 6b7dbd20-cosmetic_equipment_reference.png
+// in this session's uploads): every item up to this point was rendered the
+// same way (full bird sprite drawn underneath, costume art layered on top).
+// That's correct for most items, but the reference sheet shows the
+// 着ぐるみ(スペシャル) row (costume_parrot/costume_penguin, and — not yet
+// implemented — the dinosaur/dragon/unicorn suits) is a genuinely different
+// construction: the ENTIRE creature shape (head, wings, tail, feet) is the
+// costume's own art, and only a small oval — just the wearer's face and
+// cheeks, confirmed by the dinosaur cell where the green suit and the
+// wearer's face are obviously different colors — shows through. Drawing
+// the wearer's full body underneath (as if it were an 'overlay' item) made
+// the real bird's own wings/feet peek out alongside the costume's own,
+// looking "stuck together" rather than like one creature.
+//
+// Checking the OTHER categories against this same reference sheet showed
+// they are NOT built this way, despite some (party dress, santa cape,
+// ladybug, sunflower, spring, winter) having a similarly large-looking
+// transparent opening: in every one of those reference cells the wearer's
+// whole body — face, chest, belly, feet — is fully visible, worn under a
+// draped garment/hood/cape. Those stay `overlay`.
+export type CosmeticRenderType = 'fullBody' | 'overlay';
+
+// Shared by every `fullBody` item — none of them own this, it's a property
+// of the WEARER's base sprite, not the costume. Crops roughly the head +
+// cheek fluff (not the full 2-head-tall body) out of the shared 256x256
+// assets/birds/{id}/base.png canvas, expressed as 0-1 fractions so it scales
+// with any base-sprite resolution. The 4 birds' heads sit at slightly
+// different heights (see this file's Correction #4 note), but this crop has
+// enough margin that the difference doesn't push a face out of frame.
+export const FACE_PATCH_CROP = { x0: 0.2, y0: 0.08, x1: 0.8, y1: 0.5 };
+
 export interface CosmeticItemDef {
   id: string;
   name: string;
   category: CosmeticCategory;
-  // Costume-only art (no bird baked in) — a hood/hat/cape/dress with a
-  // transparent gap wherever the wearer's own face or body should show.
+  type: CosmeticRenderType;
+  // Costume-only art (no bird baked in). For `overlay` items: a hood/hat/
+  // cape/dress with a transparent gap wherever the wearer's own face or
+  // body should show, layered on top of the wearer's full, unmodified base
+  // sprite. For `fullBody` items: the entire creature costume (this IS the
+  // whole visible body), with only a small face-sized hole — the wearer's
+  // base sprite is not drawn at all; see facePatch below.
   imageAsset: number;
   // Position/size on the avatar box, independently tunable per item (see
   // this file's "Correction #2" note above for why each of these needed
@@ -118,6 +155,14 @@ export interface CosmeticItemDef {
   aspect: number;
   offsetX: number;
   offsetY: number;
+  // `fullBody` only: where to draw the small cropped face patch (see
+  // FACE_PATCH_CROP) so it lands inside this costume's own face-hole.
+  // Same box-fraction convention as offsetX/offsetY above; scale is the
+  // (square) patch's width as a fraction of the box size. Deliberately
+  // sized a little larger than the hole itself measures — the costume's
+  // own opaque pixels mask away the small excess, which is safer than
+  // risking a gap of empty transparency inside the hole.
+  facePatch?: { scale: number; offsetX: number; offsetY: number };
   // Whether every save starts with this costume already wearable. Only 1-2
   // items should be true — everything else needs to be found while
   // gathering, dropped by an enemy, crafted, or gifted in by the player
@@ -142,28 +187,37 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     id: 'costume_parrot',
     name: 'おおきなインコ',
     category: 'costume',
+    type: 'fullBody',
+    // Re-cropped directly from the reference sheet's 着ぐるみ(スペシャル) row
+    // (Correction #6) with only the small face oval masked out — the rest
+    // of this image (hood, wings, tail, feet) is the costume's own art and
+    // is drawn as the wearer's entire visible body.
     imageAsset: require('../../assets/cosmetics/costume_parrot.png'),
     scale: 0.6973,
-    aspect: 1.18,
+    aspect: 1.2411,
     offsetX: 0,
     offsetY: -0.0781,
+    facePatch: { scale: 0.44, offsetX: -0.0915, offsetY: -0.046 },
     unlockedByDefault: true,
   },
   {
     id: 'costume_penguin',
     name: 'ペンギン',
     category: 'costume',
+    type: 'fullBody',
     imageAsset: require('../../assets/cosmetics/costume_penguin.png'),
     scale: 0.6973,
-    aspect: 1.2042,
+    aspect: 1.1667,
     offsetX: 0,
     offsetY: -0.0781,
+    facePatch: { scale: 0.46, offsetX: -0.0581, offsetY: -0.0418 },
     unlockedByDefault: false,
   },
   {
     id: 'outfit_flower_dress',
     name: 'お花のワンピース',
     category: 'outfit',
+    type: 'overlay',
     imageAsset: require('../../assets/cosmetics/outfit_flower_dress.png'),
     scale: 0.6309,
     aspect: 0.8604,
@@ -175,6 +229,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     id: 'outfit_sailor',
     name: 'セーラー服',
     category: 'outfit',
+    type: 'overlay',
     imageAsset: require('../../assets/cosmetics/outfit_sailor.png'),
     scale: 0.6309,
     aspect: 1.03,
@@ -186,6 +241,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     id: 'cute_leaf_tunic',
     name: 'リーフチュニック',
     category: 'cute',
+    type: 'overlay',
     imageAsset: require('../../assets/cosmetics/cute_leaf_tunic.png'),
     scale: 0.6309,
     aspect: 0.875,
@@ -197,6 +253,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     id: 'cute_fluffy_sweater',
     name: 'ふわふわセーター',
     category: 'cute',
+    type: 'overlay',
     imageAsset: require('../../assets/cosmetics/cute_fluffy_sweater.png'),
     scale: 0.6309,
     aspect: 0.9434,
@@ -208,6 +265,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     id: 'event_party_dress',
     name: 'パーティードレス',
     category: 'event',
+    type: 'overlay',
     imageAsset: require('../../assets/cosmetics/event_party_dress.png'),
     scale: 0.6474,
     aspect: 1.0189,
@@ -219,6 +277,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     id: 'event_santa_cape',
     name: 'サンタケープ',
     category: 'event',
+    type: 'overlay',
     imageAsset: require('../../assets/cosmetics/event_santa_cape.png'),
     scale: 0.6474,
     aspect: 1.2223,
@@ -230,6 +289,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     id: 'theme_ladybug',
     name: 'てんとう虫',
     category: 'theme',
+    type: 'overlay',
     imageAsset: require('../../assets/cosmetics/theme_ladybug.png'),
     scale: 0.6474,
     aspect: 1.2089,
@@ -241,6 +301,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     id: 'theme_sunflower',
     name: 'ひまわり',
     category: 'theme',
+    type: 'overlay',
     imageAsset: require('../../assets/cosmetics/theme_sunflower.png'),
     scale: 0.65,
     aspect: 0.5652,
@@ -252,6 +313,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     id: 'seasonal_spring',
     name: '春(桜)',
     category: 'seasonal',
+    type: 'overlay',
     imageAsset: require('../../assets/cosmetics/seasonal_spring.png'),
     scale: 0.6474,
     aspect: 1.0631,
@@ -263,6 +325,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     id: 'seasonal_winter',
     name: '冬(雪だるま)',
     category: 'seasonal',
+    type: 'overlay',
     imageAsset: require('../../assets/cosmetics/seasonal_winter.png'),
     scale: 0.6474,
     aspect: 1.1868,

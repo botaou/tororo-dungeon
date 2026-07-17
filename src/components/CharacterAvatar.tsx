@@ -3,7 +3,7 @@ import { Image, StyleSheet, Text, View } from 'react-native';
 
 import { BIRD_BASE_SPRITES } from '../game/birdBaseSprites';
 import { CHARACTER_IMAGES } from '../game/characterImages';
-import { getCosmeticDef } from '../data/cosmetics';
+import { FACE_PATCH_CROP, getCosmeticDef } from '../data/cosmetics';
 import { DEBUG_SHOW_SPRITE_BOUNDS } from '../game/config';
 import { cuteShadow } from '../theme';
 
@@ -29,6 +29,70 @@ export function CharacterAvatar({ characterId, emoji, color, size = 40, cosmetic
   const baseSprite = BIRD_BASE_SPRITES[characterId];
   if (baseSprite) {
     const cosmetic = getCosmeticDef(cosmeticId ?? null);
+    const outerBoxStyle = {
+      width: size,
+      height: size,
+      overflow: 'hidden' as const,
+      ...(DEBUG_SHOW_SPRITE_BOUNDS ? { borderWidth: 1, borderColor: 'red' } : null),
+    };
+
+    // fullBody costumes (see Correction #6 in data/cosmetics.ts) ARE the
+    // wearer's entire visible body — the real base sprite is not drawn at
+    // all, only a small cropped face patch positioned inside the costume's
+    // own face-hole, so the costume's own wings/feet/tail aren't drawn
+    // alongside (and potentially poking out past) the wearer's own.
+    if (cosmetic?.type === 'fullBody' && cosmetic.facePatch) {
+      const { scale: fpScale, offsetX: fpOffsetX, offsetY: fpOffsetY } = cosmetic.facePatch;
+      const patchSize = size * fpScale;
+      const cropWFrac = FACE_PATCH_CROP.x1 - FACE_PATCH_CROP.x0;
+      const cropHFrac = FACE_PATCH_CROP.y1 - FACE_PATCH_CROP.y0;
+      // Renders the full base sprite oversized inside a small clipped
+      // container, offset so only the FACE_PATCH_CROP region of it lands
+      // inside — the same "zoom and shift inside overflow:hidden" trick
+      // used to fake a source-rect crop, since a static require() Image
+      // can't be cropped directly.
+      const fullW = patchSize / cropWFrac;
+      const fullH = patchSize / cropHFrac;
+      return (
+        <View style={outerBoxStyle}>
+          <View
+            style={{
+              position: 'absolute',
+              width: patchSize,
+              height: patchSize,
+              left: size * (0.5 + fpOffsetX) - patchSize / 2,
+              top: size * (0.5 + fpOffsetY) - patchSize / 2,
+              overflow: 'hidden',
+              borderRadius: patchSize / 2,
+            }}
+          >
+            <Image
+              source={baseSprite}
+              resizeMode="stretch"
+              style={{
+                position: 'absolute',
+                width: fullW,
+                height: fullH,
+                left: -FACE_PATCH_CROP.x0 * fullW,
+                top: -FACE_PATCH_CROP.y0 * fullH,
+              }}
+            />
+          </View>
+          <Image
+            source={cosmetic.imageAsset}
+            resizeMode="stretch"
+            style={{
+              position: 'absolute',
+              width: size * cosmetic.scale,
+              height: size * cosmetic.scale * cosmetic.aspect,
+              left: size * (0.5 + cosmetic.offsetX) - (size * cosmetic.scale) / 2,
+              top: size * (0.5 + cosmetic.offsetY) - (size * cosmetic.scale * cosmetic.aspect) / 2,
+            }}
+          />
+        </View>
+      );
+    }
+
     return (
       // overflow: 'hidden' is a hard safety net — a costume's offset/scale
       // is tuned to sit fully inside this box, but the box sits right next
@@ -36,14 +100,7 @@ export function CharacterAvatar({ characterId, emoji, color, size = 40, cosmetic
       // sulk/pickaxe emoji at top:-10/-8, just outside its own avatar box),
       // so anything that *did* slip past the edge would visibly collide
       // with them instead of just looking slightly off.
-      <View
-        style={{
-          width: size,
-          height: size,
-          overflow: 'hidden',
-          ...(DEBUG_SHOW_SPRITE_BOUNDS ? { borderWidth: 1, borderColor: 'red' } : null),
-        }}
-      >
+      <View style={outerBoxStyle}>
         <Image source={baseSprite} style={{ width: size, height: size }} resizeMode="contain" />
         {cosmetic && (
           <Image
