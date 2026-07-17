@@ -121,6 +121,33 @@ import { CosmeticCategory } from '../types';
 // transparent opening: in every one of those reference cells the wearer's
 // whole body — face, chest, belly, feet — is fully visible, worn under a
 // draped garment/hood/cape. Those stay `overlay`.
+//
+// Correction #7 (user redrew the reference sheet): the 着ぐるみ(スペシャル)
+// row's face-hole previously had a specific sample bird's face baked into
+// the source art (see Correction #5's "residual face fragment" bug) — no
+// matter how tightly the mask was tuned, some sliver of that baked-in face
+// was one bad measurement away from bleeding through. The user redrew the
+// whole row with the hole left genuinely blank (a flat white fill, easy to
+// cut to true alpha transparency) and, while at it, filled out the row from
+// 2 items to the full 5 the original reference sheet always showed
+// (おおきなインコ/ペンギン, plus previously-unimplemented シマエナガ/恐竜/
+// ユニコーン) — also fixing the row's mislabeled title ("ビビ専用コスチューム"),
+// which was never actually Vivi-exclusive, just a leftover label from
+// whichever sample bird posed for the original sheet.
+// Re-cropped all 5 from the new sheet with the same pipeline: connected-
+// component detection to isolate each character cell, then a local-
+// variance filter (the flat white fill has near-zero local std deviation,
+// distinguishing it from the textured fur/scale art around it even on the
+// near-white シマエナガ) to precisely locate the hole and cut it to real
+// alpha transparency (a few px inset from the detected edge, then verified
+// via connected-component analysis that the hole doesn't touch the
+// exterior transparent region — same leak check as Correction #6). scale/
+// offsetY are shared across all 5 (0.6973/-0.0781, same as the previous
+// parrot/penguin tuning) since all 5 share the sheet's own consistent
+// character proportions; facePatch is derived per-item from each one's own
+// measured hole center/radius. Verified via the same from-scratch Python
+// compositing simulation as Correction #6, across all 4 birds × all 4 real
+// render sizes × all 5 items.
 export type CosmeticRenderType = 'fullBody' | 'overlay';
 
 // Shared by every `fullBody` item — none of them own this, it's a property
@@ -179,25 +206,27 @@ export const COSMETIC_CATEGORY_LABELS: Record<CosmeticCategory, string> = {
   seasonal: '季節の衣装',
 };
 
-// A sample of ~2 items per category, not the reference sheet's full set
-// (per the request's own "まずは各カテゴリから数点ずつのサンプル実装で構いま
-// せん" allowance).
+// A sample of ~2 items per category (per the request's own "まずは各カテゴ
+// リから数点ずつのサンプル実装で構いません" allowance), except 着ぐるみ
+// (スペシャル) which now has its reference sheet's full 5-item row (see
+// Correction #7) since the user supplied a redrawn version of that
+// specific row directly.
 export const COSMETIC_ITEMS: CosmeticItemDef[] = [
   {
     id: 'costume_parrot',
     name: 'おおきなインコ',
     category: 'costume',
     type: 'fullBody',
-    // Re-cropped directly from the reference sheet's 着ぐるみ(スペシャル) row
-    // (Correction #6) with only the small face oval masked out — the rest
-    // of this image (hood, wings, tail, feet) is the costume's own art and
-    // is drawn as the wearer's entire visible body.
+    // Re-cropped from the Correction #7 redrawn reference sheet — this
+    // source's face-hole is a genuinely blank fill (no baked-in sample
+    // bird), so the mask/facePatch fit here doesn't carry the previous
+    // "residual face fragment" risk.
     imageAsset: require('../../assets/cosmetics/costume_parrot.png'),
     scale: 0.6973,
-    aspect: 1.2411,
+    aspect: 1.2305,
     offsetX: 0,
     offsetY: -0.0781,
-    facePatch: { scale: 0.44, offsetX: -0.0915, offsetY: -0.046 },
+    facePatch: { scale: 0.3108, offsetX: -0.0778, offsetY: -0.1118 },
     unlockedByDefault: true,
   },
   {
@@ -207,10 +236,49 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     type: 'fullBody',
     imageAsset: require('../../assets/cosmetics/costume_penguin.png'),
     scale: 0.6973,
-    aspect: 1.1667,
+    aspect: 1.2415,
     offsetX: 0,
     offsetY: -0.0781,
-    facePatch: { scale: 0.46, offsetX: -0.0581, offsetY: -0.0418 },
+    facePatch: { scale: 0.3325, offsetX: -0.0421, offsetY: -0.1241 },
+    unlockedByDefault: false,
+  },
+  {
+    id: 'costume_tit',
+    name: 'シマエナガ',
+    category: 'costume',
+    type: 'fullBody',
+    imageAsset: require('../../assets/cosmetics/costume_tit.png'),
+    scale: 0.6973,
+    aspect: 1.271,
+    offsetX: 0,
+    offsetY: -0.0781,
+    facePatch: { scale: 0.3133, offsetX: -0.0413, offsetY: -0.1194 },
+    unlockedByDefault: false,
+  },
+  {
+    id: 'costume_dinosaur',
+    name: '恐竜(グリーン)',
+    category: 'costume',
+    type: 'fullBody',
+    imageAsset: require('../../assets/cosmetics/costume_dinosaur.png'),
+    scale: 0.6973,
+    aspect: 1.0927,
+    offsetX: 0,
+    offsetY: -0.0781,
+    facePatch: { scale: 0.2743, offsetX: -0.0947, offsetY: -0.1004 },
+    unlockedByDefault: false,
+  },
+  {
+    id: 'costume_unicorn',
+    name: 'ユニコーン',
+    category: 'costume',
+    type: 'fullBody',
+    imageAsset: require('../../assets/cosmetics/costume_unicorn.png'),
+    scale: 0.6973,
+    aspect: 1.186,
+    offsetX: 0,
+    offsetY: -0.0781,
+    facePatch: { scale: 0.2877, offsetX: -0.0695, offsetY: -0.0827 },
     unlockedByDefault: false,
   },
   {
