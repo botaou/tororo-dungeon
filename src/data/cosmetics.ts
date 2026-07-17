@@ -157,7 +157,26 @@ export type CosmeticRenderType = 'fullBody' | 'overlay';
 // with any base-sprite resolution. The 4 birds' heads sit at slightly
 // different heights (see this file's Correction #4 note), but this crop has
 // enough margin that the difference doesn't push a face out of frame.
-export const FACE_PATCH_CROP = { x0: 0.2, y0: 0.08, x1: 0.8, y1: 0.5 };
+//
+// Correction #8 (real-device report: "かおがつぶれてる" — the face patch
+// looked squished/warped instead of a clean round face like the reference
+// sheet's example renders): this rectangle used to be 0.6 wide × 0.42 tall
+// (x0:0.2/x1:0.8/y0:0.08/y1:0.5) — not square. CharacterAvatar.tsx renders
+// the face patch by resizeMode:'stretch'-ing the wearer's whole (square,
+// 256×256) base sprite so that this crop's box maps onto the patch's own
+// square container; a non-square crop of a square source stretched into a
+// square container is exactly a non-uniform stretch, which is what
+// "つぶれてる" was — the wider-than-tall crop got squeezed vertically to
+// fill a square, warping the face. Fixed by making the crop square
+// (0.48×0.48) so a uniform-aspect source maps onto a uniform-aspect
+// container with no distortion, re-centered slightly lower (y0 raised from
+// 0.08 to stay, y1 pulled up from 0.5 to 0.56 is actually *larger* — the
+// old rectangle was shorter than it was wide) to comfortably frame each
+// bird's whole head (verified per-bird against each base.png's own
+// row-width profile: heads plateau around 110-118px wide before the
+// shoulders begin widening again past roughly y=127, so this crop's lower
+// edge stops just short of that to avoid pulling in shoulder/wing pixels).
+export const FACE_PATCH_CROP = { x0: 0.26, y0: 0.08, x1: 0.74, y1: 0.56 };
 
 export interface CosmeticItemDef {
   id: string;
