@@ -176,7 +176,34 @@ export type CosmeticRenderType = 'fullBody' | 'overlay';
 // row-width profile: heads plateau around 110-118px wide before the
 // shoulders begin widening again past roughly y=127, so this crop's lower
 // edge stops just short of that to avoid pulling in shoulder/wing pixels).
-export const FACE_PATCH_CROP = { x0: 0.26, y0: 0.08, x1: 0.74, y1: 0.56 };
+//
+// Correction #11 (real-device report on the fullBody costumes specifically
+// — screenshot showed a band of the wearer's own CROWN color, not face
+// color, arcing across the top of the circular face patch; e.g. Tororo's
+// green crown feathers showed as a green crescent above the orange face
+// inside the unicorn/parrot/etc. hole). Correction #8's square crop
+// (y0:0.08) was tuned to frame the wearer's *whole head*, including a
+// strip of crown/forehead plumage above the actual face-color region —
+// fine for a plain square preview, but once clipped to a CIRCLE (as the
+// face patch always is), the circle's own top arc sits almost entirely
+// within that crown strip, since a circle inscribed in a square touches
+// the square's top edge only at the very top-center and curves away from
+// it fast — the top ~15-20% of the circle's height ends up showing
+// whatever color is at the crop's top edge, not the face. Measured where
+// each bird's crown color actually gives way to face color (Tororo is the
+// worst case: green until y≈0.22-0.24 of the 256px canvas, vs. Vivi/Mone's
+// less jarring yellow→orange transition around y≈0.2, and Haku with no
+// contrast at all since its crown and face are both white) and shrank the
+// crop to a smaller square sitting entirely below that line (0.32×0.32,
+// y0:0.20-y1:0.52, centered on the same ~0.36 eye-line used elsewhere in
+// this file) — small enough that even Tororo's crop is pure face color
+// end to end. facePatch.scale/offsetX/offsetY (below, per item) didn't
+// need to change: those position the circular *container* on the avatar
+// box to match each costume's hole, which is independent of what image
+// content fills that container. Re-verified across all 4 birds × all 4
+// real render sizes × all 5 fullBody items that no crown-color arc
+// remains.
+export const FACE_PATCH_CROP = { x0: 0.34, y0: 0.2, x1: 0.66, y1: 0.52 };
 
 // Correction #9 (real-device report: face patch no longer distorted after
 // Correction #8, but noticeably smaller than the reference sheet's example
