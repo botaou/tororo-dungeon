@@ -217,6 +217,26 @@ export const FACE_PATCH_CROP = { x0: 0.26, y0: 0.08, x1: 0.74, y1: 0.56 };
 // for other head-hugging items) rather than reusing the old (pre-redraw)
 // art's offsetY values, since the new art's own collar-hole position isn't
 // the same as the old broken art's.
+//
+// Correction #10 (real-device report, screenshot showing the eyes half-
+// hidden under the hood/collar edge on all 3 Correction #9 garments): the
+// 0.36 eye-line target above was itself the bug. These collar gaps are
+// short — only ~7% of the rendered box height once scaled down (a "V"
+// notch, not a tall opening) — so centering the gap exactly on the eye's
+// own vertical center clips the top half of the eye against the gap's own
+// top edge; there just isn't enough headroom inside the gap once the eye's
+// own height is accounted for. Re-tuned by rendering the actual shipped
+// (not the pre-downsize full-resolution) assets at several offsetY values
+// and choosing by eye instead of by formula: outfit_sailor 0.14,
+// cute_leaf_tunic / cute_fluffy_sweater 0.12 — each pushes the garment
+// down enough that the gap's opening clears the eyes with visible margin,
+// verified across all 4 birds × 48/44/40/32px. Correction #9's own
+// simulation had actually been rendering the same "eyes clipped at the
+// gap's top edge" result all along — its render grid just wasn't
+// scrutinized closely enough to catch it (a small render at thumbnail
+// scale reads as "a face is visible in there" without making the clipping
+// obvious). This pass re-checked by zooming into individual renders
+// rather than only eyeballing the full grid.
 
 export interface CosmeticItemDef {
   id: string;
@@ -366,7 +386,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     scale: 0.6309,
     aspect: 0.8333,
     offsetX: 0.0164,
-    offsetY: 0.0553,
+    offsetY: 0.14,
     unlockedByDefault: false,
   },
   {
@@ -378,7 +398,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     scale: 0.6309,
     aspect: 0.8333,
     offsetX: 0.0127,
-    offsetY: 0.0465,
+    offsetY: 0.12,
     unlockedByDefault: false,
   },
   {
@@ -390,7 +410,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     scale: 0.6309,
     aspect: 0.8056,
     offsetX: 0.0162,
-    offsetY: 0.0419,
+    offsetY: 0.12,
     unlockedByDefault: false,
   },
   {
