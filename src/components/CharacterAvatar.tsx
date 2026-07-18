@@ -42,8 +42,9 @@ export function CharacterAvatar({ characterId, emoji, color, size = 40, cosmetic
     // own face-hole, so the costume's own wings/feet/tail aren't drawn
     // alongside (and potentially poking out past) the wearer's own.
     if (cosmetic?.type === 'fullBody' && cosmetic.facePatch) {
-      const { scale: fpScale, offsetX: fpOffsetX, offsetY: fpOffsetY } = cosmetic.facePatch;
-      const patchSize = size * fpScale;
+      const { width: fpWidth, height: fpHeight, offsetX: fpOffsetX, offsetY: fpOffsetY } = cosmetic.facePatch;
+      const patchW = size * fpWidth;
+      const patchH = size * fpHeight;
       const cropWFrac = FACE_PATCH_CROP.x1 - FACE_PATCH_CROP.x0;
       const cropHFrac = FACE_PATCH_CROP.y1 - FACE_PATCH_CROP.y0;
       // Renders the full base sprite oversized inside a small clipped
@@ -51,19 +52,24 @@ export function CharacterAvatar({ characterId, emoji, color, size = 40, cosmetic
       // inside — the same "zoom and shift inside overflow:hidden" trick
       // used to fake a source-rect crop, since a static require() Image
       // can't be cropped directly.
-      const fullW = patchSize / cropWFrac;
-      const fullH = patchSize / cropHFrac;
+      const fullW = patchW / cropWFrac;
+      const fullH = patchH / cropHFrac;
       return (
         <View style={outerBoxStyle}>
           <View
             style={{
               position: 'absolute',
-              width: patchSize,
-              height: patchSize,
-              left: size * (0.5 + fpOffsetX) - patchSize / 2,
-              top: size * (0.5 + fpOffsetY) - patchSize / 2,
+              width: patchW,
+              height: patchH,
+              left: size * (0.5 + fpOffsetX) - patchW / 2,
+              top: size * (0.5 + fpOffsetY) - patchH / 2,
               overflow: 'hidden',
-              borderRadius: patchSize / 2,
+              // A non-square patch (wider than tall, see Correction #12 in
+              // data/cosmetics.ts) can't be a perfect circle — this radius
+              // (half the SMALLER side) yields a "stadium" shape (flat top/
+              // bottom, rounded ends) that approximates the costume's own
+              // oval hole closely enough at this size.
+              borderRadius: Math.min(patchW, patchH) / 2,
             }}
           >
             <Image

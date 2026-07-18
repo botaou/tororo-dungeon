@@ -203,7 +203,29 @@ export type CosmeticRenderType = 'fullBody' | 'overlay';
 // content fills that container. Re-verified across all 4 birds × all 4
 // real render sizes × all 5 fullBody items that no crown-color arc
 // remains.
-export const FACE_PATCH_CROP = { x0: 0.34, y0: 0.2, x1: 0.66, y1: 0.52 };
+//
+// Correction #12 (explicit design request: "着ぐるみ、もう少し横長、縦ももう少し
+// 顔出す部分大きく" — make the fullBody face opening a bit wider and a bit
+// taller): unlike earlier corrections, this needed two coordinated changes,
+// since the visible "hole" a player sees is actually two independent things
+// that must stay in sync — the real transparent cutout baked into each
+// costume_*.png, and the facePatch container CharacterAvatar.tsx draws
+// inside it. Enlarging only the facePatch would just get masked by the
+// costume's own opaque fabric around the old, still-small hole; enlarging
+// only the PNG hole would leave the small old face patch floating in a
+// bigger empty gap (the same look Correction #9 fixed once already). Both
+// were widened together: each costume_*.png's hole (previously close to
+// circular, rx≈ry) was re-cut ~35% wider and ~15% taller from its existing
+// center (still comfortably inside the illustrated head/hood silhouette,
+// re-verified per item), and FACE_PATCH_CROP switched from a square to a
+// rectangle (0.42 wide × ~0.337 tall) to match — `facePatch` itself also
+// changed shape: `scale` (a single square side) became separate `width`/
+// `height` fractions so CharacterAvatar.tsx can render a non-square,
+// stadium-clipped container (`borderRadius: min(width,height)/2`) instead
+// of a forced circle. y0 was deliberately left at Correction #11's 0.20 —
+// growing the crop by extending y1 downward and x0/x1 outward, not by
+// raising y0 — to avoid re-exposing the crown-color band that fix removed.
+export const FACE_PATCH_CROP = { x0: 0.29, y0: 0.2, x1: 0.71, y1: 0.537 };
 
 // Correction #9 (real-device report: face patch no longer distorted after
 // Correction #8, but noticeably smaller than the reference sheet's example
@@ -290,12 +312,14 @@ export interface CosmeticItemDef {
   offsetY: number;
   // `fullBody` only: where to draw the small cropped face patch (see
   // FACE_PATCH_CROP) so it lands inside this costume's own face-hole.
-  // Same box-fraction convention as offsetX/offsetY above; scale is the
-  // (square) patch's width as a fraction of the box size. Deliberately
-  // sized a little larger than the hole itself measures — the costume's
-  // own opaque pixels mask away the small excess, which is safer than
-  // risking a gap of empty transparency inside the hole.
-  facePatch?: { scale: number; offsetX: number; offsetY: number };
+  // Same box-fraction convention as offsetX/offsetY above; width/height are
+  // the patch's own size as box-size fractions (independent per axis since
+  // Correction #12 — the hole isn't perfectly circular, so a single square
+  // `scale` isn't enough to match its shape without distorting or leaving a
+  // gap). Deliberately sized a little larger than the hole itself measures
+  // — the costume's own opaque pixels mask away the small excess, which is
+  // safer than risking a gap of empty transparency inside the hole.
+  facePatch?: { width: number; height: number; offsetX: number; offsetY: number };
   // Whether every save starts with this costume already wearable. Only 1-2
   // items should be true — everything else needs to be found while
   // gathering, dropped by an enemy, crafted, or gifted in by the player
@@ -332,7 +356,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     aspect: 1.2305,
     offsetX: 0,
     offsetY: -0.0781,
-    facePatch: { scale: 0.4317, offsetX: -0.0778, offsetY: -0.1118 },
+    facePatch: { width: 0.5157, height: 0.407, offsetX: -0.0775, offsetY: -0.113 },
     unlockedByDefault: true,
   },
   {
@@ -345,7 +369,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     aspect: 1.2415,
     offsetX: 0,
     offsetY: -0.0781,
-    facePatch: { scale: 0.4619, offsetX: -0.0421, offsetY: -0.1241 },
+    facePatch: { width: 0.546, height: 0.4328, offsetX: -0.0426, offsetY: -0.1246 },
     unlockedByDefault: false,
   },
   {
@@ -358,7 +382,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     aspect: 1.271,
     offsetX: 0,
     offsetY: -0.0781,
-    facePatch: { scale: 0.4351, offsetX: -0.0413, offsetY: -0.1194 },
+    facePatch: { width: 0.5157, height: 0.4199, offsetX: -0.0426, offsetY: -0.1207 },
     unlockedByDefault: false,
   },
   {
@@ -371,7 +395,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     aspect: 1.0927,
     offsetX: 0,
     offsetY: -0.0781,
-    facePatch: { scale: 0.3810, offsetX: -0.0947, offsetY: -0.1004 },
+    facePatch: { width: 0.4474, height: 0.3682, offsetX: -0.0949, offsetY: -0.1013 },
     unlockedByDefault: false,
   },
   {
@@ -384,7 +408,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     aspect: 1.186,
     offsetX: 0,
     offsetY: -0.0781,
-    facePatch: { scale: 0.3996, offsetX: -0.0695, offsetY: -0.0827 },
+    facePatch: { width: 0.4702, height: 0.3747, offsetX: -0.0697, offsetY: -0.0839 },
     unlockedByDefault: false,
   },
   {
@@ -510,6 +534,119 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     aspect: 1.1868,
     offsetX: 0,
     offsetY: 0.03,
+    unlockedByDefault: false,
+  },
+  // Correction #13 (user-supplied new reference sheet, 6 items, request:
+  // "新しく作ってみたので差し替えてみて"): unlike prior "swap this specific
+  // broken item" rounds, this sheet didn't name which existing items to
+  // replace, and doesn't cleanly 1:1-match anything already in the catalog
+  // by design (different, more graphic-flat art style) — added as 6 new
+  // items rather than guessed replacements. This source was on a real
+  // (but baked-into-RGB, not alpha) checkerboard "transparency" backdrop —
+  // a different background-removal problem than either prior sheet: a
+  // gradient-blur backdrop (item 40) responds to edge-detected "walls" +
+  // border flood fill, but a checkerboard's own hard square edges get
+  // mistaken for walls everywhere, breaking the true background into
+  // thousands of isolated one-tile islands that never connect to the
+  // border and so never get flagged as background. Solved by classifying
+  // pixels directly by color instead (near-grayscale AND close to either
+  // of the checker's two known gray levels, with a wide enough tolerance
+  // band to also swallow the anti-aliased seams between tiles — a narrow
+  // tolerance left a fine grid of stray "foreground" seam pixels bridging
+  // every tile together into one giant blob), then keeping only the
+  // largest surviving connected region per item.
+  // outfit_navy_sailor/cute_pink_hoodie/cute_sunflower_shirt/
+  // theme_starry_cape/seasonal_plaid_cape needed a face-hole cut in
+  // (unlike item 40's sheet, none of these had one pre-marked in any way —
+  // no flat-fill collar-interior patch to color-match, so each hole's
+  // position/size was chosen by hand against that item's own collar
+  // geometry, sized generously and offset downward from the start —
+  // applying item 41's lesson up front (a hole centered exactly on the
+  // eye-line clips the eyes; push the whole garment down so the gap's
+  // opening clears them) instead of discovering it the hard way again).
+  // cute_leaf_cape is the one exception: its reference art is a fully open
+  // shoulder-mantle (two wing-like flaps joined by a clasp, no chest panel
+  // at all) — already-transparent below the clasp with nothing to cut —
+  // so it's positioned high on the shoulders with the wearer's whole body
+  // showing underneath, the same idea as event_santa_cape. All 6 verified
+  // via the same compositing simulation across all 4 birds × 48/44/40/32px
+  // before shipping; as first-pass additions (not fixes to something
+  // previously confirmed working), their offsets are more likely than the
+  // rest of this catalog to need a follow-up nudge from real-device
+  // feedback.
+  {
+    id: 'outfit_navy_sailor',
+    name: 'セーラー襟(ネイビー)',
+    category: 'outfit',
+    type: 'overlay',
+    imageAsset: require('../../assets/cosmetics/outfit_navy_sailor.png'),
+    scale: 0.6309,
+    aspect: 0.5611,
+    offsetX: 0,
+    offsetY: -0.0387,
+    unlockedByDefault: false,
+  },
+  {
+    id: 'cute_pink_hoodie',
+    name: 'ピンクパーカー',
+    category: 'cute',
+    type: 'overlay',
+    imageAsset: require('../../assets/cosmetics/cute_pink_hoodie.png'),
+    scale: 0.6309,
+    aspect: 0.7,
+    offsetX: 0,
+    offsetY: -0.0777,
+    unlockedByDefault: false,
+  },
+  {
+    id: 'cute_leaf_cape',
+    name: '葉っぱのケープ',
+    category: 'cute',
+    type: 'overlay',
+    // No face-hole — this cape's own art is naturally open below the
+    // clasp (see Correction #13), so the wearer's full base sprite just
+    // shows through underneath, same idea as event_santa_cape.
+    imageAsset: require('../../assets/cosmetics/cute_leaf_cape.png'),
+    scale: 0.6474,
+    aspect: 0.5722,
+    offsetX: 0,
+    offsetY: 0.03,
+    unlockedByDefault: false,
+  },
+  {
+    id: 'theme_starry_cape',
+    name: '星空のケープ',
+    category: 'theme',
+    type: 'overlay',
+    imageAsset: require('../../assets/cosmetics/theme_starry_cape.png'),
+    scale: 0.6309,
+    aspect: 0.6944,
+    offsetX: 0,
+    offsetY: -0.0424,
+    unlockedByDefault: false,
+  },
+  {
+    id: 'cute_sunflower_shirt',
+    name: 'ひまわりシャツ',
+    category: 'cute',
+    type: 'overlay',
+    imageAsset: require('../../assets/cosmetics/cute_sunflower_shirt.png'),
+    scale: 0.6309,
+    aspect: 0.65,
+    offsetX: 0,
+    offsetY: 0.0055,
+    unlockedByDefault: false,
+  },
+  {
+    id: 'seasonal_plaid_cape',
+    name: 'チェックのケープ',
+    category: 'seasonal',
+    type: 'overlay',
+    imageAsset: require('../../assets/cosmetics/seasonal_plaid_cape.png'),
+    scale: 0.6309,
+    aspect: 0.6167,
+    offsetX: 0,
+    offsetY: -0.0405,
     unlockedByDefault: false,
   },
 ];
