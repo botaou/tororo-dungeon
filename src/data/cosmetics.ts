@@ -356,7 +356,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     aspect: 1.2305,
     offsetX: 0,
     offsetY: -0.0781,
-    facePatch: { width: 0.5157, height: 0.407, offsetX: -0.0775, offsetY: -0.113 },
+    facePatch: { width: 0.5954, height: 0.4662, offsetX: -0.0814, offsetY: -0.1168 },
     unlockedByDefault: true,
   },
   {
@@ -369,7 +369,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     aspect: 1.2415,
     offsetX: 0,
     offsetY: -0.0781,
-    facePatch: { width: 0.546, height: 0.4328, offsetX: -0.0426, offsetY: -0.1246 },
+    facePatch: { width: 0.6291, height: 0.5112, offsetX: -0.0465, offsetY: -0.1285 },
     unlockedByDefault: false,
   },
   {
@@ -382,7 +382,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     aspect: 1.271,
     offsetX: 0,
     offsetY: -0.0781,
-    facePatch: { width: 0.5157, height: 0.4199, offsetX: -0.0426, offsetY: -0.1207 },
+    facePatch: { width: 0.5954, height: 0.4775, offsetX: -0.0465, offsetY: -0.1246 },
     unlockedByDefault: false,
   },
   {
@@ -395,7 +395,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     aspect: 1.0927,
     offsetX: 0,
     offsetY: -0.0781,
-    facePatch: { width: 0.4474, height: 0.3682, offsetX: -0.0949, offsetY: -0.1013 },
+    facePatch: { width: 0.5224, height: 0.4325, offsetX: -0.0988, offsetY: -0.1052 },
     unlockedByDefault: false,
   },
   {
@@ -408,7 +408,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     aspect: 1.186,
     offsetX: 0,
     offsetY: -0.0781,
-    facePatch: { width: 0.4702, height: 0.3747, offsetX: -0.0697, offsetY: -0.0839 },
+    facePatch: { width: 0.5392, height: 0.4381, offsetX: -0.0736, offsetY: -0.0878 },
     unlockedByDefault: false,
   },
   {
@@ -574,6 +574,31 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
   // previously confirmed working), their offsets are more likely than the
   // rest of this catalog to need a follow-up nudge from real-device
   // feedback.
+  //
+  // Correction #14 (real-device report: "上すぎる！！あと着ぐるみはいい感じ、
+  // あとほんとに一回りだけ穴をデカくして"): exactly the predicted Correction #13
+  // follow-up nudge, landing on the 5 new face-holed overlay garments —
+  // the formula-derived offsetY values above (chosen by measuring where
+  // each hand-cut hole sits, same method that worked for the fullBody
+  // items) put the hole's opening too high, clipping straight across the
+  // eyes (worst on seasonal_plaid_cape, the one screenshotted). Rather
+  // than re-derive the formula, each was re-tuned the Correction #10 way —
+  // rendering the actual shipped asset at 120px across a spread of
+  // candidate offsetY and picking by eye, re-checked across all 4 birds:
+  // outfit_navy_sailor 0.10, cute_pink_hoodie 0.16, cute_sunflower_shirt
+  // 0.10, theme_starry_cape 0.16, seasonal_plaid_cape 0.18 (the largest
+  // push, matching how badly it clipped in the report). Separately, the
+  // report's "着ぐるみはいい感じ" confirmed Correction #12's fullBody hole
+  // enlargement landed correctly, but asked for one more modest size bump
+  // ("一回りだけ" — just one notch) — each of the 5 costume_*.png's already-
+  // enlarged holes was grown a further ~16% from its own center (rx/ry ×
+  // 1.16; FACE_PATCH_CROP itself stays fixed, only each item's own
+  // facePatch width/height/offsetX/offsetY below were recomputed to match
+  // the new hole size/position), re-verified via the same border-touch
+  // leak check as Correction #12 that none escape past their costume's own
+  // head/hood silhouette — costume_parrot's hole was the tightest fit and
+  // needed a smaller multiplier than the rest at first try, so all 5 were
+  // leveled to the same safe 1.16x for consistency.
   {
     id: 'outfit_navy_sailor',
     name: 'セーラー襟(ネイビー)',
@@ -583,7 +608,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     scale: 0.6309,
     aspect: 0.5611,
     offsetX: 0,
-    offsetY: -0.0387,
+    offsetY: 0.1,
     unlockedByDefault: false,
   },
   {
@@ -595,7 +620,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     scale: 0.6309,
     aspect: 0.7,
     offsetX: 0,
-    offsetY: -0.0777,
+    offsetY: 0.16,
     unlockedByDefault: false,
   },
   {
@@ -622,7 +647,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     scale: 0.6309,
     aspect: 0.6944,
     offsetX: 0,
-    offsetY: -0.0424,
+    offsetY: 0.16,
     unlockedByDefault: false,
   },
   {
@@ -634,7 +659,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     scale: 0.6309,
     aspect: 0.65,
     offsetX: 0,
-    offsetY: 0.0055,
+    offsetY: 0.1,
     unlockedByDefault: false,
   },
   {
@@ -646,7 +671,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     scale: 0.6309,
     aspect: 0.6167,
     offsetX: 0,
-    offsetY: -0.0405,
+    offsetY: 0.18,
     unlockedByDefault: false,
   },
 ];
