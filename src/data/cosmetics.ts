@@ -341,6 +341,32 @@ export const COSMETIC_CATEGORY_LABELS: Record<CosmeticCategory, string> = {
 // (スペシャル) which now has its reference sheet's full 5-item row (see
 // Correction #7) since the user supplied a redrawn version of that
 // specific row directly.
+//
+// Correction #15 (real-device report + screenshots: the fullBody parrot/
+// penguin costumes showing the wearer's own crown-feather color spilling
+// out past the LEFT edge of the costume's own head silhouette — visible
+// directly against the background, not just a wrong-colored patch): this
+// was Correction #14's 1.16x hole enlargement pushing the facePatch (sized
+// and centered off the raw hole's own bounding-box measurement) past where
+// the actual illustrated head silhouette curves in, on one side more than
+// the other (the hole's bounding box isn't perfectly concentric with the
+// hand-painted head outline around it). Re-fit all 5 fullBody items' by
+// directly searching for the largest facePatch that stays entirely within
+// each costume's own silhouette (opaque fabric OR the hole itself — either
+// is safe, since fabric hides the excess and the hole is meant to show
+// through) at a range of horizontal offsets, not just the hole's own
+// measured center — letting the *offsetX* shift to wherever the silhouette
+// actually allows the most room turned out to need only a small resize (a
+// 90-100% scale of the old, leaking facePatch, not the drastic ~70-77%
+// a naive uniform shrink around the old off-center point would have
+// needed) since the leak was really an off-center-ness problem more than a
+// too-big-ness problem. Re-verified across all 4 birds × all 5 items that
+// no crown color escapes past the silhouette anymore. Separately, "チュニ
+// ック...肩が隠れるくらい大きさ調整して" (a screenshot of seasonal_plaid_cape
+// on Haku) asked for a small further scale bump so the cape's shoulders
+// read as fully covered — bumped scale 0.6309→0.66 (~4.6%), checked by eye
+// against the same screenshot's framing that this doesn't overshoot into
+// covering too much of the body.
 export const COSMETIC_ITEMS: CosmeticItemDef[] = [
   {
     id: 'costume_parrot',
@@ -356,7 +382,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     aspect: 1.2305,
     offsetX: 0,
     offsetY: -0.0781,
-    facePatch: { width: 0.5954, height: 0.4662, offsetX: -0.0814, offsetY: -0.1168 },
+    facePatch: { width: 0.5359, height: 0.4196, offsetX: -0.0214, offsetY: -0.1168 },
     unlockedByDefault: true,
   },
   {
@@ -369,7 +395,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     aspect: 1.2415,
     offsetX: 0,
     offsetY: -0.0781,
-    facePatch: { width: 0.6291, height: 0.5112, offsetX: -0.0465, offsetY: -0.1285 },
+    facePatch: { width: 0.5662, height: 0.4601, offsetX: -0.0025, offsetY: -0.1285 },
     unlockedByDefault: false,
   },
   {
@@ -382,7 +408,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     aspect: 1.271,
     offsetX: 0,
     offsetY: -0.0781,
-    facePatch: { width: 0.5954, height: 0.4775, offsetX: -0.0465, offsetY: -0.1246 },
+    facePatch: { width: 0.5954, height: 0.4775, offsetX: 0.0015, offsetY: -0.1246 },
     unlockedByDefault: false,
   },
   {
@@ -395,7 +421,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     aspect: 1.0927,
     offsetX: 0,
     offsetY: -0.0781,
-    facePatch: { width: 0.5224, height: 0.4325, offsetX: -0.0988, offsetY: -0.1052 },
+    facePatch: { width: 0.5015, height: 0.4152, offsetX: -0.0468, offsetY: -0.1052 },
     unlockedByDefault: false,
   },
   {
@@ -408,7 +434,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     aspect: 1.186,
     offsetX: 0,
     offsetY: -0.0781,
-    facePatch: { width: 0.5392, height: 0.4381, offsetX: -0.0736, offsetY: -0.0878 },
+    facePatch: { width: 0.4961, height: 0.4031, offsetX: -0.0216, offsetY: -0.0878 },
     unlockedByDefault: false,
   },
   {
@@ -668,7 +694,7 @@ export const COSMETIC_ITEMS: CosmeticItemDef[] = [
     category: 'seasonal',
     type: 'overlay',
     imageAsset: require('../../assets/cosmetics/seasonal_plaid_cape.png'),
-    scale: 0.6309,
+    scale: 0.66,
     aspect: 0.6354,
     offsetX: 0,
     offsetY: 0.18,
