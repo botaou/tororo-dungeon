@@ -21,7 +21,12 @@ interface Props {
 const ALL_MATERIALS = Object.keys(MATERIAL_ICON) as MaterialId[];
 
 export function PlayerInventoryModal({ visible, onClose, gold, materials, items }: Props) {
-  const ownedItems = (Object.keys(items) as ItemId[]).filter((k) => (items[k] ?? 0) > 0);
+  // `&& ITEM_DEF_MAP[k]` guards against a stale/corrupted save holding a key
+  // with no matching data/items.ts entry — usePlayerStore has no equivalent
+  // to useBirdEconomyStore's getWallet() healing pass, so this is the only
+  // place that protects this particular screen from the same
+  // `ITEM_DEF_MAP[k].emoji` crash BirdRosterModal hit on a real device.
+  const ownedItems = (Object.keys(items) as ItemId[]).filter((k) => (items[k] ?? 0) > 0 && ITEM_DEF_MAP[k]);
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>

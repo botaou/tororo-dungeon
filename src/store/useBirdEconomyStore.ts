@@ -204,13 +204,33 @@ export const useBirdEconomyStore = create<BirdEconomyState & BirdEconomyActions>
         // (matching the "convert overflow to currency, don't just discard
         // it" ask that prompted this fix) rather than discarded for nothing.
         for (const itemId of Object.keys(merged.items) as ItemId[]) {
-          if (!EQUIP_CATEGORIES.includes(ITEM_DEF_MAP[itemId].category)) continue;
+          const def = ITEM_DEF_MAP[itemId];
+          // Real-device crash: a stale/corrupted save can hold an items key
+          // with no matching data/items.ts entry — every read of `items`
+          // downstream (this loop included, plus the roster UI, birdStats,
+          // ai.ts's gear shopping, etc.) assumed every key was a valid,
+          // currently-defined ItemId and indexed ITEM_DEF_MAP[key] straight
+          // away, so an unknown key crashed the whole roster screen
+          // (`Cannot read property 'emoji'/'category' of undefined`).
+          // Pruning it here, once, means every one of those other reads can
+          // keep assuming `items`'s keys are all valid without its own
+          // guard — same "heal on load" precedent as the NaN/atk fix above.
+          if (!def) {
+            delete merged.items[itemId];
+            continue;
+          }
+          if (!EQUIP_CATEGORIES.includes(def.category)) continue;
           const owned = merged.items[itemId] ?? 0;
           if (owned > EQUIPMENT_SPARE_CAP) {
             const excessCount = owned - EQUIPMENT_SPARE_CAP;
             merged.items[itemId] = EQUIPMENT_SPARE_CAP;
-            merged.gold += Math.round(ITEM_DEF_MAP[itemId].buyPrice * EQUIPMENT_SALVAGE_FRACTION * excessCount);
+            merged.gold += Math.round(def.buyPrice * EQUIPMENT_SALVAGE_FRACTION * excessCount);
           }
+        }
+        // Same pruning for houseFood (see HouseInventoryModal, which reads
+        // it directly and hits the identical crash class).
+        for (const itemId of Object.keys(merged.houseFood) as ItemId[]) {
+          if (!ITEM_DEF_MAP[itemId]) delete merged.houseFood[itemId];
         }
         return merged;
       },

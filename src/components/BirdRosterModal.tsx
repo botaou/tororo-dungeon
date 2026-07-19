@@ -57,7 +57,13 @@ export function BirdRosterModal({ visible, onClose, birds, onSetCosmetic }: Prop
               const bird = birds.find((b) => b.defId === c.id);
               if (!bird) return null;
               const owned = (Object.keys(bird.inventory) as MaterialId[]).filter((k) => bird.inventory[k] > 0);
-              const ownedItems = (Object.keys(bird.items) as ItemId[]).filter((k) => (bird.items[k] ?? 0) > 0);
+              // The `&& ITEM_DEF_MAP[k]` guard is defense-in-depth: useBirdEconomyStore's
+              // getWallet() already prunes any items key with no matching data/items.ts
+              // entry (real-device crash — a stale/corrupted save had a key ITEM_DEF_MAP
+              // didn't recognize, and `ITEM_DEF_MAP[k].emoji` below crashed the whole
+              // roster screen), but this keeps the render itself safe even if that
+              // healing step is ever bypassed or a future save path skips it.
+              const ownedItems = (Object.keys(bird.items) as ItemId[]).filter((k) => (bird.items[k] ?? 0) > 0 && ITEM_DEF_MAP[k]);
               const moodLabel = getMoodDef(bird.mood).label;
               const stats = getEffectiveStats(bird);
               return (

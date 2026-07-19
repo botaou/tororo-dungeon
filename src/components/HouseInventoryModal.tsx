@@ -42,15 +42,22 @@ export function HouseInventoryModal({
   if (!bird) return null;
   const def = getCharacterDef(bird.defId);
 
+  // Both filters below guard against a stale/corrupted save holding a key
+  // with no matching data/items.ts entry — useBirdEconomyStore's getWallet()
+  // already prunes those from `items`/`houseFood`, but this keeps the
+  // render itself safe on its own (see BirdRosterModal's own comment on the
+  // real-device `ITEM_DEF_MAP[k].emoji` crash this class of bug caused).
   const equipmentRows = EQUIP_SLOTS.flatMap((slot) => {
     const equippedId = bird.equipment[slot];
     return (Object.entries(bird.items) as [ItemId, number][])
-      .filter(([itemId, amount]) => ITEM_DEF_MAP[itemId].category === slot && (amount ?? 0) > 0)
+      .filter(([itemId, amount]) => ITEM_DEF_MAP[itemId]?.category === slot && (amount ?? 0) > 0)
       .map(([itemId, amount]) => ({ itemId, amount: amount ?? 0, isEquipped: itemId === equippedId }));
   });
 
   const houseFoodTotal = Object.values(bird.houseFood).reduce((sum, a) => sum + (a ?? 0), 0);
-  const houseFoodEntries = (Object.entries(bird.houseFood) as [ItemId, number][]).filter(([, a]) => (a ?? 0) > 0);
+  const houseFoodEntries = (Object.entries(bird.houseFood) as [ItemId, number][]).filter(
+    ([itemId, a]) => (a ?? 0) > 0 && ITEM_DEF_MAP[itemId]
+  );
   const warehouseFoodCandidates = ITEM_DEFS.filter((d) => d.category === 'food' && (playerItems[d.id] ?? 0) > 0);
 
   const favoriteCounts: Partial<Record<ItemId, number>> = {};

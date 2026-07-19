@@ -36,7 +36,12 @@ export function ShopModal({ visible, onClose, shopKind }: Props) {
   if (!shopKind) return null;
   const shop = SHOP_DEFS[shopKind];
 
-  const lineup = (Object.keys(shopStock[shopKind]) as ItemId[]).filter((id) => (shopStock[shopKind][id] ?? 0) > 0);
+  // `&& ITEM_DEF_MAP[id]` guards against a stale/corrupted save holding a
+  // shopStock key with no matching data/items.ts entry — same crash class
+  // as BirdRosterModal's real-device `ITEM_DEF_MAP[k].emoji` report.
+  const lineup = (Object.keys(shopStock[shopKind]) as ItemId[]).filter(
+    (id) => (shopStock[shopKind][id] ?? 0) > 0 && ITEM_DEF_MAP[id]
+  );
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>

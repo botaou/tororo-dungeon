@@ -21,8 +21,11 @@ export function StockingPanel({ shopKind, categoryFilter }: Props) {
   const shopStock = usePlayerStore((s) => s.shopStock);
   const stockItem = usePlayerStore((s) => s.stockItem);
 
+  // `ITEM_DEF_MAP[id] &&` guards against a stale/corrupted save holding a
+  // warehouse key with no matching data/items.ts entry — same crash class
+  // as BirdRosterModal's real-device `ITEM_DEF_MAP[k].emoji` report.
   const candidates = (Object.keys(items) as ItemId[]).filter(
-    (id) => (items[id] ?? 0) > 0 && categoryFilter.includes(ITEM_DEF_MAP[id].category)
+    (id) => (items[id] ?? 0) > 0 && ITEM_DEF_MAP[id] && categoryFilter.includes(ITEM_DEF_MAP[id].category)
   );
 
   return (
