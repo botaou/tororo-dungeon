@@ -108,7 +108,8 @@ import { useGameTimeStore } from './useGameTimeStore';
 import { useQuestStore } from './useQuestStore';
 import { useRecipeStore } from './useRecipeStore';
 import { useTownStore } from './useTownStore';
-import { getAllAmenityPositions, getAllShopPositions, getTownLevel, getTownZoneRadius } from '../data/townGrid';
+import { getAllAmenityPositions, getAllBuiltPlotPositions, getAllShopPositions, getTownZoneRadius } from '../data/townGrid';
+import { checkTownQuestCondition, TOWN_QUESTS } from '../data/townQuests';
 
 const INSPIRATION_STAT_LABEL: Record<InspirationStat, string> = {
   atk: '攻撃力',
@@ -395,6 +396,7 @@ function finalizeStandaloneJob(world: WorldState, request: JobRequest, actionFra
   }
   useTownStore.getState().addDevelopmentPoints(request.developmentPoints);
   useTownStore.getState().addReputation(request.reputationPoints);
+  useTownStore.getState().recordRequestCompleted(); // feeds the 'five_requests' town quest (data/townQuests.ts)
   usePlayerStore.getState().addGold(-request.reward);
 
   // No auto-refill here either — see tick()'s matching comment. This just
@@ -607,8 +609,10 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     // targetable) rather than just hidden, so an "invisible" deep-zone
     // enemy can never ambush a bird that happens to wander near it before
     // the town's actually reached the required level (see EnemyDef's
-    // minTownLevel).
-    const townLevel = getTownLevel(useTownStore.getState().developmentPoints);
+    // minTownLevel). Phase 12②: no longer derived from developmentPoints —
+    // townLevel is now an explicit, quest-driven field on useTownStore (see
+    // data/townQuests.ts/useTownStore's completeTownQuest).
+    const townLevel = useTownStore.getState().townLevel;
 
     // Advances the cosmetic game calendar in lockstep with this tick — see
     // config.ts's ONLINE_TIME_SCALE and useGameTimeStore.
@@ -752,6 +756,9 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       townZoneRadius: currentTownZoneRadius,
       playerGold: usePlayerStore.getState().gold,
       amenityPositions: getAllAmenityPositions(useTownStore.getState().plots),
+      // Phase 12③: town hall (always at TOWN_X/TOWN_Y) plus every plot that
+      // actually has something built on it — see ai.ts's randomPointNearTown.
+      occupiedSpots: [{ x: TOWN_X, y: TOWN_Y }, ...getAllBuiltPlotPositions(useTownStore.getState().plots)],
     };
 
     const allAssignments: AttackAssignment[] = [];
@@ -846,6 +853,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
           grantExp(bird, request.expReward, newLog);
           useTownStore.getState().addDevelopmentPoints(request.developmentPoints);
           useTownStore.getState().addReputation(request.reputationPoints);
+          useTownStore.getState().recordRequestCompleted(); // feeds the 'five_requests' town quest (data/townQuests.ts)
           bird.gold += request.reward;
           const { label } = describeJobTarget(request);
           newLog.push(
@@ -1118,7 +1126,10 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     // The feed shop's NPC supplier: top up any commodity staple that's
     // fallen below its target shelf quantity, straight out of the treasury
     // (unlike crafted goods, these never pass through the player's warehouse).
-    for (const itemId of RESTOCKED_ITEM_IDS) {
+    // Gated on a feed shop actually being constructed somewhere (Phase 12①)
+    // — otherwise the shelf would keep quietly restocking itself behind a
+    // building that doesn't exist yet.
+    for (const itemId of aiWorld.shopPositions.feed ? RESTOCKED_ITEM_IDS : []) {
       if (Math.random() >= FEED_RESTOCK_CHECK_CHANCE) continue;
       const current = usePlayerStore.getState().shopStock.feed[itemId] ?? 0;
       if (current >= FEED_RESTOCK_TARGET) continue;
@@ -1172,6 +1183,26 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         b.chatLineSetAt = now;
         b.chatPauseTicks = CHAT_PAUSE_TICKS;
       }
+    }
+
+    // Phase 12②("クエスト連動の街発展"): checks the *currently active* town
+    // quest (data/townQuests.ts) every tick — exactly one is ever active at
+    // a time (see useTownStore's townQuestIndex), so this is a single
+    // lookup + condition check, not a loop over every quest. Completing it
+    // is the only thing that ever advances townLevel now (see
+    // useTownStore's completeTownQuest) — routine job-board/plot-unlock
+    // activity keeps feeding developmentPoints (flavor-only now) but no
+    // longer bumps the town's tier on its own.
+    const townState = useTownStore.getState();
+    const activeTownQuest = TOWN_QUESTS[townState.townQuestIndex];
+    if (
+      activeTownQuest &&
+      checkTownQuestCondition(activeTownQuest, { plots: townState.plots, completedRequestCount: townState.completedRequestCount })
+    ) {
+      useTownStore
+        .getState()
+        .completeTownQuest(activeTownQuest.id, activeTownQuest.name, activeTownQuest.rewardText, activeTownQuest.grantsTownLevel);
+      newLog.push(makeLogEntry(null, 'levelUp', `街の発展クエスト「${activeTownQuest.name}」達成!${activeTownQuest.rewardText}`));
     }
 
     // Check each not-yet-recruited starter's own trigger — town-level for

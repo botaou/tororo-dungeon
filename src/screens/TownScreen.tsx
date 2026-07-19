@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useWorldStore } from '../store/useWorldStore';
 import { useTownStore } from '../store/useTownStore';
-import { getTownLevel, TOWN_PLOT_DEFS } from '../data/townGrid';
+import { TOWN_PLOT_DEFS } from '../data/townGrid';
 import { getBuildingOption } from '../data/buildingOptions';
 import { WorldMap, WORLD_CANVAS_HEIGHT, WORLD_CANVAS_WIDTH } from '../components/WorldMap';
 import { PannableMap } from '../components/PannableMap';
@@ -49,6 +49,8 @@ export function TownScreen() {
   const setCosmetic = useWorldStore((s) => s.setCosmetic);
   const plots = useTownStore((s) => s.plots);
   const developmentPoints = useTownStore((s) => s.developmentPoints);
+  const townLevel = useTownStore((s) => s.townLevel);
+  const townQuestIndex = useTownStore((s) => s.townQuestIndex);
   const levelUpEvents = useTownStore((s) => s.levelUpEvents);
   const tryUnlockPlot = useTownStore((s) => s.tryUnlockPlot);
   const constructBuilding = useTownStore((s) => s.constructBuilding);
@@ -153,7 +155,7 @@ export function TownScreen() {
       // Level-gated plots already show a "Lv.X" badge right on the map —
       // nothing to tap into yet, since attempting is pointless until the
       // town's actually reached that level.
-      if (def.minTownLevel && getTownLevel(developmentPoints) < def.minTownLevel) return;
+      if (def.minTownLevel && townLevel < def.minTownLevel) return;
       if (def.unlockCost) setUnlockTarget({ plotId, cost: def.unlockCost });
       return;
     }
@@ -224,7 +226,7 @@ export function TownScreen() {
             birds={activeBirds}
             dormantDefIds={dormantDefIds}
             plotStates={plots}
-            developmentPoints={developmentPoints}
+            townLevel={townLevel}
             merchant={world.merchant}
             onBirdPress={() => setRosterVisible(true)}
             onPlotPress={handlePlotPress}
@@ -278,6 +280,8 @@ export function TownScreen() {
 
       <TownStatusModal
         visible={townStatusVisible}
+        townLevel={townLevel}
+        townQuestIndex={townQuestIndex}
         developmentPoints={developmentPoints}
         onClose={() => setTownStatusVisible(false)}
       />
@@ -305,7 +309,7 @@ export function TownScreen() {
 
       <RecruitmentModal defId={pendingRecruit} onClose={() => setShownRecruitCount((c) => c + 1)} />
 
-      <TownLevelUpModal level={pendingLevelUp} onClose={() => setShownLevelUpCount((c) => c + 1)} />
+      <TownLevelUpModal event={pendingLevelUp} onClose={() => setShownLevelUpCount((c) => c + 1)} />
 
       <PlotUnlockModal
         visible={unlockTarget !== null}

@@ -15,14 +15,13 @@ import { getCharacterDef } from '../data/characters';
 import { getEnemyStrengthTier, TOWN_DECOR, TOWN_X, TOWN_Y } from '../data/world';
 import {
   BUILDING_ICON,
-  getTownLevel,
+  getFenceCoverage,
   getTownLevelDef,
   getTownZoneRadius,
   MERCHANT_SPOT,
   PLOT_GRID_RING_INDICES,
   plotGridColOffsetX,
   plotGridRowOffsetY,
-  shopKindForPlot,
   TOWN_PLOT_DEFS,
 } from '../data/townGrid';
 import { SHOP_DEFS } from '../data/shops';
@@ -154,7 +153,7 @@ interface Props {
   // game/recruitment.ts); dormant birds otherwise have no map presence.
   dormantDefIds: string[];
   plotStates: Record<string, TownPlotState>;
-  developmentPoints: number;
+  townLevel: number;
   merchant: MerchantState | null;
   onBirdPress: (defId: string) => void;
   onPlotPress: (plotId: string) => void;
@@ -172,7 +171,7 @@ export function WorldMap({
   birds,
   dormantDefIds,
   plotStates,
-  developmentPoints,
+  townLevel,
   merchant,
   onBirdPress,
   onPlotPress,
@@ -183,7 +182,6 @@ export function WorldMap({
 }: Props) {
   const fieldWidth = WORLD_CANVAS_WIDTH;
   const fieldHeight = WORLD_CANVAS_HEIGHT;
-  const townLevel = getTownLevel(developmentPoints);
   const townLevelDef = getTownLevelDef(townLevel);
   const zoneRadius = getTownZoneRadius();
   const zoneWidth = zoneRadius.rx * 2 * fieldWidth;
@@ -298,8 +296,14 @@ export function WorldMap({
     const PHASE_DEG = 10;
     const FENCE_W = 30;
     const FENCE_H = 19; // matches fence_wood_short.png's own aspect ratio (95x59 native)
+    // Phase 12①("空っぽスタート"): only draw as much of the ring as the
+    // town's current level has "earned" (see data/townGrid.ts's
+    // getFenceCoverage) — a fresh save shows a short, incomplete arc rather
+    // than the full unbroken loop, which visibly closes up over the town's
+    // first few levels instead of being finished from tick one.
+    const visibleCount = Math.round(POST_COUNT * getFenceCoverage(townLevel));
     const posts: React.ReactNode[] = [];
-    for (let i = 0; i < POST_COUNT; i++) {
+    for (let i = 0; i < visibleCount; i++) {
       const theta = ((i / POST_COUNT) * 360 + PHASE_DEG) * (Math.PI / 180);
       const x = cx + rx * Math.cos(theta);
       const y = cy + ry * Math.sin(theta);
@@ -323,20 +327,35 @@ export function WorldMap({
       );
     }
     return posts;
-  }, [fieldWidth, fieldHeight, zoneWidth, zoneHeight]);
+  }, [fieldWidth, fieldHeight, zoneWidth, zoneHeight, townLevel]);
 
-  // A full grid of roads along every row/column line the plot grid actually
-  // places plots on (not just the town-hall's own cross) — a real-device
-  // request for the town to read as road-divided city blocks rather than
-  // buildings scattered loosely across open grass. Spans the plot grid's
-  // full extent (ring-3 included) regardless of the current town level, so
-  // the road layout doesn't visibly shift/grow as more rings unlock —
-  // locked plots already show their own dimmed/level-badge state on top.
+  // Phase 12①("空っぽスタート"): roads used to span the plot grid's full
+  // extent (ring-3 included) from the very first tick, regardless of town
+  // level — a brand-new save showed the entire road network already paved.
+  // Roads now only reach as far out as the town has actually unlocked land,
+  // so a fresh town starts with just the short ring-1 cross (the 4
+  // orthogonal plots that unlock by default) and the road network visibly
+  // grows outward each time the player claims a further ring of plots —
+  // "buildings appearing worn a path in," per the request, without needing
+  // a whole separate "is this exact tile trodden" simulation.
+  const maxUnlockedRing = useMemo(() => {
+    let max = 1; // ring-1's 4 orthogonal plots start unlocked by default
+    for (const def of TOWN_PLOT_DEFS) {
+      const state = plotStates[def.id];
+      if (!state?.unlocked && !def.unlockedByDefault) continue;
+      const parts = def.id.split('_');
+      const ring = Math.max(Math.abs(Number(parts[1])), Math.abs(Number(parts[2])));
+      if (ring > max) max = ring;
+    }
+    return max;
+  }, [plotStates]);
+
   const roadGridNodes = useMemo(() => {
-    const maxDx = plotGridColOffsetX(3) * fieldWidth;
-    const maxDy = plotGridRowOffsetY(3) * fieldHeight;
+    const maxDx = plotGridColOffsetX(maxUnlockedRing) * fieldWidth;
+    const maxDy = plotGridRowOffsetY(maxUnlockedRing) * fieldHeight;
     const nodes: React.ReactNode[] = [];
     for (const row of PLOT_GRID_RING_INDICES) {
+      if (Math.abs(row) > maxUnlockedRing) continue;
       const y = TOWN_Y * fieldHeight + plotGridRowOffsetY(row) * fieldHeight;
       nodes.push(
         <View
@@ -347,6 +366,7 @@ export function WorldMap({
       );
     }
     for (const col of PLOT_GRID_RING_INDICES) {
+      if (Math.abs(col) > maxUnlockedRing) continue;
       const x = TOWN_X * fieldWidth + plotGridColOffsetX(col) * fieldWidth;
       nodes.push(
         <View
@@ -357,7 +377,7 @@ export function WorldMap({
       );
     }
     return nodes;
-  }, [fieldWidth, fieldHeight]);
+  }, [fieldWidth, fieldHeight, maxUnlockedRing]);
 
   return (
     <View style={[styles.field, { width: fieldWidth, height: fieldHeight }]}>
@@ -380,21 +400,32 @@ export function WorldMap({
       ))}
 
       {TOWN_PLOT_DEFS.map((def) => {
-        const shopKind = shopKindForPlot(def.id);
         const state = plotStates[def.id] ?? { id: def.id, unlocked: def.unlockedByDefault, building: null, constructedBuildingId: null };
         const levelLocked = !!def.minTownLevel && townLevel < def.minTownLevel;
+        // Phase 12①("空っぽスタート"): general/feed used to be forced into
+        // looking already-built (`{ ...state, unlocked: true, building:
+        // 'shop' }`) regardless of the plot's real, persisted state — the
+        // town always had these two shops standing from turn one. Now every
+        // plot (including these two) renders its real state, and whichever
+        // shopKind actually got built there (if any — could be any of the
+        // four shop kinds, or none) is read straight off the constructed
+        // BuildingOption instead of being tied to a fixed plot id. This also
+        // means weapon/armor shops now get the same real building art
+        // (SHOP_IMAGES) general/feed always had, instead of a plain emoji.
+        const constructedOption = getBuildingOption(state.constructedBuildingId);
+        const builtShopKind = state.building ? constructedOption?.shopKind ?? null : null;
         return (
           <PlotSprite
             key={def.id}
             def={def}
-            state={shopKind ? { ...state, unlocked: true, building: 'shop' } : state}
-            shopEmoji={shopKind ? SHOP_DEFS[shopKind].emoji : undefined}
-            shopName={shopKind ? SHOP_DEFS[shopKind].name : undefined}
-            shopImage={shopKind ? SHOP_IMAGES[shopKind] : undefined}
+            state={state}
+            shopEmoji={builtShopKind ? SHOP_DEFS[builtShopKind].emoji : undefined}
+            shopName={builtShopKind ? SHOP_DEFS[builtShopKind].name : undefined}
+            shopImage={builtShopKind ? SHOP_IMAGES[builtShopKind] : undefined}
             levelLocked={levelLocked}
             x={def.x * fieldWidth}
             y={def.y * fieldHeight}
-            onPress={() => (shopKind ? onShopPress(shopKind) : onPlotPress(def.id))}
+            onPress={() => (builtShopKind ? onShopPress(builtShopKind) : onPlotPress(def.id))}
           />
         );
       })}
@@ -1120,6 +1151,12 @@ const styles = StyleSheet.create({
     height: 64,
     alignItems: 'center',
     justifyContent: 'flex-end',
+    // Phase 12③: a simple z-order fix so birds visibly walk behind the town
+    // hall/plot buildings instead of appearing to pass straight over them
+    // (see `plot`/`plotBuilt` below and `sprite`'s own zIndex) — not real
+    // per-tile pathfinding, just resolves the "sprite floats on top of a
+    // building" look the request explicitly allowed as a first pass.
+    zIndex: 2,
   },
   townImage: { width: '100%', height: '100%' },
   townLabel: {
@@ -1155,6 +1192,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+    zIndex: 2, // see `town`'s own zIndex comment above
   },
   plotLocked: {
     backgroundColor: theme.disabled,
@@ -1179,6 +1217,7 @@ const styles = StyleSheet.create({
     height: PLOT_BUILT_SIZE,
     alignItems: 'center',
     justifyContent: 'flex-end',
+    zIndex: 2, // see `town`'s own zIndex comment above
   },
   plotBuiltImage: { width: '100%', height: '100%' },
   plotBuildingLabel: {
@@ -1202,7 +1241,11 @@ const styles = StyleSheet.create({
   plotGrassBg: { position: 'absolute', width: '100%', height: '100%', opacity: 0.75 },
   plotGrassBgDim: { opacity: 0.4 },
   plotLevelReq: { fontSize: 9, fontWeight: '800', color: theme.textPrimary },
-  sprite: { position: 'absolute', alignItems: 'center', width: 56 },
+  // zIndex: 1 keeps every sprite using this style (birds, the shopkeeper,
+  // encounter markers, leisure spots) above ordinary field content but
+  // below plots/the town hall (zIndex: 2 — see `town`'s comment) — birds no
+  // longer render as if walking on top of a building (Phase 12③).
+  sprite: { position: 'absolute', alignItems: 'center', width: 56, zIndex: 1 },
   // A faint dug-out patch behind a mining node's icon (see data/tileImages.ts)
   // — purely decorative, sits underneath the emoji/amount text.
   rockAccent: { position: 'absolute', width: 40, height: 40, top: -6, left: 8, opacity: 0.55 },

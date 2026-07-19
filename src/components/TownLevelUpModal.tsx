@@ -2,29 +2,33 @@ import React from 'react';
 import { Modal, StyleSheet, Text, View } from 'react-native';
 
 import { getTownLevelDef } from '../data/townGrid';
+import { TownLevelUpEvent } from '../store/useTownStore';
 import { AnimatedPressable } from './AnimatedPressable';
 import { theme } from '../theme';
 
 interface Props {
-  level: number | null;
+  event: TownLevelUpEvent | null;
   onClose: () => void;
 }
 
-// Announces each town-tier advancement — same queued-events pattern as
-// RecruitmentModal (see TownScreen, which queues off useTownStore's
-// levelUpEvents), just showing the new TownLevelDef instead of a character.
-export function TownLevelUpModal({ level, onClose }: Props) {
-  if (level === null) return null;
-  const def = getTownLevelDef(level);
+// Announces each town-development-quest clear — same queued-events pattern
+// as RecruitmentModal (see TownScreen, which queues off useTownStore's
+// levelUpEvents). Phase 12②: now shows which quest triggered it and what
+// specifically that unlocked (event.questName/rewardText), not just the new
+// bare level number — "何が解放されたか" per the request.
+export function TownLevelUpModal({ event, onClose }: Props) {
+  if (event === null) return null;
+  const def = getTownLevelDef(event.level);
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.sheet}>
-          <Text style={styles.title}>🎊 街が発展した!</Text>
+          <Text style={styles.title}>🎉 街の発展クエスト達成!</Text>
+          <Text style={styles.questName}>「{event.questName}」</Text>
           <Text style={styles.emoji}>{def.emoji}</Text>
           <Text style={styles.name}>{def.name}</Text>
-          <Text style={styles.reasonText}>発展ポイントが{def.threshold}に到達しました</Text>
+          <Text style={styles.reasonText}>{event.rewardText}</Text>
           <AnimatedPressable style={styles.closeButton} onPress={onClose}>
             <Text style={styles.closeButtonText}>やった!</Text>
           </AnimatedPressable>
@@ -46,7 +50,8 @@ const styles = StyleSheet.create({
     padding: 20,
     alignItems: 'center',
   },
-  title: { fontSize: 18, fontWeight: '800', color: theme.gold, marginBottom: 12 },
+  title: { fontSize: 18, fontWeight: '800', color: theme.gold, marginBottom: 4 },
+  questName: { fontSize: 13, fontWeight: '700', color: theme.textSecondary, marginBottom: 8 },
   emoji: { fontSize: 56, marginTop: 4 },
   name: { fontSize: 20, fontWeight: '800', color: theme.textPrimary, marginTop: 10 },
   reasonText: { fontSize: 12, color: theme.textSecondary, marginTop: 6 },

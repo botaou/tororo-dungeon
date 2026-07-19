@@ -127,12 +127,38 @@ function randomPointInField(zoneRadius: { rx: number; ry: number }): { x: number
   return { x: 0.15, y: 0.2 };
 }
 
-function randomPointNearTown(zoneRadius: { rx: number; ry: number }): { x: number; y: number } {
-  const angle = Math.random() * Math.PI * 2;
-  const scale = Math.random() * 0.85;
+// Phase 12③("鳥が道・建物をすり抜ける問題"): a resting bird's stroll target
+// used to be a purely random point in the town zone, with no awareness of
+// where actual buildings stand — it could just as easily land right on top
+// of the town hall or a constructed shop as on open ground. This doesn't
+// give birds real per-tile pathfinding around buildings (a much bigger
+// change — see the request's own explicitly-allowed simple-fix fallback),
+// but it does stop a *destination* from ever being chosen inside a
+// building's own footprint, so a resting bird never deliberately walks up
+// to stand on/inside one. `occupiedSpots` is every constructed plot's
+// center plus the town hall itself (see useWorldStore.tick()'s AiWorld
+// construction); BUILDING_CLEARANCE approximates half a plot's own on-
+// screen footprint in the same 0..1 normalized coordinate space everything
+// else here uses.
+const BUILDING_CLEARANCE = 0.028;
+
+function randomPointNearTown(
+  zoneRadius: { rx: number; ry: number },
+  occupiedSpots: { x: number; y: number }[] = []
+): { x: number; y: number } {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const angle = Math.random() * Math.PI * 2;
+    const scale = Math.random() * 0.85;
+    const point = {
+      x: Math.min(0.92, Math.max(0.08, TOWN_X + Math.cos(angle) * zoneRadius.rx * scale)),
+      y: Math.min(0.88, Math.max(0.16, TOWN_Y + Math.sin(angle) * zoneRadius.ry * scale)),
+    };
+    const blocked = occupiedSpots.some((spot) => Math.hypot(point.x - spot.x, point.y - spot.y) < BUILDING_CLEARANCE);
+    if (!blocked) return point;
+  }
   return {
-    x: Math.min(0.92, Math.max(0.08, TOWN_X + Math.cos(angle) * zoneRadius.rx * scale)),
-    y: Math.min(0.88, Math.max(0.16, TOWN_Y + Math.sin(angle) * zoneRadius.ry * scale)),
+    x: Math.min(0.92, Math.max(0.08, TOWN_X)),
+    y: Math.min(0.88, Math.max(0.16, TOWN_Y)),
   };
 }
 
@@ -176,6 +202,12 @@ export interface AiWorld {
   // getAllAmenityPositions) — the destinations for Phase 11's "play"
   // category. Empty until the player builds at least one.
   amenityPositions: { id: string; kind: 'park' | 'bathhouse'; x: number; y: number }[];
+  // Every constructed plot's center plus the town hall itself — see
+  // randomPointNearTown's own comment (Phase 12③). Only used to keep idle
+  // "rest" wander destinations off of building footprints; every other
+  // job/behavior already has its own explicit destination (a shop, a
+  // mining node, etc.) so this doesn't need to apply anywhere else.
+  occupiedSpots: { x: number; y: number }[];
 }
 
 // A permanent stat a play-session "inspiration" roll can bump (see
@@ -551,8 +583,12 @@ function tryEatHouseFood(bird: BirdState): ItemId | null {
 // Picks an affordable, in-stock food item at the feed shop for a hungry
 // bird to treat itself to, instead of the always-free basic ration. Purely
 // a nicer-than-necessary upgrade — returns null (fall back to the free
-// ration) whenever nothing fits, so hunger never fails to resolve.
+// ration) whenever nothing fits, so hunger never fails to resolve. Requires
+// a real feed shop to actually be constructed somewhere (see data/
+// townGrid.ts's getAllShopPositions, Phase 12①) — same "silently skip until
+// built" gating pickGearOffer already does for weapon/armor.
 function pickFoodTreat(bird: BirdState, world: AiWorld): { itemId: ItemId; price: number } | null {
+  if (!world.shopPositions.feed) return null;
   const shelf = world.shopStock.feed;
   const candidates = ITEM_DEFS.filter(
     (d) => d.category === 'food' && (shelf[d.id] ?? 0) > 0 && d.buyPrice <= bird.gold
@@ -1027,7 +1063,7 @@ function executeRest(bird: BirdState, world: AiWorld): AiStepOutcome {
       return emptyOutcome();
     }
   }
-  const dest = randomPointNearTown(world.townZoneRadius);
+  const dest = randomPointNearTown(world.townZoneRadius, world.occupiedSpots);
   bird.wanderX = dest.x;
   bird.wanderY = dest.y;
   bird.targetKind = 'rest';
@@ -1229,7 +1265,7 @@ function stepJob(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutc
       const hasDest = bird.wanderX !== null && bird.wanderY !== null;
       const arrived = hasDest ? moveToward(bird, bird.wanderX!, bird.wanderY!) : true;
       if (!hasDest || arrived) {
-        const dest = randomPointNearTown(world.townZoneRadius);
+        const dest = randomPointNearTown(world.townZoneRadius, world.occupiedSpots);
         bird.wanderX = dest.x;
         bird.wanderY = dest.y;
       }
@@ -1289,7 +1325,7 @@ function stepHuntJob(bird: BirdState, def: CharacterDef, world: AiWorld, enemyNa
       const hasDest = bird.wanderX !== null && bird.wanderY !== null;
       const arrived = hasDest ? moveToward(bird, bird.wanderX!, bird.wanderY!) : true;
       if (!hasDest || arrived) {
-        const dest = randomPointNearTown(world.townZoneRadius);
+        const dest = randomPointNearTown(world.townZoneRadius, world.occupiedSpots);
         bird.wanderX = dest.x;
         bird.wanderY = dest.y;
       }

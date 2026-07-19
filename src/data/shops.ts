@@ -7,15 +7,14 @@ export interface ShopDef {
   categories: ItemCategory[];
 }
 
-// 'general' (道具屋, head/hand/foot gear) and 'feed' (餌屋, food) are the
-// only two with a fixed, always-present town plot (see data/townGrid.ts's
-// SHOP_PLOT_IDS) — the only shops available from the start. 'weapon' and
-// 'armor' (body armor specifically) have no fixed plot at all; they only
-// exist once the player constructs one (see data/buildingOptions.ts's
-// weapon_shop/armor_shop), same as a second general/feed branch. 'rare'
-// isn't listed for any of these: convertible treasure never sits on a
-// player-run shop shelf, it only ever passes through the visiting merchant
-// (see data/items.ts's CONVERTIBLE_ITEM_IDS).
+// All four kinds require the player to actually construct the matching
+// building (data/buildingOptions.ts's general_branch/feed_branch/
+// weapon_shop/armor_shop) before it exists anywhere — 'general'/'feed' used
+// to have a fixed, always-present town plot from game start (see data/
+// townGrid.ts's SHOP_PLOT_IDS comment for why that changed, Phase 12①).
+// 'rare' isn't listed for any of these: convertible treasure never sits on
+// a player-run shop shelf, it only ever passes through the visiting
+// merchant (see data/items.ts's CONVERTIBLE_ITEM_IDS).
 //
 // head/hand/foot were folded into 'general' rather than each getting (or
 // sharing) their own shop kind — the equipment expansion (see data/

@@ -21,18 +21,18 @@ export interface BuildingOption {
 export const BUILDING_OPTIONS: BuildingOption[] = [
   {
     id: 'general_branch',
-    name: '道具屋(出張所)',
+    name: '道具屋',
     emoji: '🛠️',
-    description: '頭・手・足装備の品揃え。既存の道具屋と在庫を共有します。',
+    description: '頭・手・足装備の品揃え。この店を建てるまで、鳥は防具/道具を買えません。',
     buildingKind: 'shop',
     shopKind: 'general',
     cost: { gold: 300, materialId: 'wood', materialAmount: 10 },
   },
   {
     id: 'feed_branch',
-    name: '餌屋(出張所)',
+    name: '餌屋',
     emoji: '🌾',
-    description: '餌の品揃え。既存の餌屋と在庫を共有します。',
+    description: '餌の品揃え。この店を建てるまで、鳥は基本の餌だけで過ごします。',
     buildingKind: 'shop',
     shopKind: 'feed',
     cost: { gold: 250, materialId: 'berry', materialAmount: 10 },
