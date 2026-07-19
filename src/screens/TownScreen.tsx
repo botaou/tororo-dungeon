@@ -1,6 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Modal, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { SHOW_ISOMETRIC_DEBUG_BUTTON } from '../game/config';
+import { IsometricPrototypeScreen } from '../prototypes/isometric/IsometricPrototypeScreen';
 
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useWorldStore } from '../store/useWorldStore';
@@ -95,6 +98,10 @@ export function TownScreen() {
   const [shownSkillUnlockCount, setShownSkillUnlockCount] = useState(0);
   // Same pattern again for cosmeticTicketEvents (also not persisted).
   const [shownCosmeticTicketCount, setShownCosmeticTicketCount] = useState(0);
+  // Phase-13 feasibility prototype debug entry (see config.ts's
+  // SHOW_ISOMETRIC_DEBUG_BUTTON) — purely a local UI toggle, no store
+  // involved, since the prototype doesn't touch any real game state.
+  const [isoPrototypeVisible, setIsoPrototypeVisible] = useState(false);
 
   useEffect(() => {
     if (world.birds.length === 0) initWorld();
@@ -213,6 +220,11 @@ export function TownScreen() {
           <AnimatedPressable style={styles.inventoryButton} onPress={() => setInventoryVisible(true)}>
             <Text style={styles.inventoryButtonText}>🎒</Text>
           </AnimatedPressable>
+          {SHOW_ISOMETRIC_DEBUG_BUTTON ? (
+            <AnimatedPressable style={styles.inventoryButton} onPress={() => setIsoPrototypeVisible(true)}>
+              <Text style={styles.inventoryButtonText}>📐</Text>
+            </AnimatedPressable>
+          ) : null}
         </View>
       </View>
 
@@ -333,6 +345,12 @@ export function TownScreen() {
       <SkillUnlockModal event={pendingSkillUnlock} onClose={() => setShownSkillUnlockCount((c) => c + 1)} />
 
       <CosmeticTicketModal event={pendingCosmeticTicket} onClose={() => setShownCosmeticTicketCount((c) => c + 1)} />
+
+      {SHOW_ISOMETRIC_DEBUG_BUTTON ? (
+        <Modal visible={isoPrototypeVisible} animationType="slide" onRequestClose={() => setIsoPrototypeVisible(false)}>
+          <IsometricPrototypeScreen onClose={() => setIsoPrototypeVisible(false)} />
+        </Modal>
+      ) : null}
     </SafeAreaView>
   );
 }

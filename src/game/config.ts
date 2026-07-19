@@ -21,6 +21,14 @@ export const DEBUG_SHOW_SPRITE_BOUNDS = true;
 // it exists to answer is settled.
 export const SHOW_ISOMETRIC_PROTOTYPE = false;
 
+// Same feasibility prototype as above, but surfaces it as a small in-app
+// debug button (see TownScreen) that opens it in a Modal over the real
+// running game, instead of replacing the whole app — added on request so
+// the prototype's reachable on a device without editing any flags by hand.
+// Default true while this feasibility question is still open; flip to
+// false (or delete the button + this flag) once decided.
+export const SHOW_ISOMETRIC_DEBUG_BUTTON = true;
+
 // How many ticks a bird spends animating a mining/treasure/job encounter
 // before it auto-resolves and it moves on.
 export const ENCOUNTER_HOLD_TICKS = 2;
