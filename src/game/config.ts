@@ -13,6 +13,14 @@ export const TICK_MS = 1_000;
 // is confirmed resolved (or confirmed as a stale-bundle false alarm).
 export const DEBUG_SHOW_SPRITE_BOUNDS = true;
 
+// Phase-13 feasibility prototype ("大型変更: アイソメトリックへの移行", ステップ
+// 1) — flip to true to view src/prototypes/isometric/IsometricPrototypeScreen
+// in place of the real app (see App.tsx). Default false: this does not
+// change any production behavior. Throwaway flag, safe to delete along with
+// the whole src/prototypes/isometric/ folder once the feasibility question
+// it exists to answer is settled.
+export const SHOW_ISOMETRIC_PROTOTYPE = false;
+
 // How many ticks a bird spends animating a mining/treasure/job encounter
 // before it auto-resolves and it moves on.
 export const ENCOUNTER_HOLD_TICKS = 2;

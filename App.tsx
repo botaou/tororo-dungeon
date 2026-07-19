@@ -12,8 +12,22 @@ import { useGameTimeStore } from './src/store/useGameTimeStore';
 import { OfflineReport } from './src/game/offlineProgress';
 import { useGameClock } from './src/game/useGameClock';
 import { theme } from './src/theme';
+import { SHOW_ISOMETRIC_PROTOTYPE } from './src/game/config';
+import { IsometricPrototypeScreen } from './src/prototypes/isometric/IsometricPrototypeScreen';
 
 export default function App() {
+  // Phase-13 feasibility prototype escape hatch — see config.ts's own
+  // comment. Checked before any hydration-gated state so it's viewable
+  // immediately, since the prototype doesn't touch (and doesn't need) any
+  // of the real persisted stores. Flip the flag back to false (or delete
+  // this block + the flag + src/prototypes/isometric/) to fully remove.
+  if (SHOW_ISOMETRIC_PROTOTYPE) {
+    return (
+      <SafeAreaProvider>
+        <IsometricPrototypeScreen />
+      </SafeAreaProvider>
+    );
+  }
   const [playerHydrated, setPlayerHydrated] = useState(usePlayerStore.persist.hasHydrated());
   const [birdEconomyHydrated, setBirdEconomyHydrated] = useState(useBirdEconomyStore.persist.hasHydrated());
   const [gameTimeHydrated, setGameTimeHydrated] = useState(useGameTimeStore.persist.hasHydrated());
