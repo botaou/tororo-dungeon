@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { SHOW_ISOMETRIC_DEBUG_BUTTON } from '../game/config';
@@ -28,11 +28,15 @@ import { RecipeUnlockModal } from '../components/RecipeUnlockModal';
 import { SkillUnlockModal } from '../components/SkillUnlockModal';
 import { TownStatusModal } from '../components/TownStatusModal';
 import { HouseInventoryModal } from '../components/HouseInventoryModal';
+import { HouseAssignModal } from '../components/HouseAssignModal';
+import { GiftBirdModal } from '../components/GiftBirdModal';
+import { HouseWarningModal } from '../components/HouseWarningModal';
+import { HouseDepartureModal } from '../components/HouseDepartureModal';
 import { CostumeCollectionModal } from '../components/CostumeCollectionModal';
 import { CosmeticTicketModal } from '../components/CosmeticTicketModal';
 import { ActivityLogPanel } from '../components/ActivityLogPanel';
 import { JobPreset } from '../data/jobPresets';
-import { PlotUnlockCost, ShopKind } from '../types';
+import { HouseState, ItemId, PlotUnlockCost, ShopKind } from '../types';
 import { cuteShadow, theme } from '../theme';
 
 export function TownScreen() {
@@ -50,13 +54,17 @@ export function TownScreen() {
   const favoriteTreasure = useWorldStore((s) => s.favoriteTreasure);
   const unfavoriteTreasure = useWorldStore((s) => s.unfavoriteTreasure);
   const setCosmetic = useWorldStore((s) => s.setCosmetic);
+  const giveGiftToBird = useWorldStore((s) => s.giveGiftToBird);
   const plots = useTownStore((s) => s.plots);
+  const houses = useTownStore((s) => s.houses);
   const developmentPoints = useTownStore((s) => s.developmentPoints);
   const townLevel = useTownStore((s) => s.townLevel);
   const townQuestIndex = useTownStore((s) => s.townQuestIndex);
   const levelUpEvents = useTownStore((s) => s.levelUpEvents);
   const tryUnlockPlot = useTownStore((s) => s.tryUnlockPlot);
   const constructBuilding = useTownStore((s) => s.constructBuilding);
+  const buildHouse = useTownStore((s) => s.buildHouse);
+  const assignHouseResident = useTownStore((s) => s.assignHouseResident);
 
   const [boardVisible, setBoardVisible] = useState(false);
   const [openShop, setOpenShop] = useState<ShopKind | null>(null);
@@ -102,6 +110,23 @@ export function TownScreen() {
   // SHOW_ISOMETRIC_DEBUG_BUTTON) — purely a local UI toggle, no store
   // involved, since the prototype doesn't touch any real game state.
   const [isoPrototypeVisible, setIsoPrototypeVisible] = useState(false);
+  // Phase 14: while true, WorldMap shows its full-canvas tap overlay
+  // instead of its usual sprite-by-sprite Pressables — tapping anywhere
+  // attempts to build a vacant house there (see handleMapTap).
+  const [placingHouse, setPlacingHouse] = useState(false);
+  // A vacant (residentDefId: null) house currently showing HouseAssignModal
+  // — null when closed. Tracks houseId rather than defId, unlike
+  // houseTarget above, since a vacant house has no defId of its own yet.
+  const [assignHouseTarget, setAssignHouseTarget] = useState<string | null>(null);
+  // A bird currently showing GiftBirdModal (see BirdRosterModal's "🎁 なだめる"
+  // button and HouseWarningModal's "プレゼントを渡す") — null when closed.
+  const [giftTarget, setGiftTarget] = useState<string | null>(null);
+  // Same not-persisted queued-event pattern as shownRecipeUnlockCount —
+  // world.houseWarningEvents/houseDepartureEvents aren't persisted either
+  // (only the houselessTicks counter driving them is), so starting at 0
+  // never replays a stale backlog.
+  const [shownHouseWarningCount, setShownHouseWarningCount] = useState(0);
+  const [shownHouseDepartureCount, setShownHouseDepartureCount] = useState(0);
 
   useEffect(() => {
     if (world.birds.length === 0) initWorld();
@@ -136,7 +161,9 @@ export function TownScreen() {
     townStatusVisible ||
     houseTarget !== null ||
     unlockTarget !== null ||
-    constructionTarget !== null;
+    constructionTarget !== null ||
+    assignHouseTarget !== null ||
+    giftTarget !== null;
   const pendingRecruit = anyOtherModalOpen ? null : world.recruitmentEvents[shownRecruitCount] ?? null;
   const pendingLevelUp = anyOtherModalOpen || pendingRecruit ? null : levelUpEvents[shownLevelUpCount] ?? null;
   const pendingRecipeUnlock =
@@ -149,6 +176,20 @@ export function TownScreen() {
     anyOtherModalOpen || pendingRecruit || pendingLevelUp || pendingRecipeUnlock || pendingSkillUnlock
       ? null
       : world.cosmeticTicketEvents[shownCosmeticTicketCount] ?? null;
+  const pendingHouseWarning =
+    anyOtherModalOpen || pendingRecruit || pendingLevelUp || pendingRecipeUnlock || pendingSkillUnlock || pendingCosmeticTicket
+      ? null
+      : world.houseWarningEvents[shownHouseWarningCount] ?? null;
+  const pendingHouseDeparture =
+    anyOtherModalOpen ||
+    pendingRecruit ||
+    pendingLevelUp ||
+    pendingRecipeUnlock ||
+    pendingSkillUnlock ||
+    pendingCosmeticTicket ||
+    pendingHouseWarning
+      ? null
+      : world.houseDepartureEvents[shownHouseDepartureCount] ?? null;
 
   const handlePost = (preset: JobPreset) => {
     postRequest(preset);
@@ -199,6 +240,40 @@ export function TownScreen() {
     }
   };
 
+  // Phase 14: houses are the first (and so far only) freely-placed building
+  // — tapping the map while placingHouse is true attempts to build a vacant
+  // house right there (see useTownStore's buildHouse for the zone/overlap/
+  // cost checks). Deliberately stays in placement mode on failure so the
+  // player can just try another spot, with a quick alert explaining why.
+  const handleMapTap = (x: number, y: number) => {
+    if (buildHouse(x, y)) {
+      setPlacingHouse(false);
+    } else {
+      Alert.alert('ここには建てられません', '街の外か、何かに近すぎるか、費用が足りない可能性があります。');
+    }
+  };
+
+  const handleHousePress = (house: HouseState) => {
+    if (house.residentDefId) {
+      setHouseTarget(house.residentDefId);
+    } else {
+      setAssignHouseTarget(house.id);
+    }
+  };
+
+  const handleAssignResident = (defId: string) => {
+    if (!assignHouseTarget) return;
+    if (assignHouseResident(assignHouseTarget, defId)) {
+      setAssignHouseTarget(null);
+    }
+  };
+
+  const handleGiftBird = (defId: string, itemId: ItemId) => {
+    if (giveGiftToBird(defId, itemId)) {
+      setGiftTarget(null);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.topBar}>
@@ -235,6 +310,12 @@ export function TownScreen() {
           <AnimatedPressable style={styles.inventoryButton} onPress={() => setInventoryVisible(true)}>
             <Text style={styles.inventoryButtonText}>🎒</Text>
           </AnimatedPressable>
+          <AnimatedPressable
+            style={[styles.inventoryButton, placingHouse && styles.inventoryButtonActive]}
+            onPress={() => setPlacingHouse((v) => !v)}
+          >
+            <Text style={styles.inventoryButtonText}>🏠+</Text>
+          </AnimatedPressable>
           {SHOW_ISOMETRIC_DEBUG_BUTTON ? (
             <AnimatedPressable style={styles.inventoryButton} onPress={() => setIsoPrototypeVisible(true)}>
               <Text style={styles.inventoryButtonText}>📐</Text>
@@ -242,6 +323,15 @@ export function TownScreen() {
           ) : null}
         </ScrollView>
       </View>
+
+      {placingHouse && (
+        <View style={styles.placementBanner}>
+          <Text style={styles.placementBannerText}>街エリア内をタップして、空き家を建てる場所を選んでください</Text>
+          <AnimatedPressable style={styles.placementCancelButton} onPress={() => setPlacingHouse(false)}>
+            <Text style={styles.placementCancelButtonText}>✕ やめる</Text>
+          </AnimatedPressable>
+        </View>
+      )}
 
       <View style={styles.mapWrap}>
         <PannableMap contentWidth={WORLD_CANVAS_WIDTH} contentHeight={WORLD_CANVAS_HEIGHT} initialFocus={{ x: TOWN_X, y: TOWN_Y }}>
@@ -253,6 +343,7 @@ export function TownScreen() {
             birds={activeBirds}
             dormantDefIds={dormantDefIds}
             plotStates={plots}
+            houses={houses}
             townLevel={townLevel}
             merchant={world.merchant}
             onBirdPress={() => setRosterVisible(true)}
@@ -260,7 +351,9 @@ export function TownScreen() {
             onShopPress={(kind) => setOpenShop(kind)}
             onMerchantPress={() => setMerchantVisible(true)}
             onTownHallPress={() => setTownStatusVisible(true)}
-            onHousePress={(defId) => setHouseTarget(defId)}
+            onHousePress={handleHousePress}
+            placementMode={placingHouse}
+            onMapTap={handleMapTap}
           />
         </PannableMap>
       </View>
@@ -303,6 +396,14 @@ export function TownScreen() {
         onClose={() => setRosterVisible(false)}
         birds={activeBirds}
         onSetCosmetic={setCosmetic}
+        onGiftBird={(defId) => {
+          // Closes BirdRosterModal before opening GiftBirdModal rather than
+          // stacking them — two native Modals visible at once has been a
+          // real dead-taps bug in this app before (see anyOtherModalOpen's
+          // own comment).
+          setRosterVisible(false);
+          setGiftTarget(defId);
+        }}
       />
 
       <TownStatusModal
@@ -361,6 +462,31 @@ export function TownScreen() {
 
       <CosmeticTicketModal event={pendingCosmeticTicket} onClose={() => setShownCosmeticTicketCount((c) => c + 1)} />
 
+      <HouseAssignModal
+        visible={assignHouseTarget !== null}
+        candidates={activeBirds.filter((b) => !Object.values(houses).some((h) => h.residentDefId === b.defId))}
+        onAssign={handleAssignResident}
+        onClose={() => setAssignHouseTarget(null)}
+      />
+
+      <GiftBirdModal
+        bird={activeBirds.find((b) => b.defId === giftTarget) ?? null}
+        playerItems={items}
+        onGift={handleGiftBird}
+        onClose={() => setGiftTarget(null)}
+      />
+
+      <HouseWarningModal
+        event={pendingHouseWarning}
+        onGift={(defId) => {
+          setShownHouseWarningCount((c) => c + 1);
+          setGiftTarget(defId);
+        }}
+        onClose={() => setShownHouseWarningCount((c) => c + 1)}
+      />
+
+      <HouseDepartureModal event={pendingHouseDeparture} onClose={() => setShownHouseDepartureCount((c) => c + 1)} />
+
       {SHOW_ISOMETRIC_DEBUG_BUTTON ? (
         <Modal visible={isoPrototypeVisible} animationType="slide" onRequestClose={() => setIsoPrototypeVisible(false)}>
           <IsometricPrototypeScreen onClose={() => setIsoPrototypeVisible(false)} />
@@ -409,6 +535,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   inventoryButtonText: { fontSize: 16 },
+  inventoryButtonActive: { backgroundColor: theme.gold, borderColor: theme.gold },
+  placementBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginHorizontal: 12,
+    marginTop: 8,
+    backgroundColor: theme.cardAlt,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: theme.gold,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  placementBannerText: { flex: 1, fontSize: 12, fontWeight: '700', color: theme.textPrimary, marginRight: 8 },
+  placementCancelButton: { backgroundColor: theme.card, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
+  placementCancelButtonText: { fontSize: 11, fontWeight: '700', color: theme.textSecondary },
   mapWrap: { flex: 1, paddingHorizontal: 12, marginTop: 8 },
   bottomBar: {
     flexDirection: 'row',

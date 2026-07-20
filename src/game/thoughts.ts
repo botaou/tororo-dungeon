@@ -132,6 +132,17 @@ export const CHAT_LINES = [
   'この街、好きだなあ',
 ];
 
+// Shown as an occasional speech bubble while a recruited bird has gone
+// without an assigned house for a while (see BirdState.houselessTicks,
+// game/config.ts's HOUSELESS_SULK_TICKS, useWorldStore's tick) — same
+// light, bratty tone as RETREAT_LINES above, never anything heavier.
+export const HOUSELESS_LINES = [
+  'はやく家がほしいよ〜',
+  'ねえ、まだ家決まらないの?',
+  'そろそろお家がほしいなあ',
+  'このままじゃ拗ねちゃうぞ〜',
+];
+
 // One short line shown in the join announcement when a dormant bird
 // actually joins the town (see game/recruitment.ts / RecruitmentModal).
 export const RECRUIT_LINES: Record<string, string> = {

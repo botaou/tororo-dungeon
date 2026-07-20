@@ -50,7 +50,6 @@ import {
   STARTING_SATIETY,
 } from './config';
 import { TOWN_X, TOWN_Y } from '../data/world';
-import { getHousePosition } from '../data/houses';
 import { getShopPosition, MERCHANT_SPOT } from '../data/townGrid';
 import { MATERIAL_SELL_PRICE } from '../data/marketPrices';
 import { SHOP_DEFS } from '../data/shops';
@@ -208,6 +207,22 @@ export interface AiWorld {
   // job/behavior already has its own explicit destination (a shop, a
   // mining node, etc.) so this doesn't need to apply anywhere else.
   occupiedSpots: { x: number; y: number }[];
+  // Phase 14: a recruited bird's own house, keyed by defId — only present
+  // for birds who actually have one assigned (see useTownStore's houses,
+  // HouseState.residentDefId). A bird with no entry here is genuinely
+  // homeless, not a data error (see BirdState.houselessTicks) — every call
+  // site falls back to the town hall's position as a temporary "lodging"
+  // spot, see getHomePosition below.
+  housePositions: Partial<Record<string, { x: number; y: number }>>;
+}
+
+// A bird's own house position, or the town hall as a stand-in for a
+// recruited bird that doesn't have one yet (Phase 14) — framed as
+// temporarily lodging at the town hall rather than an error state, since
+// "recruited but houseless" is an expected, ongoing situation now (see
+// useWorldStore's houseless-sulk tick logic).
+function getHomePosition(world: AiWorld, defId: string): { x: number; y: number } {
+  return world.housePositions[defId] ?? { x: TOWN_X, y: TOWN_Y };
 }
 
 // A permanent stat a play-session "inspiration" roll can bump (see
@@ -386,7 +401,7 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
   // straight back into combat → hp bottoms out again).
   const isRecovering = bird.activity === 'recovering' ? bird.hp < bird.maxHp : bird.hp <= 0 || bird.hp < bird.maxHp * LOW_HP_RETREAT_THRESHOLD_PERCENT;
   if (isRecovering) {
-    return stepRecover(bird);
+    return stepRecover(bird, world);
   }
 
   // A real-device request: the chat speech bubble (see useWorldStore's
@@ -406,7 +421,7 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
   }
 
   if (bird.carrying) {
-    return stepCarrying(bird);
+    return stepCarrying(bird, world);
   }
 
   if (bird.mood === 'hungry') {
@@ -423,7 +438,7 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
     return stepShopFood(bird, world);
   }
   if (bird.mood === 'sleepy') {
-    return stepHomeNeed(bird, 'resting');
+    return stepHomeNeed(bird, 'resting', world);
   }
 
   // Continue an already-committed selling trip, or roll to start a new one.
@@ -528,8 +543,8 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
 // in-place instant partial heal, no re-engaging combat halfway recovered —
 // only once HP is completely full does stepBird let normal behavior (and
 // combat) resume.
-function stepRecover(bird: BirdState): AiStepOutcome {
-  const house = getHousePosition(bird.defId);
+function stepRecover(bird: BirdState, world: AiWorld): AiStepOutcome {
+  const house = getHomePosition(world, bird.defId);
   const arrived = moveToward(bird, house.x, house.y);
   bird.activity = 'recovering';
   bird.targetKind = null;
@@ -543,11 +558,11 @@ function stepRecover(bird: BirdState): AiStepOutcome {
 // Sleepy → go home and rest. Once satisfied for HOME_NEED_TICKS the mood
 // clears back to normal instead of waiting on the ambient refresh timer.
 // "Home" is the bird's own house.
-function stepHomeNeed(bird: BirdState, activity: 'resting'): AiStepOutcome {
+function stepHomeNeed(bird: BirdState, activity: 'resting', world: AiWorld): AiStepOutcome {
   if (bird.activity !== activity) {
     bird.workProgress = 0;
   }
-  const house = getHousePosition(bird.defId);
+  const house = getHomePosition(world, bird.defId);
   const arrived = moveToward(bird, house.x, house.y);
   bird.activity = activity;
   bird.targetKind = null;
@@ -639,9 +654,9 @@ function stepShopFood(bird: BirdState, world: AiWorld): AiStepOutcome {
 // its own house before the material becomes its personal property — so
 // "what is this bird carrying right now" is a real, visible thing rather
 // than resources teleporting into its stash the instant they're picked up.
-function stepCarrying(bird: BirdState): AiStepOutcome {
+function stepCarrying(bird: BirdState, world: AiWorld): AiStepOutcome {
   const outcome = emptyOutcome();
-  const house = getHousePosition(bird.defId);
+  const house = getHomePosition(world, bird.defId);
   const arrived = moveToward(bird, house.x, house.y);
   bird.activity = 'carrying';
   if (arrived && bird.carrying) {
@@ -1039,7 +1054,7 @@ function executeRest(bird: BirdState, world: AiWorld): AiStepOutcome {
   }
 
   if (bird.targetKind === 'nap') {
-    return executeNap(bird);
+    return executeNap(bird, world);
   }
 
   // Fresh decision: a nap at home, a leisure spot, or just a stroll near
@@ -1051,7 +1066,7 @@ function executeRest(bird: BirdState, world: AiWorld): AiStepOutcome {
     bird.targetKind = 'nap';
     bird.targetRefUid = null;
     bird.workProgress = 0;
-    return executeNap(bird);
+    return executeNap(bird, world);
   }
   if (world.leisureSpots.length > 0 && Math.random() < LEISURE_CHANCE) {
     const spot = nearest(world.leisureSpots, bird.x, bird.y);
@@ -1100,9 +1115,9 @@ function executeDetour(bird: BirdState): AiStepOutcome {
 // comfortable (see NAP_GOOD_MOOD_THRESHOLD) rather than only when actually
 // tired. Dwells far longer than any other rest sub-behavior (NAP_DWELL_TICKS)
 // so it reads as an actual pause in the pace, not another quick errand.
-function executeNap(bird: BirdState): AiStepOutcome {
+function executeNap(bird: BirdState, world: AiWorld): AiStepOutcome {
   const outcome = emptyOutcome();
-  const house = getHousePosition(bird.defId);
+  const house = getHomePosition(world, bird.defId);
   const arrived = moveToward(bird, house.x, house.y);
   bird.activity = 'napping';
   if (arrived) {

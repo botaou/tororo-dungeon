@@ -4,6 +4,7 @@ import { Animated, Easing, Image, StyleSheet, Text, TouchableWithoutFeedback, Vi
 import {
   BirdState,
   EnemyInstance,
+  HouseState,
   LeisureSpotInstance,
   MerchantState,
   MiningNodeInstance,
@@ -25,11 +26,18 @@ import {
   TOWN_PLOT_DEFS,
 } from '../data/townGrid';
 import { SHOP_DEFS } from '../data/shops';
-import { HOUSE_POSITIONS } from '../data/houses';
 import { MATERIAL_ICON } from '../data/materials';
 import { TILE_IMAGES, TILE_REPEAT_IMAGES } from '../data/tileImages';
 import { getBuildingOption } from '../data/buildingOptions';
-import { AMENITY_IMAGES, FENCE_IMAGE, HOUSE_IMAGES, MERCHANT_TENT_IMAGE, SHOP_IMAGES, TOWNHALL_IMAGES } from '../data/buildingImages';
+import {
+  AMENITY_IMAGES,
+  FENCE_IMAGE,
+  HOUSE_IMAGES,
+  HOUSE_VACANT_IMAGE,
+  MERCHANT_TENT_IMAGE,
+  SHOP_IMAGES,
+  TOWNHALL_IMAGES,
+} from '../data/buildingImages';
 import { ENEMY_IMAGES, FIELD_OBJECT_AFTER_IMAGES, FIELD_OBJECT_IMAGES } from '../data/fieldImages';
 import { CharacterAvatar } from './CharacterAvatar';
 import { AnimatedPressable } from './AnimatedPressable';
@@ -153,6 +161,9 @@ interface Props {
   // game/recruitment.ts); dormant birds otherwise have no map presence.
   dormantDefIds: string[];
   plotStates: Record<string, TownPlotState>;
+  // Phase 14: houses, independent of any particular bird (see HouseState) —
+  // replaces the old fixed per-defId HOUSE_POSITIONS/HOUSE_IMAGES lookup.
+  houses: Record<string, HouseState>;
   townLevel: number;
   merchant: MerchantState | null;
   onBirdPress: (defId: string) => void;
@@ -160,7 +171,16 @@ interface Props {
   onShopPress: (shopKind: ShopKind) => void;
   onMerchantPress: () => void;
   onTownHallPress: () => void;
-  onHousePress: (defId: string) => void;
+  onHousePress: (house: HouseState) => void;
+  // Phase 14's free house placement — when true, the whole map becomes one
+  // big tap target (a semi-transparent hint overlay shows this) instead of
+  // its usual sprite-by-sprite Pressables; tapping anywhere calls
+  // onMapTap with the tapped point in the same 0..1 normalized space
+  // everything else here uses. Both optional so every other WorldMap
+  // caller (there is only one today, but keeping this additive) doesn't
+  // need to pass them.
+  placementMode?: boolean;
+  onMapTap?: (x: number, y: number) => void;
 }
 
 export function WorldMap({
@@ -171,6 +191,7 @@ export function WorldMap({
   birds,
   dormantDefIds,
   plotStates,
+  houses,
   townLevel,
   merchant,
   onBirdPress,
@@ -179,6 +200,8 @@ export function WorldMap({
   onMerchantPress,
   onTownHallPress,
   onHousePress,
+  placementMode,
+  onMapTap,
 }: Props) {
   const fieldWidth = WORLD_CANVAS_WIDTH;
   const fieldHeight = WORLD_CANVAS_HEIGHT;
@@ -456,23 +479,17 @@ export function WorldMap({
         <EncounterMarker x={MONE_ENCOUNTER_SPOT.x * fieldWidth} y={MONE_ENCOUNTER_SPOT.y * fieldHeight} />
       )}
 
-      {birds.map((b) => {
-        const pos = HOUSE_POSITIONS[b.defId];
-        if (!pos) return null;
-        const def = getCharacterDef(b.defId);
-        const houseImage = HOUSE_IMAGES[b.defId];
+      {Object.values(houses).map((house) => {
+        const resident = house.residentDefId ? getCharacterDef(house.residentDefId) : null;
+        const houseImage = house.residentDefId ? HOUSE_IMAGES[house.residentDefId] ?? HOUSE_VACANT_IMAGE : HOUSE_VACANT_IMAGE;
         return (
           <AnimatedPressable
-            key={b.defId}
-            style={[styles.house, { left: pos.x * fieldWidth - 18, top: pos.y * fieldHeight - 18 }]}
-            onPress={() => onHousePress(b.defId)}
+            key={house.id}
+            style={[styles.house, { left: house.x * fieldWidth - 18, top: house.y * fieldHeight - 18 }]}
+            onPress={() => onHousePress(house)}
           >
-            {houseImage ? (
-              <Image source={houseImage} resizeMode="contain" style={styles.houseImage} />
-            ) : (
-              <Text style={styles.plotBuildingIcon}>🏠</Text>
-            )}
-            <Text style={styles.houseTag}>{def.emoji}</Text>
+            <Image source={houseImage} resizeMode="contain" style={styles.houseImage} />
+            <Text style={styles.houseTag}>{resident ? resident.emoji : '🔑'}</Text>
           </AnimatedPressable>
         );
       })}
@@ -502,6 +519,14 @@ export function WorldMap({
           onPress={() => onBirdPress(b.defId)}
         />
       ))}
+
+      {placementMode && onMapTap && (
+        <TouchableWithoutFeedback
+          onPress={(e) => onMapTap(e.nativeEvent.locationX / fieldWidth, e.nativeEvent.locationY / fieldHeight)}
+        >
+          <View style={[styles.placementOverlay, { width: fieldWidth, height: fieldHeight }]} />
+        </TouchableWithoutFeedback>
+      )}
     </View>
   );
 }
@@ -1184,6 +1209,11 @@ const styles = StyleSheet.create({
   },
   houseImage: { width: '100%', height: '100%' },
   houseTag: { position: 'absolute', bottom: -2, right: -2, fontSize: 14 },
+  // Phase 14's house-placement mode — a transparent full-canvas tap target
+  // sitting above every other sprite (zIndex, same convention as the
+  // building/sprite zIndex split from Phase 12③) so a tap anywhere reaches
+  // onMapTap instead of whatever sprite happens to be underneath it.
+  placementOverlay: { position: 'absolute', left: 0, top: 0, zIndex: 50, backgroundColor: 'rgba(232,163,61,0.08)' },
   plot: {
     position: 'absolute',
     width: 36,

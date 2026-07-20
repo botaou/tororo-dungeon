@@ -2,6 +2,7 @@ import { create } from 'zustand';
 
 import {
   ActivityLogEntry,
+  BirdHouseEvent,
   BirdState,
   CosmeticSource,
   EnemyInstance,
@@ -30,7 +31,7 @@ import { rollRandomMood } from '../data/moods';
 import { AiWorld, InspirationStat, separateBirds, stepBird } from '../game/ai';
 import { addCappedInventory, addItemCapped } from '../game/inventoryCap';
 import { BIRD_SKILL_DEF_MAP } from '../data/skills';
-import { CHAT_LINES } from '../game/thoughts';
+import { CHAT_LINES, HOUSELESS_LINES } from '../game/thoughts';
 import { respawnPosition, stepEnemy } from '../game/enemyAi';
 import { AttackAssignment, applyHealing, resolveAttacks } from '../game/combat';
 import { scoreRequestAcceptance, tryAcceptRequest } from '../game/requests';
@@ -65,7 +66,14 @@ import {
   expToNextLevel,
   FEED_RESTOCK_CHECK_CHANCE,
   FEED_RESTOCK_TARGET,
+  GIFT_HAPPINESS_RESTORE,
   HAPPINESS_LOW_THRESHOLD,
+  HOUSELESS_BUBBLE_CHANCE,
+  HOUSELESS_HAPPINESS_DECAY_PER_TICK,
+  HOUSELESS_HAPPINESS_FLOOR,
+  HOUSELESS_LEAVE_TICKS,
+  HOUSELESS_SULK_TICKS,
+  HOUSELESS_WARNING_TICKS,
   LEVEL_UP_ATK_GAIN,
   LEVEL_UP_DEFENSE_GAIN,
   LEVEL_UP_HP_GAIN,
@@ -246,6 +254,7 @@ function buildInitialWorld(): WorldState {
       chatLine: null,
       chatLineSetAt: 0,
       chatPauseTicks: 0,
+      houselessTicks: wallet.houselessTicks,
     };
   });
 
@@ -262,6 +271,8 @@ function buildInitialWorld(): WorldState {
     recipeUnlockEvents: [],
     skillUnlockEvents: [],
     cosmeticTicketEvents: [],
+    houseWarningEvents: [],
+    houseDepartureEvents: [],
   };
 }
 
@@ -360,6 +371,14 @@ interface WorldActions {
   // unequip back to the bird's plain look. Returns false only if defId
   // doesn't match a known bird.
   setCosmetic: (defId: string, cosmeticId: string | null) => boolean;
+  // Phase 14: cheers up a houseless-and-sulking bird — spends 1 unit of any
+  // item the player's warehouse currently holds (simple "give a gift"
+  // action, not tied to any particular item — see the request's own "簡易的
+  // なアクションで構わない"), restores some happiness immediately, and
+  // (the actual point) resets houselessTicks to 0, buying more time before
+  // the next warning/departure check. Returns false if the bird isn't
+  // recruited or the player doesn't own that item.
+  giveGiftToBird: (defId: string, itemId: ItemId) => boolean;
 }
 
 // Shared by reportCraftCompleted and deliverToMerchant — both are player-
@@ -430,6 +449,8 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     recipeUnlockEvents: [],
     skillUnlockEvents: [],
     cosmeticTicketEvents: [],
+    houseWarningEvents: [],
+    houseDepartureEvents: [],
   },
 
   initWorld: () => set({ world: buildInitialWorld() }),
@@ -602,6 +623,21 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
 
     const now = Date.now();
     const newLog: ActivityLogEntry[] = [];
+    // Phase 14: fetched once up front — used both to resolve each recruited
+    // bird's home position (AiWorld.housePositions below) and to drive the
+    // houseless sulk/warning/departure escalation (birdsWithMood's own
+    // loop further down).
+    const houses = useTownStore.getState().houses;
+    const housedDefIds = new Set<string>();
+    const housePositions: Partial<Record<string, { x: number; y: number }>> = {};
+    for (const h of Object.values(houses)) {
+      if (h.residentDefId) {
+        housedDefIds.add(h.residentDefId);
+        housePositions[h.residentDefId] = { x: h.x, y: h.y };
+      }
+    }
+    const newHouseWarningEvents: BirdHouseEvent[] = [];
+    const newHouseDepartureEvents: BirdHouseEvent[] = [];
 
     // Computed once, up front, since it gates both the enemy-patrol step
     // below and the AI's view of the field further down — field-zone
@@ -681,17 +717,57 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     const birdsWithMood = world.birds.map((b) => {
       if (!b.isRecruited) return b;
       const satiety = Math.max(0, b.satiety - SATIETY_DECAY_PER_TICK);
-      const happiness = Math.min(
+      let happiness = Math.min(
         100,
         Math.max(0, b.happiness + (b.mood === 'happy' ? 1 : b.mood === 'hungry' ? -1 : 0))
       );
+      let mood = b.mood;
+      let moodChangedAt = b.moodChangedAt;
       if (satiety <= SATIETY_HUNGRY_THRESHOLD && b.mood !== 'hungry') {
-        return { ...b, satiety, happiness, mood: 'hungry' as const, moodChangedAt: now };
+        mood = 'hungry';
+        moodChangedAt = now;
+      } else if (b.mood !== 'hungry' && now - b.moodChangedAt > MOOD_REFRESH_MS) {
+        mood = rollRandomMood();
+        moodChangedAt = now;
       }
-      if (b.mood !== 'hungry' && now - b.moodChangedAt > MOOD_REFRESH_MS) {
-        return { ...b, satiety, happiness, mood: rollRandomMood(), moodChangedAt: now };
+
+      // Phase 14: houseless sulk → warning → departure escalation — see
+      // config.ts's HOUSELESS_* constants. Ticks only ever advance live
+      // (this whole block runs once per real tick(), never approximated
+      // during offline catch-up — see BirdState.houselessTicks's comment),
+      // so "just crossed a threshold this tick" is a safe, simple one-time
+      // trigger with no separate "already shown" flag needed.
+      let houselessTicks = b.houselessTicks;
+      let isRecruited: boolean = b.isRecruited;
+      let chatLine = b.chatLine;
+      let chatLineSetAt = b.chatLineSetAt;
+      if (housedDefIds.has(b.defId)) {
+        houselessTicks = 0;
+      } else {
+        const prevTicks = houselessTicks;
+        houselessTicks += 1;
+        if (houselessTicks > HOUSELESS_SULK_TICKS) {
+          happiness = Math.max(HOUSELESS_HAPPINESS_FLOOR, happiness - HOUSELESS_HAPPINESS_DECAY_PER_TICK);
+          if (prevTicks <= HOUSELESS_SULK_TICKS) {
+            newLog.push(makeLogEntry(b.name, 'houseless', `${b.name}は家がなくてちょっと拗ねている`));
+          }
+          if (Math.random() < HOUSELESS_BUBBLE_CHANCE) {
+            chatLine = HOUSELESS_LINES[Math.floor(Math.random() * HOUSELESS_LINES.length)];
+            chatLineSetAt = now;
+          }
+        }
+        if (prevTicks <= HOUSELESS_WARNING_TICKS && houselessTicks > HOUSELESS_WARNING_TICKS) {
+          newHouseWarningEvents.push({ defId: b.defId, name: b.name });
+        }
+        if (prevTicks <= HOUSELESS_LEAVE_TICKS && houselessTicks > HOUSELESS_LEAVE_TICKS) {
+          newHouseDepartureEvents.push({ defId: b.defId, name: b.name });
+          newLog.push(makeLogEntry(b.name, 'houseless', `${b.name}は旅立ってしまった…`));
+          isRecruited = false;
+          houselessTicks = 0;
+        }
       }
-      return { ...b, satiety, happiness };
+
+      return { ...b, satiety, happiness, mood, moodChangedAt, houselessTicks, isRecruited, chatLine, chatLineSetAt };
     });
 
     // Enemies patrol/chase/return on their own each tick, independent of
@@ -759,6 +835,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       // Phase 12③: town hall (always at TOWN_X/TOWN_Y) plus every plot that
       // actually has something built on it — see ai.ts's randomPointNearTown.
       occupiedSpots: [{ x: TOWN_X, y: TOWN_Y }, ...getAllBuiltPlotPositions(useTownStore.getState().plots)],
+      housePositions,
     };
 
     const allAssignments: AttackAssignment[] = [];
@@ -1258,6 +1335,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         satiety: b.satiety,
         happiness: b.happiness,
         isRecruited: b.isRecruited,
+        houselessTicks: b.houselessTicks,
       };
     useBirdEconomyStore.getState().syncAll(wallets);
 
@@ -1285,8 +1363,37 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
           newCosmeticTicketEvents.length > 0
             ? [...world.cosmeticTicketEvents, ...newCosmeticTicketEvents]
             : world.cosmeticTicketEvents,
+        houseWarningEvents:
+          newHouseWarningEvents.length > 0 ? [...world.houseWarningEvents, ...newHouseWarningEvents] : world.houseWarningEvents,
+        houseDepartureEvents:
+          newHouseDepartureEvents.length > 0
+            ? [...world.houseDepartureEvents, ...newHouseDepartureEvents]
+            : world.houseDepartureEvents,
       },
     });
+  },
+
+  giveGiftToBird: (defId, itemId) => {
+    const { world } = get();
+    const birdIndex = world.birds.findIndex((b) => b.defId === defId && b.isRecruited);
+    if (birdIndex === -1) return false;
+    if (!usePlayerStore.getState().consumeItems(itemId, 1)) return false;
+
+    const nextBirds = [...world.birds];
+    const bird = { ...nextBirds[birdIndex] };
+    bird.happiness = Math.min(100, bird.happiness + GIFT_HAPPINESS_RESTORE);
+    // The real effect: buys more time before the next houseless warning/
+    // departure check (see tick()'s own escalation) — a gift doesn't give
+    // the bird a house, it just cheers it up enough to stop the clock for a
+    // while, same as the request's own "なだめて時間を稼ぐ" framing.
+    bird.houselessTicks = 0;
+    nextBirds[birdIndex] = bird;
+    const log = [
+      makeLogEntry(bird.name, 'gift', `${bird.name}に${ITEM_DEF_MAP[itemId].name}をプレゼントした!${bird.name}のご機嫌が直った`),
+      ...world.activityLog,
+    ].slice(0, ACTIVITY_LOG_MAX);
+    set({ world: { ...world, birds: nextBirds, activityLog: log } });
+    return true;
   },
 }));
 

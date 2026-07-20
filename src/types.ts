@@ -568,6 +568,16 @@ export interface BirdState {
   // instead of drifting away mid-conversation. Ephemeral, same as
   // chatLine/chatLineSetAt — never persisted.
   chatPauseTicks: number;
+  // Phase 14: consecutive ticks (see TICK_MS) this *recruited* bird has gone
+  // without an assigned house (see HouseState.residentDefId) — 0 while
+  // housed, and reset to 0 the moment it gets a house or receives a
+  // cheer-up gift. Only ever counted live, never approximated during
+  // offline catch-up (see game/offlineProgress.ts) — this is a flavor/
+  // pressure system, not economy-critical enough to need real offline
+  // accuracy. Persisted (see BirdWallet's matching field), since it has to
+  // survive across sessions for the sulk → warning → departure escalation
+  // (game/config.ts's HOUSELESS_* thresholds) to actually accumulate.
+  houselessTicks: number;
 }
 
 export type JobStatus = 'open' | 'inProgress' | 'done';
@@ -685,6 +695,39 @@ export interface WorldState {
   // separate announcement). Not persisted, same reasoning as
   // recipeUnlockEvents above.
   cosmeticTicketEvents: { cosmeticId: string; source: CosmeticSource }[];
+  // Same queued-event pattern, for Phase 14's houseless-sulk system (see
+  // game/config.ts's HOUSELESS_WARNING_TICKS/HOUSELESS_LEAVE_TICKS,
+  // useWorldStore's tick) — a warning fires once when a recruited bird's
+  // gone without an assigned house long enough that it risks leaving; a
+  // departure fires once if nothing (a house, or a cheer-up gift) resolved
+  // that in time. Not persisted, same reasoning as recipeUnlockEvents above
+  // — the underlying houselessTicks counter that drives *when* these fire
+  // is what's actually persisted (see BirdWallet), so a fresh session still
+  // re-derives the correct event at the correct tick rather than losing it.
+  houseWarningEvents: BirdHouseEvent[];
+  houseDepartureEvents: BirdHouseEvent[];
+}
+
+// Shared payload shape for both houseWarningEvents/houseDepartureEvents —
+// just enough for a notification modal to name the bird (see TownScreen).
+export interface BirdHouseEvent {
+  defId: string;
+  name: string;
+}
+
+// A house on the map, independent of any particular bird (Phase 14) — the
+// old model (data/houses.ts's HOUSE_POSITIONS) baked identity/position/art
+// into the bird's own defId, one fixed house per one of exactly 4
+// characters. That stopped working the moment the roster was meant to grow
+// past 4 (future recruits — シジュウカラ, フクロウ, etc. — per the original
+// design docs): a house now exists on its own, at a freely-chosen position,
+// and only *optionally* has a resident. `residentDefId: null` is the normal,
+// expected state for a freshly-built house, not an error case.
+export interface HouseState {
+  id: string;
+  x: number;
+  y: number;
+  residentDefId: string | null;
 }
 
 // Which of the 4 routes (see game/recipeUnlocks.ts) taught the player a

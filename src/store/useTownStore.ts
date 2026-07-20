@@ -2,10 +2,20 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { CONSTRUCTION_DEVELOPMENT_POINTS, PLOT_UNLOCK_DEVELOPMENT_POINTS, TOWN_PLOT_DEFS } from '../data/townGrid';
+import {
+  CONSTRUCTION_DEVELOPMENT_POINTS,
+  getAllBuiltPlotPositions,
+  getTownZoneRadius,
+  isInsideTownZone,
+  PLOT_UNLOCK_DEVELOPMENT_POINTS,
+  TOWN_PLOT_DEFS,
+} from '../data/townGrid';
 import { BUILDING_OPTIONS } from '../data/buildingOptions';
-import { PlotUnlockCost, TownPlotState } from '../types';
+import { HOUSE_POSITIONS } from '../data/houses';
+import { HOUSE_BUILD_COST, HOUSE_CLEARANCE } from '../game/config';
+import { HouseState, PlotUnlockCost, TownPlotState } from '../types';
 import { usePlayerStore } from './usePlayerStore';
+import { TOWN_X, TOWN_Y } from '../data/world';
 
 // Queued for TownLevelUpModal — same one-time-notification pattern as
 // useWorldStore's recruitmentEvents, just carrying enough of the triggering
@@ -50,6 +60,14 @@ interface TownState {
   // granted) for each one exactly once, same pattern as
   // useWorldStore's recruitmentEvents.
   levelUpEvents: TownLevelUpEvent[];
+  // Phase 14: houses, independent of any particular bird — see HouseState's
+  // own comment (types.ts) for why. Starts empty (`{}`) for a brand-new
+  // save, matching Phase 12①'s empty-start philosophy (nothing pre-built;
+  // the player builds every house themselves); a pre-existing save instead
+  // gets its 4 already-lived-in houses seeded once by this store's own
+  // persist migrate (version 1→2), so nothing about an existing player's
+  // town changes the moment this ships.
+  houses: Record<string, HouseState>;
 }
 
 interface TownActions {
@@ -73,10 +91,40 @@ interface TownActions {
   // per-tick condition check in useWorldStore could otherwise fire twice in
   // the same tick before townQuestIndex updates elsewhere reads it).
   completeTownQuest: (questId: string, questName: string, rewardText: string, grantsTownLevel: number) => void;
+  // Phase 14's free (non-grid) placement, scoped to houses only for now
+  // (see game/config.ts's HOUSE_BUILD_COST/HOUSE_CLEARANCE and this file's
+  // own isHouseSpotBlocked) — spends the cost and creates a new, vacant
+  // (residentDefId: null) house at (x, y). Returns false (no charge taken)
+  // if the spot is outside the town zone, too close to anything else
+  // already standing there, or the player can't afford it.
+  buildHouse: (x: number, y: number) => boolean;
+  // Moves a recruited-but-unhoused bird into a vacant house. False (no
+  // state change) if the house doesn't exist or already has a resident, or
+  // if this bird already lives somewhere else (a bird only ever has one
+  // house at a time — reassigning would need to vacate the old one first,
+  // a feature this doesn't cover yet).
+  assignHouseResident: (houseId: string, defId: string) => boolean;
 }
 
 function ensurePlot(plots: Record<string, TownPlotState>, plotId: string, unlockedByDefault: boolean): TownPlotState {
   return plots[plotId] ?? { id: plotId, unlocked: unlockedByDefault, building: null, constructedBuildingId: null };
+}
+
+let houseIdCounter = 0;
+
+// Simple radius-clearance check (see game/config.ts's HOUSE_CLEARANCE) — not
+// real rectangle overlap math, same "good enough, and this project has been
+// bitten by fancier geometry before" precedent as ai.ts's
+// randomPointNearTown/BUILDING_CLEARANCE.
+function isHouseSpotBlocked(x: number, y: number, houses: Record<string, HouseState>, builtPlotPositions: { x: number; y: number }[]): boolean {
+  if (Math.hypot(x - TOWN_X, y - TOWN_Y) < HOUSE_CLEARANCE) return true;
+  for (const h of Object.values(houses)) {
+    if (Math.hypot(x - h.x, y - h.y) < HOUSE_CLEARANCE) return true;
+  }
+  for (const p of builtPlotPositions) {
+    if (Math.hypot(x - p.x, y - p.y) < HOUSE_CLEARANCE) return true;
+  }
+  return false;
 }
 
 export const useTownStore = create<TownState & TownActions>()(
@@ -89,6 +137,7 @@ export const useTownStore = create<TownState & TownActions>()(
       townQuestIndex: 0,
       completedRequestCount: 0,
       levelUpEvents: [],
+      houses: {},
 
       tryUnlockPlot: (plotId, cost, minTownLevel) => {
         if (minTownLevel && get().townLevel < minTownLevel) return false;
@@ -163,11 +212,47 @@ export const useTownStore = create<TownState & TownActions>()(
             : s.levelUpEvents,
         });
       },
+
+      buildHouse: (x, y) => {
+        if (!isInsideTownZone(x, y, getTownZoneRadius())) return false;
+        const s = get();
+        if (isHouseSpotBlocked(x, y, s.houses, getAllBuiltPlotPositions(s.plots))) return false;
+
+        const player = usePlayerStore.getState();
+        if (player.gold < HOUSE_BUILD_COST.gold) return false;
+        const owned = player.materials[HOUSE_BUILD_COST.materialId] ?? 0;
+        if (owned < HOUSE_BUILD_COST.materialAmount) return false;
+
+        player.trySpendGold(HOUSE_BUILD_COST.gold);
+        player.addMaterials({ [HOUSE_BUILD_COST.materialId]: -HOUSE_BUILD_COST.materialAmount });
+
+        houseIdCounter += 1;
+        const id = `house_${houseIdCounter}_${Date.now()}`;
+        set({ houses: { ...s.houses, [id]: { id, x, y, residentDefId: null } } });
+        return true;
+      },
+
+      assignHouseResident: (houseId, defId) => {
+        const s = get();
+        const house = s.houses[houseId];
+        if (!house || house.residentDefId !== null) return false;
+        // A bird only ever has one house at a time — this project has no
+        // "move out"/reassign feature yet, so silently stealing a bird from
+        // its current house here would strand that other house's own
+        // residentDefId pointing at a bird that's actually moved, which
+        // nothing else expects. Simplest safe rule: refuse until that's
+        // explicitly supported.
+        const alreadyHoused = Object.values(s.houses).some((h) => h.residentDefId === defId);
+        if (alreadyHoused) return false;
+
+        set({ houses: { ...s.houses, [houseId]: { ...house, residentDefId: defId } } });
+        return true;
+      },
     }),
     {
       name: 'tororo-dungeon-town-v1',
       storage: createJSONStorage(() => AsyncStorage),
-      version: 1,
+      version: 2,
       // Phase 12②: pre-existing saves have developmentPoints but no
       // explicit townLevel field (see TownState.townLevel's own comment on
       // why level used to be derived from points instead of stored).
@@ -181,19 +266,44 @@ export const useTownStore = create<TownState & TownActions>()(
       // grantsTownLevel this grandfathered level already covers, over the
       // next few ticks, without re-granting or re-notifying anything.
       migrate: (persisted: unknown, version) => {
-        if (version >= 1) return persisted as TownState & TownActions;
-        const state = persisted as Partial<TownState>;
-        const points = state?.developmentPoints ?? 0;
-        const thresholds = [0, 60, 180, 400, 800];
-        let level = 1;
-        for (let i = 0; i < thresholds.length; i++) if (points >= thresholds[i]) level = i + 1;
-        return {
-          ...state,
-          townLevel: level,
-          townQuestIndex: 0,
-          completedRequestCount: 0,
-          levelUpEvents: [],
-        } as unknown as TownState & TownActions;
+        let state = persisted as Partial<TownState>;
+        if (version < 1) {
+          const points = state?.developmentPoints ?? 0;
+          const thresholds = [0, 60, 180, 400, 800];
+          let level = 1;
+          for (let i = 0; i < thresholds.length; i++) if (points >= thresholds[i]) level = i + 1;
+          state = {
+            ...state,
+            townLevel: level,
+            townQuestIndex: 0,
+            completedRequestCount: 0,
+            levelUpEvents: [],
+          };
+        }
+        if (version < 2) {
+          // Phase 14: houses used to be a fixed Record<defId, {x,y}> (see
+          // data/houses.ts) with identity/position/art all baked into the
+          // bird's own defId — a pre-existing save has 4 already-lived-in
+          // houses that must not suddenly go vacant (that would instantly
+          // start the houseless-sulk clock in useWorldStore's tick() for
+          // birds that did nothing wrong). Seed exactly those 4 here, with
+          // their resident already assigned, so a returning player's town
+          // looks identical the moment this ships. A brand-new save instead
+          // starts from this store's own initial `houses: {}` above (this
+          // migrate function never runs for a save that never existed
+          // before) — matching Phase 12①'s empty-start philosophy, a new
+          // player builds every house themselves from scratch.
+          state = {
+            ...state,
+            houses: Object.fromEntries(
+              Object.entries(HOUSE_POSITIONS).map(([defId, pos]) => [
+                `house_${defId}`,
+                { id: `house_${defId}`, x: pos.x, y: pos.y, residentDefId: defId },
+              ])
+            ),
+          };
+        }
+        return state as unknown as TownState & TownActions;
       },
     }
   )

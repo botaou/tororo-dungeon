@@ -399,6 +399,59 @@ export const INSPIRATION_SKILL_CHANCE = 0.006;
 export const INSPIRATION_STAT_GAIN = 1;
 export const INSPIRATION_HP_GAIN = 3;
 
+// ---- Phase 14: independent houses, houseless "拗ね" (sulking) → warning →
+// departure ----
+// How many ticks (1 tick ≈ 1s, see TICK_MS) a *recruited* bird can go
+// without an assigned house before it starts moping. Deliberately only
+// counted while the app is actually open and ticking live (see
+// BirdState.houselessTicks's own comment) — a short, forgiving number in
+// wall-clock terms is still a long one in terms of actual play sessions.
+// First-pass numbers, not yet played against real usage — retune if this
+// reads as too eager/too lenient once it's actually live.
+export const HOUSELESS_SULK_TICKS = 60 * 20; // ~20 live minutes
+// Further ticks past HOUSELESS_SULK_TICKS before a one-time "may leave
+// soon" warning fires (see useWorldStore's tick, TownScreen's
+// HouseWarningModal).
+export const HOUSELESS_WARNING_TICKS = 60 * 60; // ~1 further live hour
+// Further ticks past HOUSELESS_WARNING_TICKS, with no house assigned and no
+// cheer-up gift given in the meantime, before the bird actually leaves town
+// (isRecruited flips back to false, same field a not-yet-recruited bird
+// starts with). Deliberately generous — losing a teammate is a real,
+// non-trivial loss, so the total grace period (sulk start → warning →
+// departure) needs to comfortably outlast a player just being busy for a
+// while, not punish a short absence.
+export const HOUSELESS_LEAVE_TICKS = 60 * 60 * 2; // ~2 further live hours
+// Extra happiness drain per tick once sulking has started, layered on top
+// of whatever the ambient mood system already does — deliberately pushes
+// happiness down past HAPPINESS_LOW_THRESHOLD so a houseless bird leans on
+// the *existing* "detour/park visit when unhappy" behaviors as a
+// thematically-fitting coping mechanism, with no new AI branch needed.
+export const HOUSELESS_HAPPINESS_DECAY_PER_TICK = 0.05;
+// Sulking alone never drains happiness below this floor — it should read
+// as "grumpy," never as compounding into some other bad-mood spiral.
+export const HOUSELESS_HAPPINESS_FLOOR = 15;
+// Each tick while sulking, the chance of showing the "はやく家がほしいよ〜"
+// speech bubble (reuses BirdState.chatLine, same mechanism as the ambient
+// bird-to-bird chat bubble — see game/thoughts.ts's HOUSELESS_LINES) — small,
+// so it reads as an occasional gripe rather than constant nagging.
+export const HOUSELESS_BUBBLE_CHANCE = 0.03;
+// How much happiness a single cheer-up gift restores (see useWorldStore's
+// giveGiftToBird) — the gift's real effect is resetting houselessTicks to 0
+// (buying more time before the next warning), this is just the immediate
+// visible mood bump.
+export const GIFT_HAPPINESS_RESTORE = 25;
+
+// A house is the first building type to use free (non-grid) placement —
+// see useTownStore's buildHouse. Cost is in the same shape/range as the
+// cheapest existing BUILDING_OPTIONS entries (data/buildingOptions.ts).
+export const HOUSE_BUILD_COST = { gold: 200, materialId: 'wood' as const, materialAmount: 8 };
+// Minimum distance (in the same normalized 0..1 canvas space as everything
+// else) a new house must keep from every existing house, the town hall, and
+// every constructed plot building — a simple radius check rather than real
+// rectangle math, same precedent as ai.ts's randomPointNearTown/
+// BUILDING_CLEARANCE.
+export const HOUSE_CLEARANCE = 0.05;
+
 export const STARTING_GOLD = 300;
 export const STARTING_MATERIALS = {
   wood: 0,

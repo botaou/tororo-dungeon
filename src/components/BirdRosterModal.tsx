@@ -11,7 +11,7 @@ import { getMoodDef } from '../data/moods';
 import { getBirdGoalLabel, getBirdStatusLabel } from '../game/birdStatus';
 import { getEffectiveStats } from '../game/birdStats';
 import { BIRD_SKILL_DEF_MAP } from '../data/skills';
-import { expToNextLevel } from '../game/config';
+import { expToNextLevel, HOUSELESS_SULK_TICKS, HOUSELESS_WARNING_TICKS } from '../game/config';
 import { AnimatedPressable } from './AnimatedPressable';
 import { CharacterAvatar } from './CharacterAvatar';
 import { theme } from '../theme';
@@ -32,9 +32,14 @@ interface Props {
   // any bird, no cost/ownership check (out of scope for this pass), never
   // touches the stats shown in statsRow above.
   onSetCosmetic: (defId: string, cosmeticId: string | null) => void;
+  // Phase 14: opens GiftBirdModal for this bird — TownScreen closes this
+  // modal first rather than stacking GiftBirdModal on top of it (two native
+  // Modals visible at once has been a real dead-taps bug in this app
+  // before, see the README's own bugfix notes).
+  onGiftBird: (defId: string) => void;
 }
 
-export function BirdRosterModal({ visible, onClose, birds, onSetCosmetic }: Props) {
+export function BirdRosterModal({ visible, onClose, birds, onSetCosmetic, onGiftBird }: Props) {
   const unlockedCosmeticIds = useCosmeticStore((s) => s.unlockedCosmeticIds);
   // Only ever offers already-unlocked costumes for wearing — the rest need
   // to be found/dropped/crafted then gifted first (see
@@ -107,6 +112,19 @@ export function BirdRosterModal({ visible, onClose, birds, onSetCosmetic }: Prop
                     <Text style={styles.meterItem}>🍚満腹度 {Math.round(bird.satiety)}</Text>
                     <Text style={styles.meterItem}>😊ご機嫌度 {Math.round(bird.happiness)}</Text>
                   </View>
+
+                  {bird.houselessTicks > HOUSELESS_SULK_TICKS && (
+                    <View style={styles.houselessRow}>
+                      <Text style={styles.houselessBadge}>
+                        {bird.houselessTicks > HOUSELESS_WARNING_TICKS
+                          ? '⚠️ 家がなくて、旅立ちを考えているみたい…'
+                          : '🥺 家がなくてちょっと拗ねている'}
+                      </Text>
+                      <AnimatedPressable style={styles.giftButton} onPress={() => onGiftBird(c.id)}>
+                        <Text style={styles.giftButtonText}>🎁 なだめる</Text>
+                      </AnimatedPressable>
+                    </View>
+                  )}
 
                   {bird.skills.length > 0 && (
                     <View style={styles.inventoryRow}>
@@ -253,6 +271,19 @@ const styles = StyleSheet.create({
   statItem: { fontSize: 12, fontWeight: '700', color: theme.textPrimary },
   meterItem: { fontSize: 11, fontWeight: '700', color: theme.textSecondary },
   setBonusLabel: { fontSize: 11, fontWeight: '700', color: theme.gold, marginTop: 4 },
+  houselessRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    backgroundColor: theme.cardAlt,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  houselessBadge: { fontSize: 11, fontWeight: '700', color: theme.textSecondary, flex: 1, marginRight: 6 },
+  giftButton: { backgroundColor: theme.gold, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 },
+  giftButtonText: { fontSize: 11, fontWeight: '700', color: '#fff' },
   equipRow: { flexDirection: 'row', gap: 6, marginTop: 8 },
   equipSlot: {
     flex: 1,

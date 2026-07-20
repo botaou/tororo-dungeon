@@ -47,6 +47,9 @@ export interface BirdWallet {
   // the starter-selection screen (or, later, a real recruitment trigger)
   // sets it. See useWorldStore, which only renders/AI-steps recruited birds.
   isRecruited: boolean;
+  // See BirdState's matching field (types.ts) — Phase 14's houseless
+  // sulk → warning → departure escalation.
+  houselessTicks: number;
 }
 
 function defaultWallet(defId: string): BirdWallet {
@@ -70,6 +73,7 @@ function defaultWallet(defId: string): BirdWallet {
     satiety: STARTING_SATIETY,
     happiness: STARTING_HAPPINESS,
     isRecruited: false,
+    houselessTicks: 0,
   };
 }
 

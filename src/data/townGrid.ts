@@ -293,6 +293,18 @@ export function getTownZoneRadius(): { rx: number; ry: number } {
   return TOWN_ZONE_RADIUS;
 }
 
+// Whether a point has crossed into the town's "core" ellipse — moved here
+// (was a private copy inside game/enemyAi.ts, kept only to stop a chasing
+// enemy from following a fleeing bird into town) so Phase 14's free house
+// placement (useTownStore's buildHouse) can reuse the exact same check as
+// its "is this inside the town area" gate, rather than duplicating the
+// ellipse formula a third time.
+export function isInsideTownZone(x: number, y: number, zoneRadius: { rx: number; ry: number }): boolean {
+  const dx = (x - TOWN_X) / zoneRadius.rx;
+  const dy = (y - TOWN_Y) / zoneRadius.ry;
+  return dx * dx + dy * dy <= 1;
+}
+
 // Phase 12①("空っぽスタート"): the fence ring used to be a single unbroken
 // loop of all 48 posts from the very first tick, regardless of how
 // undeveloped the town actually was — a brand-new save with nothing but the

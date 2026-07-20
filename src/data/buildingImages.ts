@@ -51,6 +51,13 @@ export const HOUSE_IMAGES: Record<string, number> = {
   mone: require('../../assets/buildings/house_mone.png'),
 };
 
+// Phase 14: a freshly-built, not-yet-assigned house (see HouseState.
+// residentDefId === null) — a plain desaturated recolor of one of the
+// bird-colored houses above (simple approach, per the request's own "簡易対応
+// で可"), so an empty house visibly reads as "nobody lives here yet" next to
+// the colorful occupied ones instead of looking broken/missing.
+export const HOUSE_VACANT_IMAGE = require('../../assets/buildings/house_vacant.png');
+
 // A single fence-panel image repeated around the town zone's boundary ring
 // (see WorldMap's fenceNodes), each instance rotated to sit tangent to the
 // ellipse at its own point — simpler than switching between the sheet's
