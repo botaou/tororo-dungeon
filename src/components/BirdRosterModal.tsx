@@ -11,7 +11,7 @@ import { getMoodDef } from '../data/moods';
 import { getBirdGoalLabel, getBirdStatusLabel } from '../game/birdStatus';
 import { getEffectiveStats } from '../game/birdStats';
 import { BIRD_SKILL_DEF_MAP } from '../data/skills';
-import { expToNextLevel, HOUSELESS_SULK_TICKS, HOUSELESS_WARNING_TICKS } from '../game/config';
+import { expToNextLevel, HOUSELESS_SULK_MS, HOUSELESS_WARNING_MS } from '../game/config';
 import { AnimatedPressable } from './AnimatedPressable';
 import { CharacterAvatar } from './CharacterAvatar';
 import { theme } from '../theme';
@@ -113,10 +113,10 @@ export function BirdRosterModal({ visible, onClose, birds, onSetCosmetic, onGift
                     <Text style={styles.meterItem}>😊ご機嫌度 {Math.round(bird.happiness)}</Text>
                   </View>
 
-                  {bird.houselessTicks > HOUSELESS_SULK_TICKS && (
+                  {bird.houselessSinceMs !== null && Date.now() - bird.houselessSinceMs > HOUSELESS_SULK_MS && (
                     <View style={styles.houselessRow}>
                       <Text style={styles.houselessBadge}>
-                        {bird.houselessTicks > HOUSELESS_WARNING_TICKS
+                        {Date.now() - bird.houselessSinceMs > HOUSELESS_WARNING_MS
                           ? '⚠️ 家がなくて、旅立ちを考えているみたい…'
                           : '🥺 家がなくてちょっと拗ねている'}
                       </Text>

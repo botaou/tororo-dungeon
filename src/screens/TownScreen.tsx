@@ -123,7 +123,7 @@ export function TownScreen() {
   const [giftTarget, setGiftTarget] = useState<string | null>(null);
   // Same not-persisted queued-event pattern as shownRecipeUnlockCount —
   // world.houseWarningEvents/houseDepartureEvents aren't persisted either
-  // (only the houselessTicks counter driving them is), so starting at 0
+  // (only the houselessSinceMs timestamp driving them is), so starting at 0
   // never replays a stale backlog.
   const [shownHouseWarningCount, setShownHouseWarningCount] = useState(0);
   const [shownHouseDepartureCount, setShownHouseDepartureCount] = useState(0);

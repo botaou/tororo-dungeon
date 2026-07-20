@@ -11,7 +11,7 @@ interface Props {
 }
 
 // Phase 14: fires once if a HouseWarningModal's warning went unanswered long
-// enough (see config.ts's HOUSELESS_LEAVE_TICKS) — the bird has left town
+// enough (see config.ts's HOUSELESS_LEAVE_MS) — the bird has left town
 // (isRecruited flipped back to false, see useWorldStore's tick). Framed
 // gently ("旅立った", not anything heavier) per this project's own wording
 // policy for negative outcomes (see the HP-0 retreat line precedent).

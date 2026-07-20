@@ -280,6 +280,8 @@ eas build --platform ios --profile production
 eas submit --platform ios --profile production --latest
 ```
 
+54. **フェーズ14 修正: 拗ね→旅立ちの時間基準を、ゲーム内時間(tick)から現実の壁時計時間に変更**: item 53の「約20分で拗ね・約1時間で警告・約2時間で旅立つ」という設計が、実際にはこの秒数がticks(1tick≈1秒、かつオンライン中は`ONLINE_TIME_SCALE`で60倍速のゲーム内時間が進む)基準だったため、現実の数十秒〜数分で旅立ちまで進んでしまうという報告を受けての修正。`BirdState`/`BirdWallet`の`houselessTicks`(tickカウンタ)を`houselessSinceMs: number | null`(家がない状態が続いている、実時刻ベースのepoch msタイムスタンプ。家がある間はnull)に置き換え、`useWorldStore`のtickでは`Date.now() - houselessSinceMs`という単純な経過時間の比較でしきい値判定するように変更した(`HOUSELESS_SULK_MS`=24時間、`HOUSELESS_WARNING_MS`=36時間、`HOUSELESS_LEAVE_MS`=48時間——24時間・48時間は依頼で明示された数値、36時間は「旅立つ瞬間ではなく実際に行動できる猶予を残した警告」にするための中間地点として今回選んだ値)。この方式の最大の利点は、**アプリが閉じている間の経過時間もそのまま判定に使える**こと(`Date.now()`との単純な差分なので、オフライン進行の近似シミュレーション(`game/offlineProgress.ts`)のような特別な対応が一切不要——真夜中に一度だけ開いたセッションでも、閉じていた間の経過時間を含めて正しく判定される)。ただしtick間の差分(前のtickの値としきい値を比較)で「ちょうど今しきい値を超えた瞬間」を検知していた旧方式が使えなくなった(実時刻は複数tickをまたいで一気に進みうるため)ので、代わりに`houselessSulkLogged`/`houselessWarningShown`という「このエピソードで既に表示したか」を示す一度きりフラグ2つを追加し、しきい値を超えている間ずっと同じログ・警告が毎tick再発火し続けるのを防いだ(旅立ち自体は`isRecruited`をfalseにする副作用そのものが自然な一度きりガードになるため、専用フラグは不要)。プレゼントを渡した際のリセットも、`houselessSinceMs`をnullに戻す(+両フラグもfalseに戻す)ことで「基準時刻からやり直す」形にそのまま対応。既存の見た目(拗ね演出・`HouseWarningModal`・`HouseDepartureModal`・`GiftBirdModal`)は変更なし。連続tick・単発tick(長いオフライン明けの1回だけの再開を想定)・プレゼントによるリセット後の再発火、それぞれのシナリオを軽量シミュレーションスクリプトで確認し、`npx tsc --noEmit`・`npx expo export --platform ios`とも確認済み。
+
 ## 今後の拡張候補
 
 - 装備による見た目変化(装備スプライトの作成・重ね着の仕様決定。`ItemDef.spriteVariant`という未使用フィールドは用意済み)、歩く・攻撃・ダメージ・アイドル・寝るの各アニメーション、後ろ姿(いずれも本体スプライトと同じキャンバス/アンカー仕様で拡張する想定)

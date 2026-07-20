@@ -133,8 +133,8 @@ export const CHAT_LINES = [
 ];
 
 // Shown as an occasional speech bubble while a recruited bird has gone
-// without an assigned house for a while (see BirdState.houselessTicks,
-// game/config.ts's HOUSELESS_SULK_TICKS, useWorldStore's tick) — same
+// without an assigned house for a while (see BirdState.houselessSinceMs,
+// game/config.ts's HOUSELESS_SULK_MS, useWorldStore's tick) — same
 // light, bratty tone as RETREAT_LINES above, never anything heavier.
 export const HOUSELESS_LINES = [
   'はやく家がほしいよ〜',

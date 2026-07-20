@@ -16,7 +16,7 @@ interface Props {
 // Phase 14: "なだめる" — hand a houseless-and-sulking bird 1 unit of any item
 // the town warehouse currently holds (simple, not tied to a particular item —
 // see useWorldStore's giveGiftToBird). Cheers the bird up and resets its
-// houselessTicks clock, buying more time before the next warning/departure
+// houselessSinceMs clock, buying more time before the next warning/departure
 // check — it doesn't give the bird a house, just calms it down for a while.
 export function GiftBirdModal({ bird, playerItems, onGift, onClose }: Props) {
   if (!bird) return null;

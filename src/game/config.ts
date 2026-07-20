@@ -401,26 +401,34 @@ export const INSPIRATION_HP_GAIN = 3;
 
 // ---- Phase 14: independent houses, houseless "拗ね" (sulking) → warning →
 // departure ----
-// How many ticks (1 tick ≈ 1s, see TICK_MS) a *recruited* bird can go
-// without an assigned house before it starts moping. Deliberately only
-// counted while the app is actually open and ticking live (see
-// BirdState.houselessTicks's own comment) — a short, forgiving number in
-// wall-clock terms is still a long one in terms of actual play sessions.
-// First-pass numbers, not yet played against real usage — retune if this
-// reads as too eager/too lenient once it's actually live.
-export const HOUSELESS_SULK_TICKS = 60 * 20; // ~20 live minutes
-// Further ticks past HOUSELESS_SULK_TICKS before a one-time "may leave
-// soon" warning fires (see useWorldStore's tick, TownScreen's
-// HouseWarningModal).
-export const HOUSELESS_WARNING_TICKS = 60 * 60; // ~1 further live hour
-// Further ticks past HOUSELESS_WARNING_TICKS, with no house assigned and no
-// cheer-up gift given in the meantime, before the bird actually leaves town
+// Real-time revision: the first pass based these thresholds on tick counts
+// (only advancing while the app was open), which under
+// ONLINE_TIME_SCALE-compressed play read as "leaves within minutes" instead
+// of the intended forgiving grace period — a real-device report. Switched to
+// plain wall-clock milliseconds compared against BirdState.houselessSinceMs
+// (an epoch timestamp, not a counter) — deliberately decoupled from
+// ONLINE_TIME_SCALE and from whether the app is even open: comparing
+// Date.now() against a fixed timestamp is automatically correct across any
+// offline gap, with no special catch-up-simulation handling needed (unlike
+// most of this game's other online/offline-sensitive systems).
+//
+// How long a *recruited* bird can go without an assigned house before it
+// starts moping — one full real day, so a player who can't get to a
+// building material run until tomorrow isn't punished for a single busy day.
+export const HOUSELESS_SULK_MS = 24 * 60 * 60 * 1000;
+// When the one-time "may leave soon" warning fires (see useWorldStore's
+// tick, TownScreen's HouseWarningModal) — partway through the final day
+// before HOUSELESS_LEAVE_MS, so the warning still has real, actionable time
+// behind it instead of firing right as the bird already leaves. Not itself
+// a number the request specified (only the 24h sulk-start and 48h total
+// departure point were) — chosen as a reasonable midpoint; retune freely.
+export const HOUSELESS_WARNING_MS = 36 * 60 * 60 * 1000;
+// Total real time houseless (from the same houselessSinceMs start, not
+// "further past the warning") before the bird actually leaves town
 // (isRecruited flips back to false, same field a not-yet-recruited bird
-// starts with). Deliberately generous — losing a teammate is a real,
-// non-trivial loss, so the total grace period (sulk start → warning →
-// departure) needs to comfortably outlast a player just being busy for a
-// while, not punish a short absence.
-export const HOUSELESS_LEAVE_TICKS = 60 * 60 * 2; // ~2 further live hours
+// starts with) if no house and no cheer-up gift resolved it in time — two
+// full real days, per the request.
+export const HOUSELESS_LEAVE_MS = 48 * 60 * 60 * 1000;
 // Extra happiness drain per tick once sulking has started, layered on top
 // of whatever the ambient mood system already does — deliberately pushes
 // happiness down past HAPPINESS_LOW_THRESHOLD so a houseless bird leans on
@@ -436,9 +444,9 @@ export const HOUSELESS_HAPPINESS_FLOOR = 15;
 // so it reads as an occasional gripe rather than constant nagging.
 export const HOUSELESS_BUBBLE_CHANCE = 0.03;
 // How much happiness a single cheer-up gift restores (see useWorldStore's
-// giveGiftToBird) — the gift's real effect is resetting houselessTicks to 0
-// (buying more time before the next warning), this is just the immediate
-// visible mood bump.
+// giveGiftToBird) — the gift's real effect is resetting houselessSinceMs to
+// null (restarting the real-time clock from scratch), this is just the
+// immediate visible mood bump.
 export const GIFT_HAPPINESS_RESTORE = 25;
 
 // A house is the first building type to use free (non-grid) placement —

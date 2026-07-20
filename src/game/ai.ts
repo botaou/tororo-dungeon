@@ -210,7 +210,7 @@ export interface AiWorld {
   // Phase 14: a recruited bird's own house, keyed by defId — only present
   // for birds who actually have one assigned (see useTownStore's houses,
   // HouseState.residentDefId). A bird with no entry here is genuinely
-  // homeless, not a data error (see BirdState.houselessTicks) — every call
+  // homeless, not a data error (see BirdState.houselessSinceMs) — every call
   // site falls back to the town hall's position as a temporary "lodging"
   // spot, see getHomePosition below.
   housePositions: Partial<Record<string, { x: number; y: number }>>;

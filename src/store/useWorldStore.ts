@@ -71,9 +71,9 @@ import {
   HOUSELESS_BUBBLE_CHANCE,
   HOUSELESS_HAPPINESS_DECAY_PER_TICK,
   HOUSELESS_HAPPINESS_FLOOR,
-  HOUSELESS_LEAVE_TICKS,
-  HOUSELESS_SULK_TICKS,
-  HOUSELESS_WARNING_TICKS,
+  HOUSELESS_LEAVE_MS,
+  HOUSELESS_SULK_MS,
+  HOUSELESS_WARNING_MS,
   LEVEL_UP_ATK_GAIN,
   LEVEL_UP_DEFENSE_GAIN,
   LEVEL_UP_HP_GAIN,
@@ -254,7 +254,9 @@ function buildInitialWorld(): WorldState {
       chatLine: null,
       chatLineSetAt: 0,
       chatPauseTicks: 0,
-      houselessTicks: wallet.houselessTicks,
+      houselessSinceMs: wallet.houselessSinceMs,
+      houselessSulkLogged: wallet.houselessSulkLogged,
+      houselessWarningShown: wallet.houselessWarningShown,
     };
   });
 
@@ -375,8 +377,8 @@ interface WorldActions {
   // item the player's warehouse currently holds (simple "give a gift"
   // action, not tied to any particular item — see the request's own "簡易的
   // なアクションで構わない"), restores some happiness immediately, and
-  // (the actual point) resets houselessTicks to 0, buying more time before
-  // the next warning/departure check. Returns false if the bird isn't
+  // (the actual point) resets houselessSinceMs to null, restarting the
+  // real-time grace period from scratch. Returns false if the bird isn't
   // recruited or the player doesn't own that item.
   giveGiftToBird: (defId: string, itemId: ItemId) => boolean;
 }
@@ -731,43 +733,66 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         moodChangedAt = now;
       }
 
-      // Phase 14: houseless sulk → warning → departure escalation — see
-      // config.ts's HOUSELESS_* constants. Ticks only ever advance live
-      // (this whole block runs once per real tick(), never approximated
-      // during offline catch-up — see BirdState.houselessTicks's comment),
-      // so "just crossed a threshold this tick" is a safe, simple one-time
-      // trigger with no separate "already shown" flag needed.
-      let houselessTicks = b.houselessTicks;
+      // Phase 14 (real-time revision): houseless sulk → warning → departure
+      // escalation, driven by real wall-clock elapsed time (see
+      // config.ts's HOUSELESS_*_MS) rather than a tick count — the first
+      // version undercounted real time whenever the app was closed. Since
+      // elapsed is recomputed fresh from a fixed timestamp each tick
+      // (not accumulated as a delta), "already past the threshold" stays
+      // true on every tick until the episode resets — the two boolean
+      // flags are what stop the log line / warning event from firing again
+      // every single tick for as long as that stays true.
+      let houselessSinceMs = b.houselessSinceMs;
+      let houselessSulkLogged = b.houselessSulkLogged;
+      let houselessWarningShown = b.houselessWarningShown;
       let isRecruited: boolean = b.isRecruited;
       let chatLine = b.chatLine;
       let chatLineSetAt = b.chatLineSetAt;
       if (housedDefIds.has(b.defId)) {
-        houselessTicks = 0;
+        houselessSinceMs = null;
+        houselessSulkLogged = false;
+        houselessWarningShown = false;
       } else {
-        const prevTicks = houselessTicks;
-        houselessTicks += 1;
-        if (houselessTicks > HOUSELESS_SULK_TICKS) {
+        if (houselessSinceMs === null) houselessSinceMs = now;
+        const elapsed = now - houselessSinceMs;
+        if (elapsed >= HOUSELESS_SULK_MS) {
           happiness = Math.max(HOUSELESS_HAPPINESS_FLOOR, happiness - HOUSELESS_HAPPINESS_DECAY_PER_TICK);
-          if (prevTicks <= HOUSELESS_SULK_TICKS) {
+          if (!houselessSulkLogged) {
             newLog.push(makeLogEntry(b.name, 'houseless', `${b.name}は家がなくてちょっと拗ねている`));
+            houselessSulkLogged = true;
           }
           if (Math.random() < HOUSELESS_BUBBLE_CHANCE) {
             chatLine = HOUSELESS_LINES[Math.floor(Math.random() * HOUSELESS_LINES.length)];
             chatLineSetAt = now;
           }
         }
-        if (prevTicks <= HOUSELESS_WARNING_TICKS && houselessTicks > HOUSELESS_WARNING_TICKS) {
+        if (elapsed >= HOUSELESS_WARNING_MS && !houselessWarningShown) {
           newHouseWarningEvents.push({ defId: b.defId, name: b.name });
+          houselessWarningShown = true;
         }
-        if (prevTicks <= HOUSELESS_LEAVE_TICKS && houselessTicks > HOUSELESS_LEAVE_TICKS) {
+        if (elapsed >= HOUSELESS_LEAVE_MS) {
           newHouseDepartureEvents.push({ defId: b.defId, name: b.name });
           newLog.push(makeLogEntry(b.name, 'houseless', `${b.name}は旅立ってしまった…`));
           isRecruited = false;
-          houselessTicks = 0;
+          houselessSinceMs = null;
+          houselessSulkLogged = false;
+          houselessWarningShown = false;
         }
       }
 
-      return { ...b, satiety, happiness, mood, moodChangedAt, houselessTicks, isRecruited, chatLine, chatLineSetAt };
+      return {
+        ...b,
+        satiety,
+        happiness,
+        mood,
+        moodChangedAt,
+        houselessSinceMs,
+        houselessSulkLogged,
+        houselessWarningShown,
+        isRecruited,
+        chatLine,
+        chatLineSetAt,
+      };
     });
 
     // Enemies patrol/chase/return on their own each tick, independent of
@@ -1335,7 +1360,9 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         satiety: b.satiety,
         happiness: b.happiness,
         isRecruited: b.isRecruited,
-        houselessTicks: b.houselessTicks,
+        houselessSinceMs: b.houselessSinceMs,
+        houselessSulkLogged: b.houselessSulkLogged,
+        houselessWarningShown: b.houselessWarningShown,
       };
     useBirdEconomyStore.getState().syncAll(wallets);
 
@@ -1382,11 +1409,13 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     const nextBirds = [...world.birds];
     const bird = { ...nextBirds[birdIndex] };
     bird.happiness = Math.min(100, bird.happiness + GIFT_HAPPINESS_RESTORE);
-    // The real effect: buys more time before the next houseless warning/
-    // departure check (see tick()'s own escalation) — a gift doesn't give
-    // the bird a house, it just cheers it up enough to stop the clock for a
-    // while, same as the request's own "なだめて時間を稼ぐ" framing.
-    bird.houselessTicks = 0;
+    // The real effect: restarts the real-time houseless clock from scratch
+    // (see tick()'s own escalation) — a gift doesn't give the bird a house,
+    // it just cheers it up enough to buy another full grace period, same as
+    // the request's own "なだめて時間を稼ぐ" framing.
+    bird.houselessSinceMs = null;
+    bird.houselessSulkLogged = false;
+    bird.houselessWarningShown = false;
     nextBirds[birdIndex] = bird;
     const log = [
       makeLogEntry(bird.name, 'gift', `${bird.name}に${ITEM_DEF_MAP[itemId].name}をプレゼントした!${bird.name}のご機嫌が直った`),

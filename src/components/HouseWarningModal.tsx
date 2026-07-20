@@ -12,7 +12,7 @@ interface Props {
 }
 
 // Phase 14: fires once a houseless bird's sulking has gone on long enough
-// that it risks leaving town (see config.ts's HOUSELESS_WARNING_TICKS) —
+// that it risks leaving town (see config.ts's HOUSELESS_WARNING_MS) —
 // same queued-event pattern as TownLevelUpModal/RecruitmentModal. "プレゼント
 // を渡す" hands off to GiftBirdModal (see TownScreen, which closes this one
 // first rather than stacking two Modals at once).
