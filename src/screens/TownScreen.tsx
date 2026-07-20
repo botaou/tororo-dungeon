@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Modal, StyleSheet, Text, View } from 'react-native';
+import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { SHOW_ISOMETRIC_DEBUG_BUTTON } from '../game/config';
@@ -202,8 +202,23 @@ export function TownScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.topBar}>
-        <Text style={styles.title}>🏡 トロロの街</Text>
-        <View style={styles.topBarRight}>
+        <Text style={styles.title} numberOfLines={1} ellipsizeMode="tail">
+          🏡 トロロの街
+        </Text>
+        {/* Real-device report: the 5th icon (📐) was invisible on narrower
+            phones — this row had no wrap/scroll, so once gold pill + 5
+            buttons stopped fitting next to the title, the rightmost
+            (newest) button simply rendered past the screen's right edge
+            instead of being clipped visibly or squeezed smaller. A
+            horizontal ScrollView guarantees every button stays reachable
+            (swipe right) regardless of screen width or how many more get
+            added later, instead of silently overflowing off-screen. */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.topBarRightScroll}
+          contentContainerStyle={styles.topBarRight}
+        >
           <View style={styles.goldPill}>
             <Text style={styles.goldIcon}>🪙</Text>
             <Text style={styles.goldValue}>{gold}</Text>
@@ -225,7 +240,7 @@ export function TownScreen() {
               <Text style={styles.inventoryButtonText}>📐</Text>
             </AnimatedPressable>
           ) : null}
-        </View>
+        </ScrollView>
       </View>
 
       <View style={styles.mapWrap}>
@@ -364,7 +379,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingTop: 6,
   },
-  title: { fontSize: 20, fontWeight: '800', color: theme.textPrimary, letterSpacing: 0.3 },
+  title: { fontSize: 20, fontWeight: '800', color: theme.textPrimary, letterSpacing: 0.3, flexShrink: 1, marginRight: 8 },
+  // flexShrink: 0 keeps the icon row's own natural (un-squeezed) size — it's
+  // the ScrollView around it that absorbs any leftover-space shortage by
+  // becoming scrollable, rather than the buttons themselves shrinking.
+  topBarRightScroll: { flexGrow: 0, flexShrink: 0, maxWidth: '62%' },
   topBarRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   goldPill: {
     flexDirection: 'row',
