@@ -12,8 +12,9 @@ import { useGameTimeStore } from './src/store/useGameTimeStore';
 import { OfflineReport } from './src/game/offlineProgress';
 import { useGameClock } from './src/game/useGameClock';
 import { theme } from './src/theme';
-import { SHOW_ISOMETRIC_PROTOTYPE } from './src/game/config';
+import { SHOW_ISOMETRIC_PROTOTYPE, SHOW_ZONE_SPLIT_PROTOTYPE } from './src/game/config';
 import { IsometricPrototypeScreen } from './src/prototypes/isometric/IsometricPrototypeScreen';
+import { ZoneSplitPrototypeScreen } from './src/prototypes/zoneSplit/ZoneSplitPrototypeScreen';
 
 export default function App() {
   // Phase-13 feasibility prototype escape hatch — see config.ts's own
@@ -25,6 +26,16 @@ export default function App() {
     return (
       <SafeAreaProvider>
         <IsometricPrototypeScreen />
+      </SafeAreaProvider>
+    );
+  }
+  // Phase-16 feasibility prototype ("街とダンジョンの画面分割") — same escape
+  // hatch shape as the isometric one above. See config.ts's own comment and
+  // src/prototypes/zoneSplit/ZoneSplitPrototypeScreen.tsx.
+  if (SHOW_ZONE_SPLIT_PROTOTYPE) {
+    return (
+      <SafeAreaProvider>
+        <ZoneSplitPrototypeScreen />
       </SafeAreaProvider>
     );
   }

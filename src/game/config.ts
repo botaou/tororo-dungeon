@@ -29,6 +29,14 @@ export const SHOW_ISOMETRIC_PROTOTYPE = false;
 // false (or delete the button + this flag) once decided.
 export const SHOW_ISOMETRIC_DEBUG_BUTTON = true;
 
+// Phase-16 feasibility prototype ("街とダンジョンの画面分割") — flip to true to
+// view src/prototypes/zoneSplit/ZoneSplitPrototypeScreen in place of the real
+// app (see App.tsx), same "escape hatch, no production impact" shape as
+// SHOW_ISOMETRIC_PROTOTYPE above. Default false. Throwaway flag, safe to
+// delete along with src/prototypes/zoneSplit/ once the feasibility question
+// it exists to answer is settled.
+export const SHOW_ZONE_SPLIT_PROTOTYPE = false;
+
 // How many ticks a bird spends animating a mining/treasure/job encounter
 // before it auto-resolves and it moves on.
 export const ENCOUNTER_HOLD_TICKS = 2;
