@@ -52,6 +52,19 @@ export const WOLF_ENEMY_NAME = 'オオカミ';
 export const ENCOUNTER_RADIUS = 0.07;
 export const ENCOUNTER_CHANCE_PER_TICK = 0.04;
 
+// ---- アルシェル: shrine restoration (Phase 15②) ----
+// Same shape as checkVivi's town-level gate — the shrine's own visual stage
+// (see data/shrine.ts's SHRINE_STAGE_DEFS) is keyed off townLevel exactly
+// like TOWNHALL_IMAGES already is, so "fully restored" and "town reached its
+// top tier" are the same moment: no separate persisted "restoration
+// progress" field is needed, same reasoning townLevel-driven TOWNHALL_IMAGES
+// already established.
+export const ALSHEL_TOWN_LEVEL_REQUIRED = 5;
+
+export function checkAlshel(townLevel: number): boolean {
+  return townLevel >= ALSHEL_TOWN_LEVEL_REQUIRED;
+}
+
 function isAnyoneNear(positions: { x: number; y: number }[], spot: { x: number; y: number }): boolean {
   return positions.some((p) => Math.hypot(p.x - spot.x, p.y - spot.y) <= ENCOUNTER_RADIUS);
 }

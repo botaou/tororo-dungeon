@@ -460,6 +460,36 @@ export const HOUSE_BUILD_COST = { gold: 200, materialId: 'wood' as const, materi
 // BUILDING_CLEARANCE.
 export const HOUSE_CLEARANCE = 0.05;
 
+// Phase 15①: the mayor's room's own free-placement furniture/mannequins —
+// same overlap-avoidance idea as HOUSE_CLEARANCE above, just for the room's
+// own dedicated coordinate system rather than world x/y (see
+// useMayorRoomStore). Furniture is acquired by crafting it first (see data/
+// furnitureRecipes.ts) rather than paid for again at placement time, so
+// there's no matching FURNITURE_BUILD_COST here.
+export const FURNITURE_CLEARANCE = 0.08;
+
+// How long a visiting bird lingers in the mayor's room before wandering off
+// again (see ai.ts's executeVisitMayorRoom) — same shape as PLAY_DWELL_TICKS.
+export const VISIT_DWELL_TICKS = 3;
+// Once per visit (see executeVisitMayorRoom), independent chances to leave a
+// gift behind (consumes 1 unit of a random warehouse item — see
+// useMayorRoomStore's gifts) or to freely re-dress into a different unlocked
+// costume — both are flavor-only, "小さな来訪イベント" per the request, not
+// tied to any real reward.
+export const MAYOR_ROOM_GIFT_CHANCE = 0.2;
+export const MAYOR_ROOM_REDRESS_CHANCE = 0.15;
+// Same rolling-cap idea as ACTIVITY_LOG_MAX — keeps useMayorRoomStore.gifts
+// from growing unbounded across a long-running save.
+export const FURNITURE_GIFT_LOG_MAX = 20;
+
+// 怪しいアイテム屋(mystery shop) — Phase 15③'s gacha-style draw. Reuses the
+// exact same rare/common pool split + odds as the visiting merchant's own
+// randomized lineup (see data/items.ts's MERCHANT_COMMON_ITEM_IDS/
+// MERCHANT_RARE_ITEM_IDS, MERCHANT_RARE_CHANCE above), per the request's own
+// "既存の商人レアアイテムプールの仕組みを流用してよい" — just a flat gold
+// price instead of a shop-shelf purchase.
+export const MYSTERY_GACHA_COST = 150;
+
 export const STARTING_GOLD = 300;
 export const STARTING_MATERIALS = {
   wood: 0,

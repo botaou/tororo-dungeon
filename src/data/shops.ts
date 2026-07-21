@@ -22,9 +22,27 @@ export interface ShopDef {
 // would be a much bigger town-layout change than "sell more gear", so
 // 'general' absorbed all three non-body slots the same way it already
 // carried both hat and shield before this pass.
+// Phase 15③ shop expansion: 'restaurant' shares the 'food' category with
+// 'feed' — CraftingPanel/StockingPanel filter purely by ItemCategory, so
+// both shops show the same craftable/shelvable food catalog (same loose
+// precedent as 'general' already sharing no fewer than 3 categories at
+// once). The one real difference is that ai.ts's stepShopFood only ever
+// walks a hungry bird to the 'feed' shop by name — 'restaurant' is a
+// player-facing flavor shop (craft/shelve/view), not a second autonomous
+// food source. 'toy' is its own category with no bird-side consumer either
+// — おもちゃ屋 is decorative/collectible for now, same reasoning.
 export const SHOP_DEFS: Record<ShopKind, ShopDef> = {
   general: { id: 'general', name: '道具屋', emoji: '🛠️', categories: ['head', 'hand', 'foot'] },
   feed: { id: 'feed', name: '餌屋', emoji: '🌾', categories: ['food'] },
   weapon: { id: 'weapon', name: '武器屋', emoji: '⚔️', categories: ['weapon'] },
   armor: { id: 'armor', name: '防具屋', emoji: '🛡️', categories: ['body'] },
+  // 'clothing'/'furniture'/'mystery' don't use the categories-based shelf at
+  // all (see TownScreen's shop-tap dispatch, which opens a dedicated modal
+  // for each instead of ShopModal) — categories: [] here purely so every
+  // ShopKind still has a well-typed ShopDef entry.
+  clothing: { id: 'clothing', name: '服屋', emoji: '👗', categories: [] },
+  restaurant: { id: 'restaurant', name: '食堂', emoji: '🍽️', categories: ['food'] },
+  furniture: { id: 'furniture', name: '家具屋', emoji: '🪑', categories: [] },
+  toy: { id: 'toy', name: 'おもちゃ屋', emoji: '🧸', categories: ['toy'] },
+  mystery: { id: 'mystery', name: '怪しいアイテム屋', emoji: '🔮', categories: [] },
 };

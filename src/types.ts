@@ -85,13 +85,26 @@ export type ItemId =
   | 'nutritionBiscuit'
   | 'deluxeBlend'
   | 'energyPellet'
-  | 'luckyTreat';
+  | 'luckyTreat'
+  // Phase 15③: 食堂(restaurant) — a couple of sample dishes, distinct from
+  // the feed shop's plain everyday food/premium-feed lines above.
+  | 'gourmetSoup'
+  | 'sweetPudding'
+  // Phase 15③: おもちゃ屋(toy shop) — a new 'toy' ItemCategory (see below),
+  // craftable/shelvable through the exact same pipeline as any other
+  // ItemDef, per the request's own "既存の拡張パターンに従ってよい".
+  | 'toyBall'
+  | 'toyFeather';
 
 // What genre of shop carries an item — also which shop building it can be
 // crafted "at" (see data/shops.ts) and shelved into. weapon/head/body/hand/
 // foot double as the five equipment slots (see EquipSlot) — rare/food are
 // goods, not gear, and can't be equipped.
-export type ItemCategory = 'weapon' | 'head' | 'body' | 'hand' | 'foot' | 'rare' | 'food';
+// Phase 15③: 'toy' is おもちゃ屋's own category — a plain, non-equippable
+// goods category (like 'food'/'rare'), added rather than reusing 'rare'
+// since toys are ordinary shelvable/craftable goods, not treasure sold to
+// the visiting merchant.
+export type ItemCategory = 'weapon' | 'head' | 'body' | 'hand' | 'foot' | 'rare' | 'food' | 'toy';
 
 // 'craft' items are usable (equippable gear or consumable food) and flow
 // through the normal player warehouse → shop shelf pipeline. 'convertible'
@@ -141,7 +154,15 @@ export type CosmeticCategory = 'costume' | 'outfit' | 'cute' | 'event' | 'theme'
 // only come into being once the player constructs one (see data/
 // buildingOptions.ts), so they start the game completely unavailable rather
 // than merely locked-and-visible.
-export type ShopKind = 'general' | 'feed' | 'weapon' | 'armor';
+// Phase 15③ shop expansion — same "construct it first" rule as weapon/armor:
+// 'clothing' (服屋/仕立て屋) opens the existing costume craft/gift screen
+// (see CostumeCollectionModal) rather than the plain ItemDef shelf every
+// other kind uses; 'restaurant' (食堂) and 'toy' (おもちゃ屋) are ordinary
+// ItemDef shops like general/feed, just with their own category/shelf;
+// 'furniture' (家具屋) opens a dedicated craft screen producing mayor's-room
+// furniture (see useMayorRoomStore) instead of a warehouse item; 'mystery'
+// (怪しいアイテム屋) opens a gacha-style draw instead of a shelf at all.
+export type ShopKind = 'general' | 'feed' | 'weapon' | 'armor' | 'clothing' | 'restaurant' | 'furniture' | 'toy' | 'mystery';
 
 // Forward-looking, currently-unused bonus hooks a food item could carry —
 // present purely as data so a later pass can wire actual effects (HP
@@ -229,6 +250,12 @@ export interface CharacterDef {
   baseSpeed: number; // reserved for future movement/turn-order use; display-only today
   baseLuck: number; // reserved for future drop/crit-rate use; display-only today
   materialBonusPercent?: number; // bonus % applied when this bird delivers materials
+  // Phase 15②: whether this character is offered on CharacterSelectScreen's
+  // starter picker. Absent (or true) for the original 4 — a later recruit
+  // like アルシェル (who joins via the shrine's own restoration condition,
+  // see game/recruitment.ts's checkAlshel) sets this false so she doesn't
+  // show up as a pickable starting bird before she's even met.
+  isStarter?: boolean;
 }
 
 // One possible drop roll on a kill or a gather — independently checked
@@ -437,7 +464,11 @@ export type ActivityKind =
   // visible "stop and do this" beat instead of birds staying in constant
   // motion.
   | 'chatting'
-  | 'napping';
+  | 'napping'
+  // Phase 15①: visiting the mayor's room (see ai.ts's executeVisitMayorRoom)
+  // — warp-like (the room has its own dedicated coordinate space, see
+  // useMayorRoomStore), same "stop and do this" shape as playing/napping.
+  | 'visiting';
 
 // A pursuit goal a bird's AI is actively working toward. A job is just a
 // mining/treasure pursuit restricted to a specific request's material and
@@ -458,13 +489,18 @@ export type TargetKind =
   | 'townHall'
   | 'detour'
   | 'play'
-  | 'nap';
+  | 'nap'
+  // Phase 15①: heading to (warping into) the mayor's room — see
+  // ai.ts's executeVisitMayorRoom.
+  | 'mayorRoom';
 
 // The five things every bird can choose to do — personality only weights
 // how likely each one is to be picked, it never rules one out entirely.
 // 'play' (Phase 11) only ever gets picked if at least one park/bathhouse has
-// been constructed (see ai.ts's pickCategory).
-export type ActivityCategory = 'combat' | 'mining' | 'explore' | 'rest' | 'play';
+// been constructed (see ai.ts's pickCategory). 'visit' (Phase 15①) is always
+// available — the mayor's room is part of the always-present town hall, not
+// a constructible building.
+export type ActivityCategory = 'combat' | 'mining' | 'explore' | 'rest' | 'play' | 'visit';
 
 export interface BirdState {
   defId: string; // birds are fixed individuals, defId doubles as identity
@@ -738,6 +774,29 @@ export interface HouseState {
   x: number;
   y: number;
   residentDefId: string | null;
+}
+
+// Phase 15①: one placed furniture/mannequin piece inside the mayor's room
+// (see useMayorRoomStore, data/furniture.ts's FURNITURE_DEFS). x/y are 0..1
+// coordinates in the room's OWN dedicated canvas — a separate space from
+// every other x/y in this file (world position, house position, plot
+// position), per the request's own "街エリア内かの判定は不要" — this room has
+// no relationship to the outdoor town zone at all.
+export interface FurnitureInstance {
+  id: string;
+  defId: string;
+  x: number;
+  y: number;
+}
+
+// A gift a visiting bird left behind in the mayor's room (see ai.ts's
+// executeVisitMayorRoom, useMayorRoomStore) — flavor-only, just a small log
+// the player can look back through in MayorRoomModal.
+export interface MayorRoomGiftEntry {
+  id: string;
+  itemId: ItemId;
+  birdName: string;
+  at: number; // epoch ms
 }
 
 // Which of the 4 routes (see game/recipeUnlocks.ts) taught the player a

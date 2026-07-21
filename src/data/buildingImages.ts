@@ -23,13 +23,18 @@ export const TOWNHALL_IMAGES: Record<number, number> = {
 
 // Keyed by ShopKind (see types.ts) — 'general' is the hat/shield branch
 // (餌屋 and 道具屋 are visually distinct buildings in the reference sheet
-// despite both being data/shops.ts SHOP_DEFS entries).
-export const SHOP_IMAGES = {
+// despite both being data/shops.ts SHOP_DEFS entries). Partial rather than a
+// full Record<ShopKind, number> — Phase 15③'s 5 new shop kinds have no
+// matching reference art (sample-level scope, no new reference sheet
+// commissioned), so they fall back to WorldMap's plain emoji-chip plot look
+// (see PlotSprite's shopImage ?? amenityImage fallback) same as 'garden'
+// already does among the decorative BuildingOptions.
+export const SHOP_IMAGES: Partial<Record<import('../types').ShopKind, number>> = {
   general: require('../../assets/buildings/shop_general.png'),
   feed: require('../../assets/buildings/shop_feed.png'),
   weapon: require('../../assets/buildings/shop_weapon.png'),
   armor: require('../../assets/buildings/shop_armor.png'),
-} as const;
+};
 
 export const MERCHANT_TENT_IMAGE = require('../../assets/buildings/merchant_tent.png');
 

@@ -13,13 +13,17 @@ import { cuteShadow, theme } from '../theme';
 // isRecruited) until a future phase adds a real way to invite them in.
 export function CharacterSelectScreen() {
   const recruitBird = useBirdEconomyStore((s) => s.recruitBird);
+  // Phase 15②: later recruits like アルシェル (who joins via the shrine's
+  // own restoration condition, not a starter pick) set isStarter: false so
+  // they never show up here.
+  const starterCharacters = CHARACTERS.filter((c) => c.isStarter !== false);
 
   return (
     <SafeAreaView style={styles.container}>
       <Text style={styles.title}>🏡 トロロの街</Text>
       <Text style={styles.subtitle}>一緒に街を始める鳥を選んでください</Text>
       <ScrollView contentContainerStyle={styles.list}>
-        {CHARACTERS.map((c) => (
+        {starterCharacters.map((c) => (
           <View key={c.id} style={[styles.card, { borderColor: c.color }]}>
             <CharacterAvatar characterId={c.id} emoji={c.emoji} color={c.color} size={64} />
             <View style={styles.cardText}>

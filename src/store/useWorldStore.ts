@@ -36,6 +36,7 @@ import { respawnPosition, stepEnemy } from '../game/enemyAi';
 import { AttackAssignment, applyHealing, resolveAttacks } from '../game/combat';
 import { scoreRequestAcceptance, tryAcceptRequest } from '../game/requests';
 import {
+  checkAlshel,
   checkHaku,
   checkMoneEncounter,
   checkTororoEncounter,
@@ -116,6 +117,7 @@ import { useGameTimeStore } from './useGameTimeStore';
 import { useQuestStore } from './useQuestStore';
 import { useRecipeStore } from './useRecipeStore';
 import { useTownStore } from './useTownStore';
+import { useMayorRoomStore } from './useMayorRoomStore';
 import { getAllAmenityPositions, getAllBuiltPlotPositions, getAllShopPositions, getTownZoneRadius } from '../data/townGrid';
 import { checkTownQuestCondition, TOWN_QUESTS } from '../data/townQuests';
 
@@ -861,6 +863,10 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       // actually has something built on it — see ai.ts's randomPointNearTown.
       occupiedSpots: [{ x: TOWN_X, y: TOWN_Y }, ...getAllBuiltPlotPositions(useTownStore.getState().plots)],
       housePositions,
+      availableGiftItemIds: (Object.keys(usePlayerStore.getState().items) as ItemId[]).filter(
+        (id) => (usePlayerStore.getState().items[id] ?? 0) > 0
+      ),
+      unlockedCosmeticIds: useCosmeticStore.getState().unlockedCosmeticIds,
     };
 
     const allAssignments: AttackAssignment[] = [];
@@ -1006,6 +1012,28 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
             )
           );
         }
+      }
+      if (outcome.startedVisiting) {
+        newLog.push(makeLogEntry(bird.name, 'visit', `${bird.name}が町長室を訪ねている`));
+      }
+      if (outcome.visitGiftItemId) {
+        // Flavor-only "leave a gift" roll (see ai.ts's executeVisitMayorRoom)
+        // — consumes 1 unit from the warehouse, same as giveGiftToBird's own
+        // item spend, and records it in useMayorRoomStore for MayorRoomModal
+        // to show. A no-op (silently skipped) if the item's already gone by
+        // the time this tick applies it — nothing to compensate, since the
+        // bird never actually "had" it, just rolled a hopeful pick off a
+        // snapshot taken at the start of this tick.
+        if (usePlayerStore.getState().consumeItems(outcome.visitGiftItemId, 1)) {
+          useMayorRoomStore.getState().addGift(outcome.visitGiftItemId, bird.name);
+          newLog.push(
+            makeLogEntry(bird.name, 'visit', `${bird.name}が町長室に${ITEM_DEF_MAP[outcome.visitGiftItemId].name}を置いていった`)
+          );
+        }
+      }
+      if (outcome.visitRedressCosmeticId) {
+        bird.cosmeticId = outcome.visitRedressCosmeticId;
+        newLog.push(makeLogEntry(bird.name, 'visit', `${bird.name}が町長室で勝手に着せ替えをしている`));
       }
       if (outcome.sellAttempt) {
         // A bird offers one material at a time (see pickSellOffer in ai.ts).
@@ -1322,6 +1350,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       haku: () => checkHaku(quests.isComplete(HAKU_QUEST_ID)),
       tororo: () => checkTororoEncounter(activeBirdPositions),
       mone: () => checkMoneEncounter(activeBirdPositions, quests.isComplete(MONE_WOLF_KILL_MILESTONE_ID)),
+      alshel: () => checkAlshel(townLevel),
     };
     for (const bird of finalBirds) {
       if (bird.isRecruited) continue;

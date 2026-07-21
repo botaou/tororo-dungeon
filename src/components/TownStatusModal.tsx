@@ -12,6 +12,10 @@ interface Props {
   townQuestIndex: number;
   developmentPoints: number;
   onClose: () => void;
+  // Phase 15①: the mayor's room lives inside the town hall — this modal is
+  // still what tapping the town hall opens first (unchanged), with a button
+  // through to the room itself, rather than replacing this screen outright.
+  onOpenMayorRoom: () => void;
 }
 
 // Tapping the town hall opens this — shows the current tier plus, Phase
@@ -20,7 +24,7 @@ interface Props {
 // developmentPoints at all (see useTownStore's townLevel/data/townQuests.ts)
 // — developmentPoints is shown purely as a flavor/reputation-adjacent
 // readout of "how much this town has done," same idea as reputation.
-export function TownStatusModal({ visible, townLevel, townQuestIndex, developmentPoints, onClose }: Props) {
+export function TownStatusModal({ visible, townLevel, townQuestIndex, developmentPoints, onClose, onOpenMayorRoom }: Props) {
   const def = getTownLevelDef(townLevel);
   const activeQuest = TOWN_QUESTS[townQuestIndex] ?? null;
 
@@ -48,6 +52,10 @@ export function TownStatusModal({ visible, townLevel, townQuestIndex, developmen
           <Text style={styles.hintText}>
             地図上の色付きエリアは街の雰囲気を示す演出です。建物は解放済みの土地ならどこでも建てられます。
           </Text>
+
+          <AnimatedPressable style={styles.mayorRoomButton} onPress={onOpenMayorRoom}>
+            <Text style={styles.mayorRoomButtonText}>🛋️ 町長室を見る</Text>
+          </AnimatedPressable>
 
           <AnimatedPressable style={styles.closeButton} onPress={onClose}>
             <Text style={styles.closeButtonText}>とじる</Text>
@@ -88,6 +96,16 @@ const styles = StyleSheet.create({
   questDescription: { fontSize: 11, color: theme.textSecondary, marginTop: 4, textAlign: 'center' },
   nextText: { fontSize: 12, color: theme.textSecondary, marginTop: 14, textAlign: 'center' },
   hintText: { fontSize: 11, color: theme.textMuted, marginTop: 14, textAlign: 'center' },
+  mayorRoomButton: {
+    marginTop: 16,
+    borderRadius: 999,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    alignItems: 'center',
+    backgroundColor: theme.gold,
+    alignSelf: 'stretch',
+  },
+  mayorRoomButtonText: { color: '#fff', fontWeight: '800', fontSize: 13 },
   closeButton: {
     marginTop: 16,
     borderRadius: 999,

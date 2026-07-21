@@ -3,10 +3,11 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { ItemId, MaterialId, PlayerState, ShopKind } from '../types';
-import { STARTING_GOLD, STARTING_MATERIALS } from '../game/config';
+import { MERCHANT_RARE_CHANCE, MYSTERY_GACHA_COST, STARTING_GOLD, STARTING_MATERIALS } from '../game/config';
 import { CRAFTING_RECIPES } from '../data/recipes';
 import { COSTUME_RECIPES } from '../data/costumeRecipes';
 import { MATERIAL_SELL_PRICE } from '../data/marketPrices';
+import { MERCHANT_COMMON_ITEM_IDS, MERCHANT_RARE_ITEM_IDS } from '../data/items';
 import { useRecipeStore } from './useRecipeStore';
 import { useCosmeticStore } from './useCosmeticStore';
 
@@ -64,6 +65,14 @@ interface PlayerActions {
   // A bird buying `amount` units off a shop's shelf for `totalRevenue` gold.
   // Decrements the shelf (clamped at 0) and credits the sale as shop toll.
   fulfillShopPurchase: (shopKind: ShopKind, itemId: ItemId, amount: number, totalRevenue: number) => void;
+  // 怪しいアイテム屋(mystery shop)'s gacha draw — spends MYSTERY_GACHA_COST
+  // gold for one random craft item, straight into the warehouse. Reuses the
+  // exact same rare/common pool split the visiting merchant's own lineup
+  // draws from (see rollMerchantLineup in useWorldStore) rather than a new
+  // pool, per the request's own "既存の商人レアアイテムプールの仕組みを流用
+  // してよい". Returns the drawn item's id, or null if the player can't
+  // afford it.
+  drawMysteryItem: () => ItemId | null;
 }
 
 type PlayerStore = PlayerState & PlayerActions;
@@ -72,7 +81,7 @@ const initialState: PlayerState = {
   gold: STARTING_GOLD,
   materials: { ...STARTING_MATERIALS },
   items: {},
-  shopStock: { general: {}, feed: {}, weapon: {}, armor: {} },
+  shopStock: { general: {}, feed: {}, weapon: {}, armor: {}, clothing: {}, restaurant: {}, furniture: {}, toy: {}, mystery: {} },
   tollFromHunt: 0,
   tollFromFood: 0,
   tollFromTraveler: 0,
@@ -211,6 +220,15 @@ export const usePlayerStore = create<PlayerStore>()(
           gold: gold + totalRevenue,
           tollFromShop: tollFromShop + totalRevenue,
         });
+      },
+
+      drawMysteryItem: () => {
+        const { gold, items } = get();
+        if (gold < MYSTERY_GACHA_COST) return null;
+        const pool = Math.random() < MERCHANT_RARE_CHANCE ? MERCHANT_RARE_ITEM_IDS : MERCHANT_COMMON_ITEM_IDS;
+        const itemId = pool[Math.floor(Math.random() * pool.length)];
+        set({ gold: gold - MYSTERY_GACHA_COST, items: { ...items, [itemId]: (items[itemId] ?? 0) + 1 } });
+        return itemId;
       },
     }),
     {

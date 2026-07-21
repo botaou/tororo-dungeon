@@ -82,6 +82,53 @@ export const BUILDING_OPTIONS: BuildingOption[] = [
     shopKind: null,
     cost: { gold: 150, materialId: 'waterweed', materialAmount: 8 },
   },
+  // Phase 15③ shop expansion — same "build it to unlock it" pattern as
+  // weapon_shop/armor_shop above, just for the 5 new ShopKinds.
+  {
+    id: 'clothing_shop',
+    name: '服屋',
+    emoji: '👗',
+    description: '仕立て屋も兼ねる服屋。コスチューム図鑑から素材で仕立てられます。',
+    buildingKind: 'shop',
+    shopKind: 'clothing',
+    cost: { gold: 350, materialId: 'herb', materialAmount: 10 },
+  },
+  {
+    id: 'restaurant',
+    name: '食堂',
+    emoji: '🍽️',
+    description: '街自慢の料理を並べる食堂。餌屋とは別に、ちょっと贅沢な一品を扱います。',
+    buildingKind: 'shop',
+    shopKind: 'restaurant',
+    cost: { gold: 300, materialId: 'mushroom', materialAmount: 10 },
+  },
+  {
+    id: 'furniture_shop',
+    name: '家具屋',
+    emoji: '🪑',
+    description: '町長室に置く家具・マネキンを、素材から仕立てられます。',
+    buildingKind: 'shop',
+    shopKind: 'furniture',
+    cost: { gold: 350, materialId: 'wood', materialAmount: 10 },
+  },
+  {
+    id: 'toy_shop',
+    name: 'おもちゃ屋',
+    emoji: '🧸',
+    description: 'おもちゃの品揃え。この店を建てるまで、おもちゃは扱えません。',
+    buildingKind: 'shop',
+    shopKind: 'toy',
+    cost: { gold: 250, materialId: 'feather', materialAmount: 10 },
+  },
+  {
+    id: 'mystery_shop',
+    name: '怪しいアイテム屋',
+    emoji: '🔮',
+    description: 'ゴールドを払うと、何が出るか分からない品物を1つ引き当てられます。',
+    buildingKind: 'shop',
+    shopKind: 'mystery',
+    cost: { gold: 400, materialId: 'magicStone', materialAmount: 5 },
+  },
 ];
 
 export function getBuildingOption(id: string | null): BuildingOption | null {

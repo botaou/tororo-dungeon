@@ -39,6 +39,7 @@ import {
   TOWNHALL_IMAGES,
 } from '../data/buildingImages';
 import { ENEMY_IMAGES, FIELD_OBJECT_AFTER_IMAGES, FIELD_OBJECT_IMAGES } from '../data/fieldImages';
+import { getShrineStageDef, SHRINE_SPOT } from '../data/shrine';
 import { CharacterAvatar } from './CharacterAvatar';
 import { AnimatedPressable } from './AnimatedPressable';
 import { DEBUG_SHOW_SPRITE_BOUNDS, TICK_MS } from '../game/config';
@@ -472,6 +473,8 @@ export function WorldMap({
         />
       )}
 
+      <ShrineSprite x={SHRINE_SPOT.x * fieldWidth} y={SHRINE_SPOT.y * fieldHeight} townLevel={townLevel} />
+
       {dormantDefIds.includes('tororo') && (
         <EncounterMarker x={TORORO_ENCOUNTER_SPOT.x * fieldWidth} y={TORORO_ENCOUNTER_SPOT.y * fieldHeight} />
       )}
@@ -832,6 +835,25 @@ function PlotSprite({
         </Text>
       )}
     </>
+  );
+}
+
+// Phase 15②: the town's abandoned shrine — always present from game start,
+// no tap interaction (nothing to open yet, same as the leisure spots below),
+// just a visual cue that gradually brightens/decorates as townLevel rises
+// (see data/shrine.ts's SHRINE_STAGE_DEFS), until アルシェル moves in once
+// the town reaches its top tier (see game/recruitment.ts's checkAlshel).
+function ShrineSprite({ x, y, townLevel }: { x: number; y: number; townLevel: number }) {
+  const stage = getShrineStageDef(townLevel);
+  return (
+    <View pointerEvents="none" style={[styles.sprite, { left: x, top: y, opacity: stage.opacity }]}>
+      <Text style={styles.emojiLarge}>
+        {stage.decor ? `${stage.decor} ` : ''}
+        {stage.emoji}
+        {stage.decor ? ` ${stage.decor}` : ''}
+      </Text>
+      <Text style={styles.nameTag}>{stage.label}</Text>
+    </View>
   );
 }
 

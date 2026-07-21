@@ -24,6 +24,7 @@ interface ThoughtLines {
   playing?: string;
   chatting?: string;
   napping?: string;
+  visiting?: string;
 }
 
 // Flavor lines shown when the player taps a bird — a hint at what it's
@@ -150,6 +151,7 @@ export const RECRUIT_LINES: Record<string, string> = {
   haku: '少しはお役に立てそうです。よろしくお願いします。',
   tororo: 'ここで会ったのも何かの縁!一緒に行こう!',
   mone: '面白そうな街だね!わたしも混ぜて!',
+  alshel: '長い眠りから覚めました。この街で、少しだけお手伝いさせてください。',
 };
 
 export function getBirdThought(defId: string, mood: MoodId, activity: ActivityKind, hasJob: boolean): string {

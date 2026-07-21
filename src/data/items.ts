@@ -203,6 +203,36 @@ export const ITEM_DEFS: ItemDef[] = [
     rarity: 'normal',
     effects: { expBonusPercent: 15 },
   },
+
+  // Phase 15③: 食堂(restaurant) — a couple of sample dishes, distinct from
+  // the feed shop's everyday/premium feed lines above (same 'food' category,
+  // different shop shelf — see data/shops.ts's 'restaurant' entry).
+  {
+    id: 'gourmetSoup',
+    name: '街自慢のスープ',
+    category: 'food',
+    itemType: 'craft',
+    emoji: '🍲',
+    buyPrice: 24,
+    rarity: 'normal',
+    effects: { hpRestorePercent: 12 },
+  },
+  {
+    id: 'sweetPudding',
+    name: 'ふるふるプリン',
+    category: 'food',
+    itemType: 'craft',
+    emoji: '🍮',
+    buyPrice: 20,
+    rarity: 'normal',
+    effects: { expBonusPercent: 8 },
+  },
+
+  // Phase 15③: おもちゃ屋(toy shop) — a couple of sample toys, a brand-new
+  // 'toy' category (see types.ts's ItemCategory) but otherwise flowing
+  // through the exact same warehouse→shop pipeline as every other craft item.
+  { id: 'toyBall', name: 'ボールのおもちゃ', category: 'toy', itemType: 'craft', emoji: '🪀', buyPrice: 15, rarity: 'normal' },
+  { id: 'toyFeather', name: '羽根のおもちゃ', category: 'toy', itemType: 'craft', emoji: '🧸', buyPrice: 18, rarity: 'normal' },
 ];
 
 // Convertible items the merchant will buy off birds — derived rather than

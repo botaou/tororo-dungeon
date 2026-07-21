@@ -63,6 +63,26 @@ export const CHARACTERS: CharacterDef[] = [
     baseLuck: 8,
     materialBonusPercent: 20,
   },
+  // Phase 15②: joins once the town's abandoned shrine finishes its own
+  // gradual restoration (see game/recruitment.ts's checkAlshel, data/
+  // shrine.ts's SHRINE_STAGE_DEFS) — not one of the other 4 birds' own
+  // triggers, and not offered on the starter picker (see isStarter below).
+  {
+    id: 'alshel',
+    name: 'アルシェル',
+    role: 'healer',
+    personality: 'cautious',
+    description: '街はずれの廃神社に長いこと眠っていた、物静かな鳥。街が育っていく気配を感じ取って、少しずつ姿を見せるようになった。',
+    roleLabel: '癒し・見守り役',
+    color: '#b9a4e0',
+    emoji: '🤍',
+    baseAtk: 12,
+    baseHp: 40,
+    baseDefense: 6,
+    baseSpeed: 4,
+    baseLuck: 7,
+    isStarter: false,
+  },
 ];
 
 export function getCharacterDef(defId: string): CharacterDef {

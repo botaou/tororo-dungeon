@@ -82,8 +82,8 @@ const LAYOUTS: Record<
     isTownCell: isRadialTownCell,
     buildings: [
       { key: 'townhall', gridX: 2, gridY: 2, image: TOWNHALL_IMAGES[1], width: 70, height: 70, label: '役場' },
-      { key: 'shopA', gridX: 2, gridY: 0, image: SHOP_IMAGES.general, width: 56, height: 56, label: '道具屋' },
-      { key: 'shopB', gridX: 4, gridY: 2, image: SHOP_IMAGES.feed, width: 56, height: 56, label: '餌屋' },
+      { key: 'shopA', gridX: 2, gridY: 0, image: SHOP_IMAGES.general!, width: 56, height: 56, label: '道具屋' },
+      { key: 'shopB', gridX: 4, gridY: 2, image: SHOP_IMAGES.feed!, width: 56, height: 56, label: '餌屋' },
     ],
   },
   organic: {
@@ -94,8 +94,8 @@ const LAYOUTS: Record<
       { key: 'townhall', gridX: 2, gridY: 2, image: TOWNHALL_IMAGES[1], width: 70, height: 70, label: '役場' },
       // Tucked into a corner of the blob rather than sitting on an axis —
       // "not on a ring" is the whole point here.
-      { key: 'shopA', gridX: 1, gridY: 1, image: SHOP_IMAGES.general, width: 56, height: 56, label: '道具屋' },
-      { key: 'shopB', gridX: 5, gridY: 3, image: SHOP_IMAGES.feed, width: 56, height: 56, label: '餌屋' },
+      { key: 'shopA', gridX: 1, gridY: 1, image: SHOP_IMAGES.general!, width: 56, height: 56, label: '道具屋' },
+      { key: 'shopB', gridX: 5, gridY: 3, image: SHOP_IMAGES.feed!, width: 56, height: 56, label: '餌屋' },
       // Deliberately non-integer grid coordinates — gridToScreen already
       // accepts any real number, so "free" (not grid-locked) placement
       // needs zero new math, just a UI for picking a continuous position.

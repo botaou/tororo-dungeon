@@ -27,6 +27,9 @@ import { ConstructionModal } from '../components/ConstructionModal';
 import { RecipeUnlockModal } from '../components/RecipeUnlockModal';
 import { SkillUnlockModal } from '../components/SkillUnlockModal';
 import { TownStatusModal } from '../components/TownStatusModal';
+import { MayorRoomModal } from '../components/MayorRoomModal';
+import { FurnitureShopModal } from '../components/FurnitureShopModal';
+import { MysteryShopModal } from '../components/MysteryShopModal';
 import { HouseInventoryModal } from '../components/HouseInventoryModal';
 import { HouseAssignModal } from '../components/HouseAssignModal';
 import { GiftBirdModal } from '../components/GiftBirdModal';
@@ -74,6 +77,9 @@ export function TownScreen() {
   const [costumeCollectionVisible, setCostumeCollectionVisible] = useState(false);
   const [merchantVisible, setMerchantVisible] = useState(false);
   const [townStatusVisible, setTownStatusVisible] = useState(false);
+  const [mayorRoomVisible, setMayorRoomVisible] = useState(false);
+  const [furnitureShopVisible, setFurnitureShopVisible] = useState(false);
+  const [mysteryShopVisible, setMysteryShopVisible] = useState(false);
   // Which bird's house is currently open (see HouseInventoryModal) — null
   // when closed. Tracks defId rather than a bare boolean since the modal
   // needs to know *whose* house it's showing.
@@ -159,6 +165,9 @@ export function TownScreen() {
     costumeCollectionVisible ||
     merchantVisible ||
     townStatusVisible ||
+    mayorRoomVisible ||
+    furnitureShopVisible ||
+    mysteryShopVisible ||
     houseTarget !== null ||
     unlockTarget !== null ||
     constructionTarget !== null ||
@@ -274,6 +283,22 @@ export function TownScreen() {
     }
   };
 
+  // Phase 15③: 3 of the 5 new shop kinds don't fit ShopModal's plain
+  // ItemDef-shelf model at all (see data/shops.ts's own comment) — each
+  // opens its own dedicated screen instead. 'restaurant'/'toy' behave
+  // exactly like the original 4 kinds, so they fall through to ShopModal.
+  const handleShopPress = (kind: ShopKind) => {
+    if (kind === 'clothing') {
+      setCostumeCollectionVisible(true);
+    } else if (kind === 'furniture') {
+      setFurnitureShopVisible(true);
+    } else if (kind === 'mystery') {
+      setMysteryShopVisible(true);
+    } else {
+      setOpenShop(kind);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.topBar}>
@@ -348,7 +373,7 @@ export function TownScreen() {
             merchant={world.merchant}
             onBirdPress={() => setRosterVisible(true)}
             onPlotPress={handlePlotPress}
-            onShopPress={(kind) => setOpenShop(kind)}
+            onShopPress={handleShopPress}
             onMerchantPress={() => setMerchantVisible(true)}
             onTownHallPress={() => setTownStatusVisible(true)}
             onHousePress={handleHousePress}
@@ -412,7 +437,17 @@ export function TownScreen() {
         townQuestIndex={townQuestIndex}
         developmentPoints={developmentPoints}
         onClose={() => setTownStatusVisible(false)}
+        onOpenMayorRoom={() => {
+          setTownStatusVisible(false);
+          setMayorRoomVisible(true);
+        }}
       />
+
+      <MayorRoomModal visible={mayorRoomVisible} onClose={() => setMayorRoomVisible(false)} />
+
+      <FurnitureShopModal visible={furnitureShopVisible} onClose={() => setFurnitureShopVisible(false)} />
+
+      <MysteryShopModal visible={mysteryShopVisible} onClose={() => setMysteryShopVisible(false)} />
 
       <HouseInventoryModal
         visible={houseTarget !== null}

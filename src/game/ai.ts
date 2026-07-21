@@ -32,6 +32,8 @@ import {
   LEISURE_CHANCE,
   LEISURE_DWELL_TICKS,
   LOW_HP_RETREAT_THRESHOLD_PERCENT,
+  MAYOR_ROOM_GIFT_CHANCE,
+  MAYOR_ROOM_REDRESS_CHANCE,
   MERCHANT_BUY_CHECK_CHANCE,
   MERCHANT_SELL_CHECK_CHANCE,
   MIN_BIRD_DISTANCE,
@@ -48,6 +50,7 @@ import {
   SELL_DWELL_TICKS,
   SELL_MAX_PER_TRIP,
   STARTING_SATIETY,
+  VISIT_DWELL_TICKS,
 } from './config';
 import { TOWN_X, TOWN_Y } from '../data/world';
 import { getShopPosition, MERCHANT_SPOT } from '../data/townGrid';
@@ -72,14 +75,20 @@ interface PersonalityProfile {
   // Phase 11: weight toward heading to a constructed park/bathhouse — only
   // ever nonzero in practice if at least one exists (see pickCategory).
   play: number;
+  // Phase 15①: weight toward visiting the mayor's room — unlike play, this
+  // is always available (the room is part of the always-present town hall,
+  // not a constructible building), so it's kept deliberately small (a
+  // background flavor visit, not a real activity a bird organizes its whole
+  // routine around).
+  visit: number;
   dangerAversion: number; // 0 = fearless, 1 = avoids anything but the weakest foe
 }
 
 export const PERSONALITY_PROFILES: Record<Personality, PersonalityProfile> = {
-  vanguard: { combat: 0.55, explore: 0.3, mining: 0.1, rest: 0.05, play: 0.05, dangerAversion: 0 },
-  freeSpirit: { combat: 0.2, explore: 0.2, mining: 0.55, rest: 0.05, play: 0.15, dangerAversion: 0.35 },
-  clingy: { combat: 0.25, explore: 0.2, mining: 0.15, rest: 0.4, play: 0.2, dangerAversion: 0.5 },
-  cautious: { combat: 0.3, explore: 0.15, mining: 0.1, rest: 0.45, play: 0.15, dangerAversion: 0.85 },
+  vanguard: { combat: 0.55, explore: 0.3, mining: 0.1, rest: 0.05, play: 0.05, visit: 0.02, dangerAversion: 0 },
+  freeSpirit: { combat: 0.2, explore: 0.2, mining: 0.55, rest: 0.05, play: 0.15, visit: 0.03, dangerAversion: 0.35 },
+  clingy: { combat: 0.25, explore: 0.2, mining: 0.15, rest: 0.4, play: 0.2, visit: 0.05, dangerAversion: 0.5 },
+  cautious: { combat: 0.3, explore: 0.15, mining: 0.1, rest: 0.45, play: 0.15, visit: 0.04, dangerAversion: 0.85 },
 };
 
 // Enemy atk value considered "as dangerous as it gets" for weighting
@@ -214,6 +223,13 @@ export interface AiWorld {
   // site falls back to the town hall's position as a temporary "lodging"
   // spot, see getHomePosition below.
   housePositions: Partial<Record<string, { x: number; y: number }>>;
+  // Phase 15①: fed in for the mayor's room's flavor-only "leave a gift" /
+  // "re-dress" rolls (see executeVisitMayorRoom) — read-only from the AI's
+  // perspective, same as shopStock/playerGold above; the store applies the
+  // actual item-consume/cosmetic-change (see AiStepOutcome.visitGiftItemId/
+  // visitRedressCosmeticId).
+  availableGiftItemIds: ItemId[];
+  unlockedCosmeticIds: string[];
 }
 
 // A bird's own house position, or the town hall as a stand-in for a
@@ -283,6 +299,17 @@ export interface AiStepOutcome {
   // skill change itself already happened in-place (see executePlay); this
   // is purely for the activity log + (for a skill) the notification modal.
   inspiration: { kind: 'stat'; stat: InspirationStat; amount: number } | { kind: 'skill'; skillId: string } | null;
+  // Set the first tick a bird actually starts visiting the mayor's room (see
+  // executeVisitMayorRoom) — purely for the activity log, same shape as
+  // startedPlaying/startedNapping above.
+  startedVisiting: boolean;
+  // Set once per visit if the bird's flavor "leave a gift" roll hits — the
+  // store consumes 1 unit of this item from the warehouse and records it in
+  // useMayorRoomStore.gifts.
+  visitGiftItemId: ItemId | null;
+  // Set once per visit if the bird's flavor "re-dress" roll hits — the store
+  // sets bird.cosmeticId to this (already-unlocked) id.
+  visitRedressCosmeticId: string | null;
 }
 
 function emptyOutcome(): AiStepOutcome {
@@ -304,6 +331,9 @@ function emptyOutcome(): AiStepOutcome {
     detourStarted: false,
     startedNapping: false,
     inspiration: null,
+    startedVisiting: false,
+    visitGiftItemId: null,
+    visitRedressCosmeticId: null,
   };
 }
 
@@ -323,6 +353,8 @@ function categoryOf(targetKind: BirdState['targetKind']): ActivityCategory | nul
       return 'rest';
     case 'play':
       return 'play';
+    case 'mayorRoom':
+      return 'visit';
     case 'shop':
       return null;
     default:
@@ -354,14 +386,16 @@ function pickCategory(bird: BirdState, def: CharacterDef, world: AiWorld): Activ
   const exploreWeight = profile.explore;
   const restWeight = profile.rest;
   const playWeight = hasAmenity ? profile.play * playMoodBoost : 0;
+  const visitWeight = profile.visit;
 
-  const total = combatWeight + miningWeight + exploreWeight + restWeight + playWeight;
+  const total = combatWeight + miningWeight + exploreWeight + restWeight + playWeight + visitWeight;
   let roll = Math.random() * total;
   if ((roll -= combatWeight) < 0) return 'combat';
   if ((roll -= miningWeight) < 0) return 'mining';
   if ((roll -= exploreWeight) < 0) return 'explore';
   if ((roll -= restWeight) < 0) return 'rest';
-  return 'play';
+  if ((roll -= playWeight) < 0) return 'play';
+  return 'visit';
 }
 
 // Detour chance is boosted the same way play's weight is — a bored/unhappy
@@ -386,6 +420,11 @@ function isStillPursuing(bird: BirdState, category: ActivityCategory, world: AiW
       return bird.targetKind !== null;
     case 'play':
       return world.amenityPositions.some((a) => a.id === bird.targetRefUid);
+    case 'visit':
+      // Same "concludes a leg at a time" shape as explore/rest above — the
+      // mayor's room is always available, so nothing external can invalidate
+      // an in-progress visit.
+      return bird.targetKind !== null;
   }
 }
 
@@ -535,6 +574,8 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
       return executeRest(bird, world);
     case 'play':
       return executePlay(bird, world);
+    case 'visit':
+      return executeVisitMayorRoom(bird, world);
   }
 }
 
@@ -1197,6 +1238,41 @@ function executePlay(bird: BirdState, world: AiWorld): AiStepOutcome {
       bird.targetRefUid = null;
       bird.workProgress = 0;
     }
+  }
+  return outcome;
+}
+
+// Phase 15①: visiting the mayor's room — the destination for the "visit"
+// category. The room has its own dedicated coordinate system (see
+// useMayorRoomStore), separate from every other x/y in this game, so per the
+// request's own "移動は簡易的なワープ処理でよい" there's no real pathing here:
+// the bird's world position simply snaps to the town hall (where the room's
+// entrance is) for the duration, same as any other bird already standing at
+// TOWN_X/TOWN_Y (job hand-in, the shopkeeper, etc.) — visually indistinguishable
+// from "went inside." Same one-leg-then-dwell shape as executePlay/executeNap.
+function executeVisitMayorRoom(bird: BirdState, world: AiWorld): AiStepOutcome {
+  const outcome = emptyOutcome();
+  bird.x = TOWN_X;
+  bird.y = TOWN_Y;
+  bird.activity = 'visiting';
+  bird.workProgress += 1;
+  if (bird.workProgress === 1) {
+    outcome.startedVisiting = true;
+    // Flavor rolls happen once, right as the visit begins (rather than every
+    // held tick) — a bird either leaves a little gift or redresses itself
+    // once per visit, not repeatedly while it lingers.
+    if (Math.random() < MAYOR_ROOM_GIFT_CHANCE && world.availableGiftItemIds.length > 0) {
+      outcome.visitGiftItemId = world.availableGiftItemIds[Math.floor(Math.random() * world.availableGiftItemIds.length)];
+    } else if (Math.random() < MAYOR_ROOM_REDRESS_CHANCE && world.unlockedCosmeticIds.length > 0) {
+      const candidates = world.unlockedCosmeticIds.filter((id) => id !== bird.cosmeticId);
+      if (candidates.length > 0) {
+        outcome.visitRedressCosmeticId = candidates[Math.floor(Math.random() * candidates.length)];
+      }
+    }
+  }
+  if (bird.workProgress >= VISIT_DWELL_TICKS) {
+    bird.targetKind = null;
+    bird.workProgress = 0;
   }
   return outcome;
 }

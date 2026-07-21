@@ -74,4 +74,13 @@ export const CRAFTING_RECIPES: CraftingRecipe[] = [
   { id: 'craft_deluxeBlend', resultItemId: 'deluxeBlend', materialCost: { mushroom: 3, berry: 2, feather: 2 }, unlockedByDefault: false },
   { id: 'craft_energyPellet', resultItemId: 'energyPellet', materialCost: { mushroom: 4, coal: 2 }, unlockedByDefault: false },
   { id: 'craft_luckyTreat', resultItemId: 'luckyTreat', materialCost: { oldCoin: 2, gem: 1 }, unlockedByDefault: false },
+
+  // Phase 15③: 食堂(restaurant) sample dishes + おもちゃ屋(toy shop) sample
+  // toys — both unlockedByDefault so each new shop has something craftable
+  // the moment it's built, same precedent as the original 4 equipment-slot
+  // defaults (see this file's own comment on `unlockedByDefault` above).
+  { id: 'craft_gourmetSoup', resultItemId: 'gourmetSoup', materialCost: { mushroom: 3, berry: 2 }, unlockedByDefault: true },
+  { id: 'craft_sweetPudding', resultItemId: 'sweetPudding', materialCost: { berry: 3, herb: 2 }, unlockedByDefault: true },
+  { id: 'craft_toyBall', resultItemId: 'toyBall', materialCost: { wood: 3, feather: 2 }, unlockedByDefault: true },
+  { id: 'craft_toyFeather', resultItemId: 'toyFeather', materialCost: { feather: 4 }, unlockedByDefault: true },
 ];
