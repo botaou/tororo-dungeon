@@ -259,6 +259,7 @@ function buildInitialWorld(): WorldState {
       houselessSinceMs: wallet.houselessSinceMs,
       houselessSulkLogged: wallet.houselessSulkLogged,
       houselessWarningShown: wallet.houselessWarningShown,
+      location: wallet.location,
     };
   });
 
@@ -1392,6 +1393,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         houselessSinceMs: b.houselessSinceMs,
         houselessSulkLogged: b.houselessSulkLogged,
         houselessWarningShown: b.houselessWarningShown,
+        location: b.location,
       };
     useBirdEconomyStore.getState().syncAll(wallets);
 

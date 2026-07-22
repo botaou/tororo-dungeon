@@ -56,6 +56,7 @@ function freshWallet(defId: string): BirdWallet {
     houselessSinceMs: null,
     houselessSulkLogged: false,
     houselessWarningShown: false,
+    location: 'town',
   };
 }
 

@@ -53,6 +53,12 @@ export interface BirdWallet {
   houselessSinceMs: number | null;
   houselessSulkLogged: boolean;
   houselessWarningShown: boolean;
+  // See BirdState's matching field (types.ts) — map-split step 1's
+  // town/dungeon location label. Persisted so it survives an app restart
+  // once it actually means something (a future screen split would otherwise
+  // reset every bird back to the town screen on relaunch even if it was
+  // last seen out in the dungeon).
+  location: 'town' | 'dungeon';
 }
 
 function defaultWallet(defId: string): BirdWallet {
@@ -79,6 +85,7 @@ function defaultWallet(defId: string): BirdWallet {
     houselessSinceMs: null,
     houselessSulkLogged: false,
     houselessWarningShown: false,
+    location: 'town',
   };
 }
 

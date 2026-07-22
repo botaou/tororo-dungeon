@@ -624,6 +624,25 @@ export interface BirdState {
   // fire"). Both reset to false whenever houselessSinceMs resets.
   houselessSulkLogged: boolean;
   houselessWarningShown: boolean;
+  // Map-split step 1 ("見た目は変更なし"): which screen this bird would
+  // currently be drawn on, once the real screen split exists — purely a
+  // label maintained alongside the existing activity/targetKind state, not
+  // read by WorldMap or anything else yet. Set to 'dungeon' whenever a bird
+  // starts a field-side pursuit (combat/mining/treasure/explore, or a
+  // river/pond visit — see ai.ts's executeCombat/executeGather/
+  // executeExplore/executeRest), and back to 'town' whenever it heads home,
+  // to a shop, to the town hall, or otherwise settles into a town-side
+  // behavior (see stepRecover/stepCarrying/stepHomeNeed/stepShopFood/
+  // executeSellTrip/executeGearShopTrip/executeMerchantSellTrip/
+  // executeMerchantBuyTrip/executeNap/executePlay/executeVisitMayorRoom, and
+  // stepJob/stepHuntJob's townHall/"hang around town" branches). Left
+  // untouched during a brief in-place pause (executeDetour, the ambient chat
+  // pause) — those preserve whatever location the bird already had, since
+  // nothing about the bird's actual place in the world changed. Persisted
+  // (see BirdWallet's matching field); initial value is 'town' for every
+  // bird, matching today's single shared map where nothing has ever
+  // "started" anywhere else.
+  location: 'town' | 'dungeon';
 }
 
 export type JobStatus = 'open' | 'inProgress' | 'done';
