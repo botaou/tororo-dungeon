@@ -16,9 +16,7 @@ import { getCharacterDef } from '../data/characters';
 import { getEnemyStrengthTier, TOWN_DECOR, TOWN_X, TOWN_Y } from '../data/world';
 import {
   BUILDING_ICON,
-  getFenceCoverage,
   getTownLevelDef,
-  getTownZoneRadius,
   MERCHANT_SPOT,
   PLOT_GRID_RING_INDICES,
   plotGridColOffsetX,
@@ -31,7 +29,6 @@ import { TILE_IMAGES, TILE_REPEAT_IMAGES } from '../data/tileImages';
 import { getBuildingOption } from '../data/buildingOptions';
 import {
   AMENITY_IMAGES,
-  FENCE_IMAGE,
   HOUSE_IMAGES,
   HOUSE_VACANT_IMAGE,
   MERCHANT_TENT_IMAGE,
@@ -53,7 +50,10 @@ import { cuteShadow, theme } from '../theme';
 // this in a zoomable/scrollable ScrollView). Every position in this file
 // stays in the same 0..1 normalized coordinate space as before; only the
 // canvas these get multiplied against changed from a window-derived size to
-// this fixed one.
+// this fixed one. Map-split step 2: both TownMap and DungeonMap below share
+// this exact canvas size/coordinate space — bird.x/y (and every other
+// position) never changed meaning, only which subset of sprites each screen
+// actually draws did.
 export const WORLD_CANVAS_WIDTH = 900;
 export const WORLD_CANVAS_HEIGHT = 1400;
 
@@ -63,7 +63,9 @@ export const WORLD_CANVAS_HEIGHT = 1400;
 // made visually legible with actual hand-painted ground art (see
 // data/tileImages.ts's TILE_REPEAT_IMAGES) instead of a flat color fill.
 // Each also carries a small label so the zone reads as "a place" rather
-// than an unexplained patch of color.
+// than an unexplained patch of color. Dungeon-screen only — unrelated to the
+// old town-zone ellipse (removed in map-split step 2), these are just
+// flavor patches within the dungeon's own field content.
 const FIELD_ZONE_PATCHES: {
   cx: number;
   cy: number;
@@ -110,11 +112,11 @@ function pseudoRandom(seed: number): number {
 
 // A memoized grid of repeating ground-tile cells filling a width x height
 // box. Wrapped in React.memo + useMemo so re-renders of the (frequently
-// ticking) WorldMap component don't re-layout or re-create this potentially
-// large list of Image elements unless the box's own size actually changes.
-// Cells mix between the given source variants (deterministically, keyed on
-// each cell's own grid position) rather than all repeating the same image,
-// so the tiling reads as loose texture instead of an obviously stamped grid.
+// ticking) map screens don't re-layout or re-create this potentially large
+// list of Image elements unless the box's own size actually changes. Cells
+// mix between the given source variants (deterministically, keyed on each
+// cell's own grid position) rather than all repeating the same image, so the
+// tiling reads as loose texture instead of an obviously stamped grid.
 const TiledBackground = React.memo(function TiledBackground({
   width,
   height,
@@ -151,16 +153,11 @@ const TiledBackground = React.memo(function TiledBackground({
   );
 });
 
-interface Props {
-  enemies: EnemyInstance[];
-  miningNodes: MiningNodeInstance[];
-  treasures: TreasureNodeInstance[];
-  leisureSpots: LeisureSpotInstance[];
+interface TownMapProps {
+  // Map-split step 2: only birds whose location is 'town' — filtered by the
+  // caller (see TownScreen), same responsibility split as the existing
+  // isRecruited-based activeBirds filter already there.
   birds: BirdState[];
-  // Not-yet-recruited defIds — only used to decide whether to show a
-  // discoverable marker at tororo's/mone's encounter spot (see
-  // game/recruitment.ts); dormant birds otherwise have no map presence.
-  dormantDefIds: string[];
   plotStates: Record<string, TownPlotState>;
   // Phase 14: houses, independent of any particular bird (see HouseState) —
   // replaces the old fixed per-defId HOUSE_POSITIONS/HOUSE_IMAGES lookup.
@@ -177,20 +174,22 @@ interface Props {
   // big tap target (a semi-transparent hint overlay shows this) instead of
   // its usual sprite-by-sprite Pressables; tapping anywhere calls
   // onMapTap with the tapped point in the same 0..1 normalized space
-  // everything else here uses. Both optional so every other WorldMap
-  // caller (there is only one today, but keeping this additive) doesn't
-  // need to pass them.
+  // everything else here uses.
   placementMode?: boolean;
   onMapTap?: (x: number, y: number) => void;
 }
 
-export function WorldMap({
-  enemies,
-  miningNodes,
-  treasures,
-  leisureSpots,
+// Map-split step 2: the town's own screen — town hall, shrine, shops/plots,
+// houses, the road grid, and only recruited birds currently "in town" (see
+// TownMapProps.birds). No town-zone ellipse/fence anymore (see this file's
+// previous revision in git history) — now that this is its own dedicated
+// screen rather than a carved-out region of one shared map, there's nothing
+// left for that ellipse to distinguish; the background is just a plain flat
+// fill (see styles.field), per the request's own "凝った演出は不要" — a
+// fancier town backdrop is deferred to the later isometric/free-placement
+// exploration.
+export function TownMap({
   birds,
-  dormantDefIds,
   plotStates,
   houses,
   townLevel,
@@ -203,155 +202,10 @@ export function WorldMap({
   onHousePress,
   placementMode,
   onMapTap,
-}: Props) {
+}: TownMapProps) {
   const fieldWidth = WORLD_CANVAS_WIDTH;
   const fieldHeight = WORLD_CANVAS_HEIGHT;
   const townLevelDef = getTownLevelDef(townLevel);
-  const zoneRadius = getTownZoneRadius();
-  const zoneWidth = zoneRadius.rx * 2 * fieldWidth;
-  const zoneHeight = zoneRadius.ry * 2 * fieldHeight;
-
-  // WorldMap re-renders every game tick (birds/enemies/etc. are fresh arrays
-  // each tick), but these background layers only ever depend on constants
-  // (the field patches) or on the town's zone size (which only changes on a
-  // town level-up). Recomputing — and re-laying-out every one of the tiled
-  // Image cells inside them — on every single tick was cheap to write but
-  // expensive to run, and was the real cause of a reported freeze (tap and
-  // scroll both stop responding once the JS thread is stuck redoing this
-  // every tick). Memoizing means this subtree is built once and left alone.
-  const fieldZonePatchNodes = useMemo(
-    () =>
-      FIELD_ZONE_PATCHES.map((p, i) => {
-        const w = p.rx * 2 * fieldWidth;
-        const h = p.ry * 2 * fieldHeight;
-        return (
-          <View
-            key={i}
-            pointerEvents="none"
-            style={[
-              styles.fieldZonePatch,
-              {
-                left: p.cx * fieldWidth - p.rx * fieldWidth,
-                top: p.cy * fieldHeight - p.ry * fieldHeight,
-                width: w,
-                height: h,
-                borderRadius: Math.max(w, h),
-              },
-            ]}
-          >
-            <TiledBackground width={w} height={h} sources={TILE_REPEAT_IMAGES[p.texture]} />
-            <View style={styles.fieldZoneLabelWrap}>
-              <Text style={styles.fieldZoneLabel}>{p.label}</Text>
-            </View>
-          </View>
-        );
-      }),
-    [fieldWidth, fieldHeight]
-  );
-
-  // The town zone's own backdrop — a warm-toned, fixed-size ellipse (vs.
-  // the field's meadow green), plus a dashed ring marking the boundary
-  // between "town" and "adventure field" (the fence-post ring below is the
-  // primary boundary marker now; this dashed line is a fainter secondary
-  // cue). A faint tiled grass texture sits underneath the tint so it reads
-  // as "cozy garden ground" rather than a flat color, without overpowering
-  // the town's flat, clean-lined look.
-  const townZoneNodes = useMemo(
-    () => (
-      <>
-        <View
-          pointerEvents="none"
-          style={[
-            styles.townZoneBackdrop,
-            {
-              left: TOWN_X * fieldWidth - zoneWidth / 2,
-              top: TOWN_Y * fieldHeight - zoneHeight / 2,
-              width: zoneWidth,
-              height: zoneHeight,
-              borderRadius: Math.max(zoneWidth, zoneHeight),
-            },
-          ]}
-        >
-          <View style={styles.townZoneTextureLayer}>
-            <TiledBackground width={zoneWidth} height={zoneHeight} sources={TILE_REPEAT_IMAGES.town} />
-          </View>
-          <View style={styles.townZoneTint} />
-        </View>
-        <View
-          pointerEvents="none"
-          style={[
-            styles.townZoneBoundary,
-            {
-              left: TOWN_X * fieldWidth - zoneWidth / 2,
-              top: TOWN_Y * fieldHeight - zoneHeight / 2,
-              width: zoneWidth,
-              height: zoneHeight,
-              borderRadius: Math.max(zoneWidth, zoneHeight),
-            },
-          ]}
-        />
-      </>
-    ),
-    [fieldWidth, fieldHeight, zoneWidth, zoneHeight]
-  );
-
-  // A ring of fence posts traced around the town zone ellipse — a
-  // real-device request for a clearer, more structural-looking boundary
-  // than the plain dashed line above gives on its own ("参考画像は柵で
-  // 区切られている"). Bumped from 20 to 48 posts alongside the density
-  // rework (real-device follow-up: "外周の柵を隙間なく配置する" — the
-  // reference image shows an unbroken ring, but 20 posts around this
-  // ellipse's ~1330px circumference left ~63px between 30px-wide panels,
-  // reading as widely spaced dots rather than a fence). 48 posts averages
-  // ~28px of arc between them — slightly less than each panel's own 30px
-  // width, so neighboring panels overlap a couple px instead of gapping.
-  // Fence posts are purely decorative (pointerEvents="none" below), so
-  // unlike every other density change in this file, packing them this
-  // tight has no tap-target implications to verify — only ring-3's 4
-  // extreme corner plots sit outside this boundary by design (see
-  // TOWN_ZONE_RADIUS's comment), and the fence itself renders behind
-  // those on the map already.
-  const fenceNodes = useMemo(() => {
-    const cx = TOWN_X * fieldWidth;
-    const cy = TOWN_Y * fieldHeight;
-    const rx = zoneWidth / 2;
-    const ry = zoneHeight / 2;
-    const POST_COUNT = 48;
-    const PHASE_DEG = 10;
-    const FENCE_W = 30;
-    const FENCE_H = 19; // matches fence_wood_short.png's own aspect ratio (95x59 native)
-    // Phase 12①("空っぽスタート"): only draw as much of the ring as the
-    // town's current level has "earned" (see data/townGrid.ts's
-    // getFenceCoverage) — a fresh save shows a short, incomplete arc rather
-    // than the full unbroken loop, which visibly closes up over the town's
-    // first few levels instead of being finished from tick one.
-    const visibleCount = Math.round(POST_COUNT * getFenceCoverage(townLevel));
-    const posts: React.ReactNode[] = [];
-    for (let i = 0; i < visibleCount; i++) {
-      const theta = ((i / POST_COUNT) * 360 + PHASE_DEG) * (Math.PI / 180);
-      const x = cx + rx * Math.cos(theta);
-      const y = cy + ry * Math.sin(theta);
-      // Rotate each panel to sit tangent to the ellipse at its own point
-      // (the tangent of a parametric ellipse at angle theta), so the fence
-      // reads as one continuous ring rather than identical flat panels
-      // facing the same direction all the way around.
-      const tangentDeg = (Math.atan2(ry * Math.cos(theta), -rx * Math.sin(theta)) * 180) / Math.PI;
-      posts.push(
-        <View
-          key={i}
-          pointerEvents="none"
-          style={[styles.fencePost, { left: x - FENCE_W / 2, top: y - FENCE_H / 2, width: FENCE_W, height: FENCE_H }]}
-        >
-          <Image
-            source={FENCE_IMAGE}
-            resizeMode="contain"
-            style={[styles.fencePostImage, { transform: [{ rotate: `${tangentDeg}deg` }] }]}
-          />
-        </View>
-      );
-    }
-    return posts;
-  }, [fieldWidth, fieldHeight, zoneWidth, zoneHeight, townLevel]);
 
   // Phase 12①("空っぽスタート"): roads used to span the plot grid's full
   // extent (ring-3 included) from the very first tick, regardless of town
@@ -405,13 +259,7 @@ export function WorldMap({
 
   return (
     <View style={[styles.field, { width: fieldWidth, height: fieldHeight }]}>
-      {fieldZonePatchNodes}
-
-      {townZoneNodes}
-
       {roadGridNodes}
-
-      {fenceNodes}
 
       {TOWN_DECOR.map((d, i) => (
         <Text
@@ -475,13 +323,6 @@ export function WorldMap({
 
       <ShrineSprite x={SHRINE_SPOT.x * fieldWidth} y={SHRINE_SPOT.y * fieldHeight} townLevel={townLevel} />
 
-      {dormantDefIds.includes('tororo') && (
-        <EncounterMarker x={TORORO_ENCOUNTER_SPOT.x * fieldWidth} y={TORORO_ENCOUNTER_SPOT.y * fieldHeight} />
-      )}
-      {dormantDefIds.includes('mone') && (
-        <EncounterMarker x={MONE_ENCOUNTER_SPOT.x * fieldWidth} y={MONE_ENCOUNTER_SPOT.y * fieldHeight} />
-      )}
-
       {Object.values(houses).map((house) => {
         const resident = house.residentDefId ? getCharacterDef(house.residentDefId) : null;
         const houseImage = house.residentDefId ? HOUSE_IMAGES[house.residentDefId] ?? HOUSE_VACANT_IMAGE : HOUSE_VACANT_IMAGE;
@@ -496,6 +337,100 @@ export function WorldMap({
           </AnimatedPressable>
         );
       })}
+
+      {birds.map((b) => (
+        <BirdSprite
+          key={b.defId}
+          bird={b}
+          targetX={b.x * fieldWidth}
+          targetY={b.y * fieldHeight}
+          onPress={() => onBirdPress(b.defId)}
+        />
+      ))}
+
+      {placementMode && onMapTap && (
+        <TouchableWithoutFeedback
+          onPress={(e) => onMapTap(e.nativeEvent.locationX / fieldWidth, e.nativeEvent.locationY / fieldHeight)}
+        >
+          <View style={[styles.placementOverlay, { width: fieldWidth, height: fieldHeight }]} />
+        </TouchableWithoutFeedback>
+      )}
+    </View>
+  );
+}
+
+interface DungeonMapProps {
+  enemies: EnemyInstance[];
+  miningNodes: MiningNodeInstance[];
+  treasures: TreasureNodeInstance[];
+  leisureSpots: LeisureSpotInstance[];
+  // Map-split step 2: only birds whose location is 'dungeon' — filtered by
+  // the caller (see TownScreen).
+  birds: BirdState[];
+  // Not-yet-recruited defIds — only used to decide whether to show a
+  // discoverable marker at tororo's/mone's encounter spot (see
+  // game/recruitment.ts); dormant birds otherwise have no map presence.
+  dormantDefIds: string[];
+  onBirdPress: (defId: string) => void;
+}
+
+// Map-split step 2: the dungeon/field screen — forest/quarry/mushroom/lake/
+// ruins flavor patches, mining nodes, enemies, treasures, leisure spots, and
+// only recruited birds currently "out in the dungeon" (see
+// DungeonMapProps.birds). Shares the exact same canvas coordinate space as
+// TownMap (see WORLD_CANVAS_WIDTH/HEIGHT's own comment) — a bird's x/y here
+// mean exactly what they always have, this screen just doesn't draw any
+// town content over them.
+export function DungeonMap({ enemies, miningNodes, treasures, leisureSpots, birds, dormantDefIds, onBirdPress }: DungeonMapProps) {
+  const fieldWidth = WORLD_CANVAS_WIDTH;
+  const fieldHeight = WORLD_CANVAS_HEIGHT;
+
+  // These background patches only ever depend on constants, so memoizing
+  // means this subtree is built once and left alone — recomputing (and
+  // re-laying-out every tiled Image cell inside them) on every single game
+  // tick was cheap to write but expensive to run, and was the real cause of
+  // a reported freeze (tap and scroll both stop responding once the JS
+  // thread is stuck redoing this every tick).
+  const fieldZonePatchNodes = useMemo(
+    () =>
+      FIELD_ZONE_PATCHES.map((p, i) => {
+        const w = p.rx * 2 * fieldWidth;
+        const h = p.ry * 2 * fieldHeight;
+        return (
+          <View
+            key={i}
+            pointerEvents="none"
+            style={[
+              styles.fieldZonePatch,
+              {
+                left: p.cx * fieldWidth - p.rx * fieldWidth,
+                top: p.cy * fieldHeight - p.ry * fieldHeight,
+                width: w,
+                height: h,
+                borderRadius: Math.max(w, h),
+              },
+            ]}
+          >
+            <TiledBackground width={w} height={h} sources={TILE_REPEAT_IMAGES[p.texture]} />
+            <View style={styles.fieldZoneLabelWrap}>
+              <Text style={styles.fieldZoneLabel}>{p.label}</Text>
+            </View>
+          </View>
+        );
+      }),
+    [fieldWidth, fieldHeight]
+  );
+
+  return (
+    <View style={[styles.field, { width: fieldWidth, height: fieldHeight }]}>
+      {fieldZonePatchNodes}
+
+      {dormantDefIds.includes('tororo') && (
+        <EncounterMarker x={TORORO_ENCOUNTER_SPOT.x * fieldWidth} y={TORORO_ENCOUNTER_SPOT.y * fieldHeight} />
+      )}
+      {dormantDefIds.includes('mone') && (
+        <EncounterMarker x={MONE_ENCOUNTER_SPOT.x * fieldWidth} y={MONE_ENCOUNTER_SPOT.y * fieldHeight} />
+      )}
 
       {miningNodes.map((m) => (
         <RockSprite key={m.uid} node={m} x={m.x * fieldWidth} y={m.y * fieldHeight} />
@@ -522,14 +457,6 @@ export function WorldMap({
           onPress={() => onBirdPress(b.defId)}
         />
       ))}
-
-      {placementMode && onMapTap && (
-        <TouchableWithoutFeedback
-          onPress={(e) => onMapTap(e.nativeEvent.locationX / fieldWidth, e.nativeEvent.locationY / fieldHeight)}
-        >
-          <View style={[styles.placementOverlay, { width: fieldWidth, height: fieldHeight }]} />
-        </TouchableWithoutFeedback>
-      )}
     </View>
   );
 }
@@ -590,7 +517,7 @@ function EncounterMarker({ x, y }: { x: number; y: number }) {
 }
 
 // The visiting merchant's temporary stall — only rendered while
-// world.merchant is non-null (see WorldMap's caller). Tapping it opens a
+// world.merchant is non-null (see TownMap's caller). Tapping it opens a
 // view-only info modal; birds decide for themselves whether to trade here,
 // same as the two permanent shops.
 function MerchantSprite({
@@ -1148,7 +1075,11 @@ function BirdSprite({
 const styles = StyleSheet.create({
   // The rounded "card frame" look now lives on the viewport wrapper (see
   // components/PannableMap.tsx) — this is the real, fixed-size scrollable
-  // canvas itself, so it just needs the background fill.
+  // canvas itself, so it just needs the background fill. Map-split step 2:
+  // both TownMap and DungeonMap share this same plain flat fill — the old
+  // town-zone ellipse/tint/dashed-boundary/fence-ring that used to carve a
+  // "town" region out of one shared map is gone, since each screen is now
+  // its own dedicated space with nothing left for that boundary to mark.
   field: {
     backgroundColor: theme.ground,
   },
@@ -1172,20 +1103,8 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   fieldZoneLabel: { fontSize: 10, fontWeight: '800', color: theme.textPrimary },
-  townZoneBackdrop: { position: 'absolute', overflow: 'hidden' },
-  townZoneTextureLayer: { position: 'absolute', width: '100%', height: '100%', opacity: 0.4 },
-  townZoneTint: { position: 'absolute', width: '100%', height: '100%', backgroundColor: theme.bgBottom, opacity: 0.6 },
-  townZoneBoundary: {
-    position: 'absolute',
-    borderWidth: 2,
-    borderStyle: 'dashed',
-    borderColor: theme.fence,
-    opacity: 0.4,
-  },
   roadHorizontal: { position: 'absolute', height: 8, borderRadius: 2, backgroundColor: theme.road, opacity: 0.75 },
   roadVertical: { position: 'absolute', width: 8, borderRadius: 2, backgroundColor: theme.road, opacity: 0.75 },
-  fencePost: { position: 'absolute' },
-  fencePostImage: { width: '100%', height: '100%' },
   // Bottom-anchored (justifyContent: 'flex-end', no background/border card)
   // rather than the old fixed-size chip — the 5 town-hall images have very
   // different aspect ratios (a squat ボロ役場 vs. the towered トロロ自然

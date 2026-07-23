@@ -119,20 +119,14 @@ function nearest<T extends { x: number; y: number }>(items: T[], x: number, y: n
   return best;
 }
 
-// Field points must land outside the town zone (an ellipse, not a circle —
-// see townGrid.ts's getTownZoneRadius) so idle "explore" wandering never
-// drifts into the town's own footprint; town points are scaled to the same
-// ellipse (slightly reined in) so idle "rest" wandering stays proportional
-// to however big the town zone currently is, instead of a fixed radius.
-function randomPointInField(zoneRadius: { rx: number; ry: number }): { x: number; y: number } {
-  for (let attempt = 0; attempt < 8; attempt++) {
-    const x = 0.1 + Math.random() * 0.8;
-    const y = 0.15 + Math.random() * 0.7;
-    const dx = (x - TOWN_X) / zoneRadius.rx;
-    const dy = (y - TOWN_Y) / zoneRadius.ry;
-    if (dx * dx + dy * dy > 1) return { x, y };
-  }
-  return { x: 0.15, y: 0.2 };
+// Map-split step 2: this used to retry until a point landed *outside* the
+// town-zone ellipse, so idle "explore" wandering never drifted into the
+// town's own footprint on the single shared map WorldMap used to draw. Now
+// that the dungeon is its own dedicated screen (see components/WorldMap.tsx's
+// DungeonMap) with no town content sharing its canvas at all, any point is
+// fair game — there's nothing left to avoid.
+function randomPointInField(): { x: number; y: number } {
+  return { x: 0.1 + Math.random() * 0.8, y: 0.15 + Math.random() * 0.7 };
 }
 
 // Phase 12③("鳥が道・建物をすり抜ける問題"): a resting bird's stroll target
@@ -150,16 +144,22 @@ function randomPointInField(zoneRadius: { rx: number; ry: number }): { x: number
 // else here uses.
 const BUILDING_CLEARANCE = 0.028;
 
-function randomPointNearTown(
-  zoneRadius: { rx: number; ry: number },
-  occupiedSpots: { x: number; y: number }[] = []
-): { x: number; y: number } {
+// Map-split step 2: how far a resting bird's stroll target can land from the
+// town hall — used to be derived from the town-zone ellipse's own radius
+// (townGrid.ts's getTownZoneRadius), which no longer exists now that town
+// and dungeon are separate screens (there's no more "zone" for this radius
+// to represent, just a wander-spread parameter for this one AI behavior).
+// Same numeric values as the old ellipse, so the actual wander feel/pacing
+// is unchanged.
+const TOWN_WANDER_SPREAD = { rx: 0.235, ry: 0.152 };
+
+function randomPointNearTown(occupiedSpots: { x: number; y: number }[] = []): { x: number; y: number } {
   for (let attempt = 0; attempt < 8; attempt++) {
     const angle = Math.random() * Math.PI * 2;
     const scale = Math.random() * 0.85;
     const point = {
-      x: Math.min(0.92, Math.max(0.08, TOWN_X + Math.cos(angle) * zoneRadius.rx * scale)),
-      y: Math.min(0.88, Math.max(0.16, TOWN_Y + Math.sin(angle) * zoneRadius.ry * scale)),
+      x: Math.min(0.92, Math.max(0.08, TOWN_X + Math.cos(angle) * TOWN_WANDER_SPREAD.rx * scale)),
+      y: Math.min(0.88, Math.max(0.16, TOWN_Y + Math.sin(angle) * TOWN_WANDER_SPREAD.ry * scale)),
     };
     const blocked = occupiedSpots.some((spot) => Math.hypot(point.x - spot.x, point.y - spot.y) < BUILDING_CLEARANCE);
     if (!blocked) return point;
@@ -188,11 +188,6 @@ export interface AiWorld {
   // The visiting merchant, if one currently has its stall set up — null
   // between visits. Read-only from the AI's perspective, same as shopStock.
   merchant: MerchantState | null;
-  // The town zone's footprint (see townGrid.ts's getTownZoneRadius) — a
-  // fixed ellipse, passed through here rather than hardcoded so idle
-  // wandering (explore/rest) and the "waiting around town" job fallbacks
-  // stay expressed relative to it instead of duplicating the constant.
-  townZoneRadius: { rx: number; ry: number };
   // The player's current gold — only used to decide whether it's even worth
   // *forcing* an overflow sell trip (see stepBird's isFull check). A
   // real-device report: once a bird was over BIRD_INVENTORY_CAP, it forced
@@ -1054,7 +1049,7 @@ function executeExplore(bird: BirdState, world: AiWorld): AiStepOutcome {
   bird.location = 'dungeon'; // map-split step 1: exploring out in the field
   const hasDest = bird.wanderX !== null && bird.wanderY !== null;
   if (!hasDest) {
-    const dest = randomPointInField(world.townZoneRadius);
+    const dest = randomPointInField();
     bird.wanderX = dest.x;
     bird.wanderY = dest.y;
     bird.targetKind = 'explore';
@@ -1134,7 +1129,7 @@ function executeRest(bird: BirdState, world: AiWorld): AiStepOutcome {
     }
   }
   bird.location = 'town'; // map-split step 1: milling around near town
-  const dest = randomPointNearTown(world.townZoneRadius, world.occupiedSpots);
+  const dest = randomPointNearTown(world.occupiedSpots);
   bird.wanderX = dest.x;
   bird.wanderY = dest.y;
   bird.targetKind = 'rest';
@@ -1372,12 +1367,16 @@ function stepJob(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutc
   if (!stillValid) {
     const node = nearest(matching, bird.x, bird.y);
     if (!node) {
-      // Nothing available right now — hang around town and keep the job.
-      bird.location = 'town'; // map-split step 1
+      // Nothing available right now — wait wherever this bird already is
+      // (map-split step 2: locationに応じた待機 — a bird already out in the
+      // dungeon keeps wandering the field instead of being force-teleported
+      // back to a "hang around town" wait; one already in town keeps
+      // milling near the town hall, same as before). location itself isn't
+      // changed here — it's whatever it already was.
       const hasDest = bird.wanderX !== null && bird.wanderY !== null;
       const arrived = hasDest ? moveToward(bird, bird.wanderX!, bird.wanderY!) : true;
       if (!hasDest || arrived) {
-        const dest = randomPointNearTown(world.townZoneRadius, world.occupiedSpots);
+        const dest = bird.location === 'dungeon' ? randomPointInField() : randomPointNearTown(world.occupiedSpots);
         bird.wanderX = dest.x;
         bird.wanderY = dest.y;
       }
@@ -1433,13 +1432,12 @@ function stepHuntJob(bird: BirdState, def: CharacterDef, world: AiWorld, enemyNa
   if (!stillValid) {
     const target = nearest(matching, bird.x, bird.y);
     if (!target) {
-      // None of that species alive right now — hang around town and keep
-      // the job, same fallback as gather's "nothing available" case.
-      bird.location = 'town'; // map-split step 1
+      // None of that species alive right now — same location-aware wait as
+      // gather's "nothing available" case above.
       const hasDest = bird.wanderX !== null && bird.wanderY !== null;
       const arrived = hasDest ? moveToward(bird, bird.wanderX!, bird.wanderY!) : true;
       if (!hasDest || arrived) {
-        const dest = randomPointNearTown(world.townZoneRadius, world.occupiedSpots);
+        const dest = bird.location === 'dungeon' ? randomPointInField() : randomPointNearTown(world.occupiedSpots);
         bird.wanderX = dest.x;
         bird.wanderY = dest.y;
       }

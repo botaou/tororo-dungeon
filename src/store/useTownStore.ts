@@ -5,8 +5,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   CONSTRUCTION_DEVELOPMENT_POINTS,
   getAllBuiltPlotPositions,
-  getTownZoneRadius,
-  isInsideTownZone,
   PLOT_UNLOCK_DEVELOPMENT_POINTS,
   TOWN_PLOT_DEFS,
 } from '../data/townGrid';
@@ -95,8 +93,9 @@ interface TownActions {
   // (see game/config.ts's HOUSE_BUILD_COST/HOUSE_CLEARANCE and this file's
   // own isHouseSpotBlocked) — spends the cost and creates a new, vacant
   // (residentDefId: null) house at (x, y). Returns false (no charge taken)
-  // if the spot is outside the town zone, too close to anything else
-  // already standing there, or the player can't afford it.
+  // if the spot is too close to anything else already standing there, or
+  // the player can't afford it (map-split step 2 removed the old "is this
+  // outside the town zone" check — see buildHouse's own comment).
   buildHouse: (x: number, y: number) => boolean;
   // Moves a recruited-but-unhoused bird into a vacant house. False (no
   // state change) if the house doesn't exist or already has a resident, or
@@ -214,7 +213,12 @@ export const useTownStore = create<TownState & TownActions>()(
       },
 
       buildHouse: (x, y) => {
-        if (!isInsideTownZone(x, y, getTownZoneRadius())) return false;
+        // Map-split step 2: the "is this inside the town zone" gate is gone
+        // — TownMap is now its own dedicated screen (see components/
+        // WorldMap.tsx), so there's no more shared field canvas a house
+        // could accidentally be placed out into. Overlap/clearance checking
+        // (below) is the only placement guard left, same as the mayor's
+        // room's own furniture placement never needed a zone check either.
         const s = get();
         if (isHouseSpotBlocked(x, y, s.houses, getAllBuiltPlotPositions(s.plots))) return false;
 

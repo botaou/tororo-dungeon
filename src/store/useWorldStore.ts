@@ -118,7 +118,7 @@ import { useQuestStore } from './useQuestStore';
 import { useRecipeStore } from './useRecipeStore';
 import { useTownStore } from './useTownStore';
 import { useMayorRoomStore } from './useMayorRoomStore';
-import { getAllAmenityPositions, getAllBuiltPlotPositions, getAllShopPositions, getTownZoneRadius } from '../data/townGrid';
+import { getAllAmenityPositions, getAllBuiltPlotPositions, getAllShopPositions } from '../data/townGrid';
 import { checkTownQuestCondition, TOWN_QUESTS } from '../data/townQuests';
 
 const INSPIRATION_STAT_LABEL: Record<InspirationStat, string> = {
@@ -805,9 +805,8 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     // rather than just unrendered/untargetable — otherwise a deep-zone
     // enemy could still "ambush" a bird that wanders near it before the
     // town's actually unlocked that ground.
-    const currentTownZoneRadius = getTownZoneRadius();
     enemies = enemies.map((e) =>
-      e.defeated || e.minTownLevel > townLevel ? e : stepEnemy(e, birdsWithMood, currentTownZoneRadius)
+      e.defeated || e.minTownLevel > townLevel ? e : stepEnemy(e, birdsWithMood)
     );
 
     // Free (jobless) birds occasionally check the request board.
@@ -857,7 +856,6 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       shopStock: usePlayerStore.getState().shopStock,
       shopPositions: getAllShopPositions(useTownStore.getState().plots),
       merchant,
-      townZoneRadius: currentTownZoneRadius,
       playerGold: usePlayerStore.getState().gold,
       amenityPositions: getAllAmenityPositions(useTownStore.getState().plots),
       // Phase 12③: town hall (always at TOWN_X/TOWN_Y) plus every plot that

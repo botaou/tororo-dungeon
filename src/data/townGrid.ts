@@ -255,79 +255,16 @@ export function getTownLevelDef(level: number): TownLevelDef {
   return TOWN_LEVEL_DEFS.find((d) => d.level === level) ?? TOWN_LEVEL_DEFS[0];
 }
 
-// The town zone's visual backdrop + fence boundary (see WorldMap) and the
-// radius AI uses to keep town-only wandering (idle "rest" strolls) and
-// field-only wandering (idle "explore") on the correct side of the line.
-//
-// Fixed (not per-town-level) — an earlier revision grew this with each town
-// level, but that meant re-verifying "does this still avoid every hand-
-// placed enemy/mining node" at 5 different sizes, and that exact spot has
-// already been the source of several real-device bugs this project (a
-// level-locked radius overlapping field content, then blocking
-// construction it could never actually grow to reach — see the
-// isInsideTownZone comment below and Phase 9②'s README notes). One fixed
-// size, chosen once and verified once, removes that whole recurring class
-// of bug. The zone still gets to *look* like it's growing town-to-town —
-// via the plot grid's road network and the buildings appearing on it — the
-// ellipse itself just isn't the mechanism for that anymore.
-//
-// Bounded above by data/world.ts's actual field content, not just by the
-// plot grid: the closest hand-placed enemy (wolf_b, at (0.75, 0.45)) sits
-// only ~0.27 away from town center, so any radius past that would draw the
-// town zone right on top of it — a "monster wandered into town" look, and
-// (since EnemySprite renders without pointerEvents="none") a real tap-
-// blocking risk for whatever it happens to overlap. Bumped slightly (from
-// rx=0.22/ry=0.145) alongside the density rework above, since the much
-// tighter plot grid needs a slightly bigger ellipse to still comfortably
-// wrap ring-2 — at rx=0.235/ry=0.152, wolf_b (the closest field content)
-// still clears with solid margin (ellipse-membership fraction ~1.24, i.e.
-// ~24% outside the boundary), while every ring-1/ring-2 plot, both real
-// shops, the merchant spot, and all 4 bird houses sit comfortably inside.
-// Ring-3's 4 extreme corner plots intentionally sit just past the drawn
-// edge — the zone is a soft "core of town" visual, not a requirement every
-// buildable tile has to sit inside (construction eligibility is governed by
-// plot-unlock state + minTownLevel alone, see TownScreen's handlePlotPress).
-const TOWN_ZONE_RADIUS = { rx: 0.235, ry: 0.152 };
-
-export function getTownZoneRadius(): { rx: number; ry: number } {
-  return TOWN_ZONE_RADIUS;
-}
-
-// Whether a point has crossed into the town's "core" ellipse — moved here
-// (was a private copy inside game/enemyAi.ts, kept only to stop a chasing
-// enemy from following a fleeing bird into town) so Phase 14's free house
-// placement (useTownStore's buildHouse) can reuse the exact same check as
-// its "is this inside the town area" gate, rather than duplicating the
-// ellipse formula a third time.
-export function isInsideTownZone(x: number, y: number, zoneRadius: { rx: number; ry: number }): boolean {
-  const dx = (x - TOWN_X) / zoneRadius.rx;
-  const dy = (y - TOWN_Y) / zoneRadius.ry;
-  return dx * dx + dy * dy <= 1;
-}
-
-// Phase 12①("空っぽスタート"): the fence ring used to be a single unbroken
-// loop of all 48 posts from the very first tick, regardless of how
-// undeveloped the town actually was — a brand-new save with nothing but the
-// town hall still showed a fully fenced-off plot of land. The ellipse's own
-// *size* stays fixed (see TOWN_ZONE_RADIUS's comment on why re-sizing that
-// per level was already a recurring source of bugs); what now grows with
-// townLevel is how much of that ring is actually drawn, so the fence itself
-// visibly "grows in" as the town develops instead of being complete on day
-// one. WorldMap draws this many of the ring's POST_COUNT positions in
-// order starting from the same fixed point each time, so each level's arc
-// is a strict superset of the previous one (it only ever extends further
-// around the ring, never jumps to a disconnected arc elsewhere).
-const FENCE_COVERAGE_BY_LEVEL: Record<number, number> = {
-  1: 0.15,
-  2: 0.4,
-  3: 0.7,
-  4: 0.9,
-  5: 1,
-};
-
-export function getFenceCoverage(townLevel: number): number {
-  return FENCE_COVERAGE_BY_LEVEL[townLevel] ?? 1;
-}
+// Map-split step 2: the town-zone ellipse (`TOWN_ZONE_RADIUS`/
+// `getTownZoneRadius`/`isInsideTownZone`) and its matching fence-coverage
+// table (`getFenceCoverage`) used to live here — they existed only to mark
+// "inside town" vs "out in the field" on the single shared map WorldMap
+// used to draw. Now that the town and dungeon are two separate screens
+// (see components/WorldMap.tsx's TownMap/DungeonMap, game/ai.ts, game/
+// enemyAi.ts, useTownStore.ts's buildHouse), there's nothing left for that
+// ellipse to distinguish, so it — and the fence ring drawn along it — were
+// removed entirely rather than kept as now-meaningless dead code. See git
+// history if this ever needs resurrecting.
 
 // Generic fallback icon per building kind — used when a plot has a
 // `building` set but no matching data/buildingOptions.ts entry (either a

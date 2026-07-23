@@ -10,7 +10,7 @@ import { useWorldStore } from '../store/useWorldStore';
 import { useTownStore } from '../store/useTownStore';
 import { TOWN_PLOT_DEFS } from '../data/townGrid';
 import { getBuildingOption } from '../data/buildingOptions';
-import { WorldMap, WORLD_CANVAS_HEIGHT, WORLD_CANVAS_WIDTH } from '../components/WorldMap';
+import { TownMap, DungeonMap, WORLD_CANVAS_HEIGHT, WORLD_CANVAS_WIDTH } from '../components/WorldMap';
 import { PannableMap } from '../components/PannableMap';
 import { TOWN_X, TOWN_Y } from '../data/world';
 import { AnimatedPressable } from '../components/AnimatedPressable';
@@ -133,6 +133,13 @@ export function TownScreen() {
   // never replays a stale backlog.
   const [shownHouseWarningCount, setShownHouseWarningCount] = useState(0);
   const [shownHouseDepartureCount, setShownHouseDepartureCount] = useState(0);
+  // Map-split step 2: which of the two now-independent screens is currently
+  // shown. Purely a local UI toggle — has no effect on simulation, which
+  // keeps running for every bird every tick regardless of this value (see
+  // useWorldStore.tick()); this only decides which of TownMap/DungeonMap
+  // gets rendered, and which birds each one is handed (filtered by
+  // bird.location below).
+  const [activeScreen, setActiveScreen] = useState<'town' | 'dungeon'>('town');
 
   useEffect(() => {
     if (world.birds.length === 0) initWorld();
@@ -142,6 +149,12 @@ export function TownScreen() {
   // (see useWorldStore) but never shown on the map or in the roster.
   const activeBirds = world.birds.filter((b) => b.isRecruited);
   const dormantDefIds = world.birds.filter((b) => !b.isRecruited).map((b) => b.defId);
+  // Map-split step 2: each screen only draws the birds "in" it — the
+  // underlying simulation (ai.ts/useWorldStore.tick()) still runs every
+  // bird every tick no matter which screen is active, this is purely a
+  // render-time filter.
+  const townBirds = activeBirds.filter((b) => b.location === 'town');
+  const dungeonBirds = activeBirds.filter((b) => b.location === 'dungeon');
 
   // RecruitmentModal/TownLevelUpModal/RecipeUnlockModal/SkillUnlockModal each
   // render their own <Modal> the instant their queued event is non-null,
@@ -225,12 +238,10 @@ export function TownScreen() {
       return;
     }
     // Construction eligibility is governed purely by unlock state + town
-    // level (already checked above/below) — the town-zone ellipse drawn on
-    // the map is decorative only (see townGrid.ts's getTownZoneRadius). An
-    // earlier revision blocked construction outside that ellipse too, but
-    // the ellipse geometrically can never grow to reach most of ring-2/
-    // ring-3 without overlapping hand-placed field content, which made that
-    // gate's "build once the zone grows" promise false for 40 of 48 plots.
+    // level (already checked above/below). Map-split step 2 removed the old
+    // town-zone ellipse entirely — the town screen is now its own
+    // independent space, so there's no separate "inside the zone" gate to
+    // worry about here anymore.
     setConstructionTarget(plotId);
   };
 
@@ -358,28 +369,50 @@ export function TownScreen() {
         </View>
       )}
 
+      <View style={styles.screenTabRow}>
+        <AnimatedPressable
+          style={[styles.screenTab, activeScreen === 'town' && styles.screenTabActive]}
+          onPress={() => setActiveScreen('town')}
+        >
+          <Text style={[styles.screenTabText, activeScreen === 'town' && styles.screenTabTextActive]}>🏡 街</Text>
+        </AnimatedPressable>
+        <AnimatedPressable
+          style={[styles.screenTab, activeScreen === 'dungeon' && styles.screenTabActive]}
+          onPress={() => setActiveScreen('dungeon')}
+        >
+          <Text style={[styles.screenTabText, activeScreen === 'dungeon' && styles.screenTabTextActive]}>🌲 ダンジョン</Text>
+        </AnimatedPressable>
+      </View>
+
       <View style={styles.mapWrap}>
         <PannableMap contentWidth={WORLD_CANVAS_WIDTH} contentHeight={WORLD_CANVAS_HEIGHT} initialFocus={{ x: TOWN_X, y: TOWN_Y }}>
-          <WorldMap
-            enemies={world.enemies}
-            miningNodes={world.miningNodes}
-            treasures={world.treasures}
-            leisureSpots={world.leisureSpots}
-            birds={activeBirds}
-            dormantDefIds={dormantDefIds}
-            plotStates={plots}
-            houses={houses}
-            townLevel={townLevel}
-            merchant={world.merchant}
-            onBirdPress={() => setRosterVisible(true)}
-            onPlotPress={handlePlotPress}
-            onShopPress={handleShopPress}
-            onMerchantPress={() => setMerchantVisible(true)}
-            onTownHallPress={() => setTownStatusVisible(true)}
-            onHousePress={handleHousePress}
-            placementMode={placingHouse}
-            onMapTap={handleMapTap}
-          />
+          {activeScreen === 'town' ? (
+            <TownMap
+              birds={townBirds}
+              plotStates={plots}
+              houses={houses}
+              townLevel={townLevel}
+              merchant={world.merchant}
+              onBirdPress={() => setRosterVisible(true)}
+              onPlotPress={handlePlotPress}
+              onShopPress={handleShopPress}
+              onMerchantPress={() => setMerchantVisible(true)}
+              onTownHallPress={() => setTownStatusVisible(true)}
+              onHousePress={handleHousePress}
+              placementMode={placingHouse}
+              onMapTap={handleMapTap}
+            />
+          ) : (
+            <DungeonMap
+              enemies={world.enemies}
+              miningNodes={world.miningNodes}
+              treasures={world.treasures}
+              leisureSpots={world.leisureSpots}
+              birds={dungeonBirds}
+              dormantDefIds={dormantDefIds}
+              onBirdPress={() => setRosterVisible(true)}
+            />
+          )}
         </PannableMap>
       </View>
 
@@ -587,6 +620,19 @@ const styles = StyleSheet.create({
   placementBannerText: { flex: 1, fontSize: 12, fontWeight: '700', color: theme.textPrimary, marginRight: 8 },
   placementCancelButton: { backgroundColor: theme.card, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
   placementCancelButtonText: { fontSize: 11, fontWeight: '700', color: theme.textSecondary },
+  screenTabRow: { flexDirection: 'row', paddingHorizontal: 12, marginTop: 8, gap: 8 },
+  screenTab: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: theme.card,
+    borderWidth: 1.5,
+    borderColor: theme.cardBorder,
+  },
+  screenTabActive: { backgroundColor: theme.gold, borderColor: theme.gold },
+  screenTabText: { fontSize: 13, fontWeight: '700', color: theme.textSecondary },
+  screenTabTextActive: { color: '#fff' },
   mapWrap: { flex: 1, paddingHorizontal: 12, marginTop: 8 },
   bottomBar: {
     flexDirection: 'row',
