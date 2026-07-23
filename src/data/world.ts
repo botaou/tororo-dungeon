@@ -8,6 +8,18 @@ export const TOWN_X = 0.5;
 export const TOWN_Y = 0.5;
 export const TOWN_RADIUS = 0.12;
 
+// Map-split step 2 follow-up: purely decorative "gate" markers, one on each
+// screen, so switching between TownMap/DungeonMap reads as birds passing
+// through a shared entrance rather than teleporting off-screen. Neither
+// spot has any gameplay meaning (birds don't actually path through them —
+// bird.location still flips instantly, same as before); tapping either one
+// is just a same-effect shortcut for TownScreen's own tab switcher. Placed
+// well clear of the town's plot grid (which only reaches TOWN_X/Y ± ~0.22/
+// 0.14 — see townGrid.ts's axisOffset) and of every DUNGEON_GATE_SPOT-side
+// FIELD_ZONE_PATCHES patch (see WorldMap.tsx).
+export const DUNGEON_GATE_SPOT = { x: TOWN_X, y: TOWN_Y + 0.34 };
+export const FIELD_TOWN_GATE_SPOT = { x: 0.5, y: 0.5 };
+
 // Forest (wood + a couple of wandering slimes/wolf), upper-left. Positions
 // here are nudged slightly further from town versus earlier revisions to
 // leave room for a bigger buildable land grid around the town hall.

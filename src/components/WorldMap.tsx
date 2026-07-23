@@ -13,7 +13,7 @@ import {
   TreasureNodeInstance,
 } from '../types';
 import { getCharacterDef } from '../data/characters';
-import { getEnemyStrengthTier, TOWN_DECOR, TOWN_X, TOWN_Y } from '../data/world';
+import { DUNGEON_GATE_SPOT, FIELD_TOWN_GATE_SPOT, getEnemyStrengthTier, TOWN_DECOR, TOWN_X, TOWN_Y } from '../data/world';
 import {
   BUILDING_ICON,
   getTownLevelDef,
@@ -177,6 +177,10 @@ interface TownMapProps {
   // everything else here uses.
   placementMode?: boolean;
   onMapTap?: (x: number, y: number) => void;
+  // Map-split follow-up: tapping the town-side gate marker below jumps
+  // straight to the dungeon screen (same effect as TownScreen's own tab
+  // switcher) — purely a convenience shortcut, not a new game mechanic.
+  onDungeonGatePress: () => void;
 }
 
 // Map-split step 2: the town's own screen — town hall, shrine, shops/plots,
@@ -202,6 +206,7 @@ export function TownMap({
   onHousePress,
   placementMode,
   onMapTap,
+  onDungeonGatePress,
 }: TownMapProps) {
   const fieldWidth = WORLD_CANVAS_WIDTH;
   const fieldHeight = WORLD_CANVAS_HEIGHT;
@@ -323,6 +328,14 @@ export function TownMap({
 
       <ShrineSprite x={SHRINE_SPOT.x * fieldWidth} y={SHRINE_SPOT.y * fieldHeight} townLevel={townLevel} />
 
+      <GateMarker
+        x={DUNGEON_GATE_SPOT.x * fieldWidth}
+        y={DUNGEON_GATE_SPOT.y * fieldHeight}
+        emoji="🚪"
+        label="ダンジョンへ"
+        onPress={onDungeonGatePress}
+      />
+
       {Object.values(houses).map((house) => {
         const resident = house.residentDefId ? getCharacterDef(house.residentDefId) : null;
         const houseImage = house.residentDefId ? HOUSE_IMAGES[house.residentDefId] ?? HOUSE_VACANT_IMAGE : HOUSE_VACANT_IMAGE;
@@ -372,6 +385,10 @@ interface DungeonMapProps {
   // game/recruitment.ts); dormant birds otherwise have no map presence.
   dormantDefIds: string[];
   onBirdPress: (defId: string) => void;
+  // Map-split follow-up: tapping the field-side gate marker below jumps
+  // straight back to the town screen — the return-trip counterpart of
+  // TownMapProps.onDungeonGatePress.
+  onTownGatePress: () => void;
 }
 
 // Map-split step 2: the dungeon/field screen — forest/quarry/mushroom/lake/
@@ -381,7 +398,16 @@ interface DungeonMapProps {
 // TownMap (see WORLD_CANVAS_WIDTH/HEIGHT's own comment) — a bird's x/y here
 // mean exactly what they always have, this screen just doesn't draw any
 // town content over them.
-export function DungeonMap({ enemies, miningNodes, treasures, leisureSpots, birds, dormantDefIds, onBirdPress }: DungeonMapProps) {
+export function DungeonMap({
+  enemies,
+  miningNodes,
+  treasures,
+  leisureSpots,
+  birds,
+  dormantDefIds,
+  onBirdPress,
+  onTownGatePress,
+}: DungeonMapProps) {
   const fieldWidth = WORLD_CANVAS_WIDTH;
   const fieldHeight = WORLD_CANVAS_HEIGHT;
 
@@ -424,6 +450,14 @@ export function DungeonMap({ enemies, miningNodes, treasures, leisureSpots, bird
   return (
     <View style={[styles.field, { width: fieldWidth, height: fieldHeight }]}>
       {fieldZonePatchNodes}
+
+      <GateMarker
+        x={FIELD_TOWN_GATE_SPOT.x * fieldWidth}
+        y={FIELD_TOWN_GATE_SPOT.y * fieldHeight}
+        emoji="🚪"
+        label="街へ戻る"
+        onPress={onTownGatePress}
+      />
 
       {dormantDefIds.includes('tororo') && (
         <EncounterMarker x={TORORO_ENCOUNTER_SPOT.x * fieldWidth} y={TORORO_ENCOUNTER_SPOT.y * fieldHeight} />
@@ -781,6 +815,21 @@ function ShrineSprite({ x, y, townLevel }: { x: number; y: number; townLevel: nu
       </Text>
       <Text style={styles.nameTag}>{stage.label}</Text>
     </View>
+  );
+}
+
+// Map-split follow-up: a simple, tappable "entrance" marker shown on both
+// screens (see DUNGEON_GATE_SPOT/FIELD_TOWN_GATE_SPOT in data/world.ts) so
+// switching between TownMap/DungeonMap reads as birds passing through a
+// shared gate rather than vanishing/appearing out of nowhere. Purely
+// decorative + a tap shortcut — no bird actually paths through this spot,
+// same as before.
+function GateMarker({ x, y, emoji, label, onPress }: { x: number; y: number; emoji: string; label: string; onPress: () => void }) {
+  return (
+    <AnimatedPressable onPress={onPress} style={[styles.sprite, { left: x, top: y }]}>
+      <Text style={styles.emojiLarge}>{emoji}</Text>
+      <Text style={styles.nameTag}>{label}</Text>
+    </AnimatedPressable>
   );
 }
 

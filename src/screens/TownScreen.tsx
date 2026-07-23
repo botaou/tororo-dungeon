@@ -401,6 +401,7 @@ export function TownScreen() {
               onHousePress={handleHousePress}
               placementMode={placingHouse}
               onMapTap={handleMapTap}
+              onDungeonGatePress={() => setActiveScreen('dungeon')}
             />
           ) : (
             <DungeonMap
@@ -411,6 +412,7 @@ export function TownScreen() {
               birds={dungeonBirds}
               dormantDefIds={dormantDefIds}
               onBirdPress={() => setRosterVisible(true)}
+              onTownGatePress={() => setActiveScreen('town')}
             />
           )}
         </PannableMap>
