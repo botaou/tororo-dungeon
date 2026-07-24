@@ -1,6 +1,5 @@
-import { TownPlotState } from '../types';
+import { TownBuildingInstance } from '../types';
 import { getBuildingOption } from './buildingOptions';
-import { TOWN_PLOT_DEFS } from './townGrid';
 
 // Phase 12②("クエスト連動の街発展"): townLevel used to advance automatically
 // the instant cumulative developmentPoints (see useTownStore) crossed a
@@ -33,10 +32,17 @@ export interface TownQuestDef {
 
 export const TOWN_QUESTS: TownQuestDef[] = [
   {
-    id: 'first_plot',
-    name: '最初の土地を開拓する',
-    description: '街の外側にある未開拓の土地をひとつ切り拓こう。',
-    rewardText: '新しい土地が使えるようになりました!',
+    // Step B (building free placement) repurposed this quest: there's no
+    // more separate "claim a plot of land" step (see data/townGrid.ts's own
+    // top comment) — the first meaningful town-development milestone is now
+    // just constructing any one building at all. Kept the same id/ordering
+    // position (still the questline's first entry, still grants level 2) so
+    // no migration is needed for townQuestIndex, which persists as a bare
+    // number, not this id string.
+    id: 'first_building',
+    name: '最初の建物を建てる',
+    description: '空いている場所に建物をひとつ建てよう。',
+    rewardText: 'はじめての建物が建ちました!',
     grantsTownLevel: 2,
   },
   {
@@ -67,31 +73,25 @@ export const TOWN_QUESTS: TownQuestDef[] = [
 // this file (and its checks) stay easy to unit-test/reason about in
 // isolation, same spirit as game/recruitment.ts's checkVivi/checkHaku etc.
 export interface TownQuestContext {
-  plots: Record<string, TownPlotState>;
+  buildings: Record<string, TownBuildingInstance>;
   completedRequestCount: number;
 }
 
-function hasBuiltShopKind(plots: Record<string, TownPlotState>, kinds: string[]): boolean {
-  return TOWN_PLOT_DEFS.some((def) => {
-    const state = plots[def.id];
-    if (!state?.building) return false;
-    const option = getBuildingOption(state.constructedBuildingId);
+function hasBuiltShopKind(buildings: Record<string, TownBuildingInstance>, kinds: string[]): boolean {
+  return Object.values(buildings).some((b) => {
+    const option = getBuildingOption(b.constructedBuildingId);
     return !!option?.shopKind && kinds.includes(option.shopKind);
   });
-}
-
-function hasUnlockedAnyNonDefaultPlot(plots: Record<string, TownPlotState>): boolean {
-  return TOWN_PLOT_DEFS.some((def) => !def.unlockedByDefault && plots[def.id]?.unlocked);
 }
 
 // Keyed by TownQuestDef.id — a switch would work equally well, but this
 // keeps each quest's own condition right next to a clear id reference
 // rather than buried in branch order.
 const CONDITION_CHECKS: Record<string, (ctx: TownQuestContext) => boolean> = {
-  first_plot: (ctx) => hasUnlockedAnyNonDefaultPlot(ctx.plots),
-  build_feed_shop: (ctx) => hasBuiltShopKind(ctx.plots, ['feed']),
+  first_building: (ctx) => Object.keys(ctx.buildings).length > 0,
+  build_feed_shop: (ctx) => hasBuiltShopKind(ctx.buildings, ['feed']),
   five_requests: (ctx) => ctx.completedRequestCount >= 5,
-  build_weapon_or_armor_shop: (ctx) => hasBuiltShopKind(ctx.plots, ['weapon', 'armor']),
+  build_weapon_or_armor_shop: (ctx) => hasBuiltShopKind(ctx.buildings, ['weapon', 'armor']),
 };
 
 export function checkTownQuestCondition(quest: TownQuestDef, ctx: TownQuestContext): boolean {

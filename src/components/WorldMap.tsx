@@ -8,22 +8,12 @@ import {
   LeisureSpotInstance,
   MerchantState,
   MiningNodeInstance,
-  ShopKind,
-  TownPlotState,
+  TownBuildingInstance,
   TreasureNodeInstance,
 } from '../types';
 import { getCharacterDef } from '../data/characters';
 import { DUNGEON_GATE_SPOT, FIELD_TOWN_GATE_SPOT, getEnemyStrengthTier, TOWN_DECOR, TOWN_X, TOWN_Y } from '../data/world';
-import {
-  BUILDING_ICON,
-  getTownLevelDef,
-  MERCHANT_SPOT,
-  PLOT_GRID_RING_INDICES,
-  plotGridColOffsetX,
-  plotGridRowOffsetY,
-  TOWN_PLOT_DEFS,
-} from '../data/townGrid';
-import { SHOP_DEFS } from '../data/shops';
+import { getTownLevelDef, MERCHANT_SPOT } from '../data/townGrid';
 import { MATERIAL_ICON } from '../data/materials';
 import { TILE_IMAGES, TILE_REPEAT_IMAGES } from '../data/tileImages';
 import { getBuildingOption } from '../data/buildingOptions';
@@ -158,23 +148,30 @@ interface TownMapProps {
   // caller (see TownScreen), same responsibility split as the existing
   // isRecruited-based activeBirds filter already there.
   birds: BirdState[];
-  plotStates: Record<string, TownPlotState>;
+  // Step B ("building free placement"): every constructed shop/amenity,
+  // freely positioned rather than tied to a fixed grid plot id — see
+  // types.ts's TownBuildingInstance.
+  buildings: Record<string, TownBuildingInstance>;
   // Phase 14: houses, independent of any particular bird (see HouseState) —
   // replaces the old fixed per-defId HOUSE_POSITIONS/HOUSE_IMAGES lookup.
   houses: Record<string, HouseState>;
   townLevel: number;
   merchant: MerchantState | null;
   onBirdPress: (defId: string) => void;
-  onPlotPress: (plotId: string) => void;
-  onShopPress: (shopKind: ShopKind) => void;
+  // Tapping an already-built shop-kind building reopens its shop modal (see
+  // getBuildingOption) — decorative buildings (garden/park/bathhouse) do
+  // nothing when tapped, same as before.
+  onBuildingPress: (buildingId: string) => void;
   onMerchantPress: () => void;
   onTownHallPress: () => void;
   onHousePress: (house: HouseState) => void;
-  // Phase 14's free house placement — when true, the whole map becomes one
-  // big tap target (a semi-transparent hint overlay shows this) instead of
-  // its usual sprite-by-sprite Pressables; tapping anywhere calls
-  // onMapTap with the tapped point in the same 0..1 normalized space
-  // everything else here uses.
+  // Phase 14's free house placement (and now Step B's free building
+  // placement too) — when true, the whole map becomes one big tap target (a
+  // semi-transparent hint overlay shows this) instead of its usual
+  // sprite-by-sprite Pressables; tapping anywhere calls onMapTap with the
+  // tapped point in the same 0..1 normalized space everything else here
+  // uses. TownScreen itself decides what "placement mode" currently means
+  // (a house, or a specific building type) and routes onMapTap accordingly.
   placementMode?: boolean;
   onMapTap?: (x: number, y: number) => void;
   // Map-split follow-up: tapping the town-side gate marker below jumps
@@ -183,24 +180,24 @@ interface TownMapProps {
   onDungeonGatePress: () => void;
 }
 
-// Map-split step 2: the town's own screen — town hall, shrine, shops/plots,
-// houses, the road grid, and only recruited birds currently "in town" (see
+// Map-split step 2: the town's own screen — town hall, shrine, shops,
+// houses, and only recruited birds currently "in town" (see
 // TownMapProps.birds). No town-zone ellipse/fence anymore (see this file's
 // previous revision in git history) — now that this is its own dedicated
 // screen rather than a carved-out region of one shared map, there's nothing
 // left for that ellipse to distinguish; the background is just a plain flat
-// fill (see styles.field), per the request's own "凝った演出は不要" — a
-// fancier town backdrop is deferred to the later isometric/free-placement
-// exploration.
+// fill (see styles.field), per the request's own "凝った演出は不要". Step B
+// (building free placement) additionally removed the fixed 48-plot grid and
+// its road-grid geometry — buildings render wherever their own (x, y) says,
+// same as houses already did.
 export function TownMap({
   birds,
-  plotStates,
+  buildings,
   houses,
   townLevel,
   merchant,
   onBirdPress,
-  onPlotPress,
-  onShopPress,
+  onBuildingPress,
   onMerchantPress,
   onTownHallPress,
   onHousePress,
@@ -212,60 +209,8 @@ export function TownMap({
   const fieldHeight = WORLD_CANVAS_HEIGHT;
   const townLevelDef = getTownLevelDef(townLevel);
 
-  // Phase 12①("空っぽスタート"): roads used to span the plot grid's full
-  // extent (ring-3 included) from the very first tick, regardless of town
-  // level — a brand-new save showed the entire road network already paved.
-  // Roads now only reach as far out as the town has actually unlocked land,
-  // so a fresh town starts with just the short ring-1 cross (the 4
-  // orthogonal plots that unlock by default) and the road network visibly
-  // grows outward each time the player claims a further ring of plots —
-  // "buildings appearing worn a path in," per the request, without needing
-  // a whole separate "is this exact tile trodden" simulation.
-  const maxUnlockedRing = useMemo(() => {
-    let max = 1; // ring-1's 4 orthogonal plots start unlocked by default
-    for (const def of TOWN_PLOT_DEFS) {
-      const state = plotStates[def.id];
-      if (!state?.unlocked && !def.unlockedByDefault) continue;
-      const parts = def.id.split('_');
-      const ring = Math.max(Math.abs(Number(parts[1])), Math.abs(Number(parts[2])));
-      if (ring > max) max = ring;
-    }
-    return max;
-  }, [plotStates]);
-
-  const roadGridNodes = useMemo(() => {
-    const maxDx = plotGridColOffsetX(maxUnlockedRing) * fieldWidth;
-    const maxDy = plotGridRowOffsetY(maxUnlockedRing) * fieldHeight;
-    const nodes: React.ReactNode[] = [];
-    for (const row of PLOT_GRID_RING_INDICES) {
-      if (Math.abs(row) > maxUnlockedRing) continue;
-      const y = TOWN_Y * fieldHeight + plotGridRowOffsetY(row) * fieldHeight;
-      nodes.push(
-        <View
-          key={`h${row}`}
-          pointerEvents="none"
-          style={[styles.roadHorizontal, { top: y - 4, left: TOWN_X * fieldWidth - maxDx, width: maxDx * 2 }]}
-        />
-      );
-    }
-    for (const col of PLOT_GRID_RING_INDICES) {
-      if (Math.abs(col) > maxUnlockedRing) continue;
-      const x = TOWN_X * fieldWidth + plotGridColOffsetX(col) * fieldWidth;
-      nodes.push(
-        <View
-          key={`v${col}`}
-          pointerEvents="none"
-          style={[styles.roadVertical, { left: x - 4, top: TOWN_Y * fieldHeight - maxDy, height: maxDy * 2 }]}
-        />
-      );
-    }
-    return nodes;
-  }, [fieldWidth, fieldHeight, maxUnlockedRing]);
-
   return (
     <View style={[styles.field, { width: fieldWidth, height: fieldHeight }]}>
-      {roadGridNodes}
-
       {TOWN_DECOR.map((d, i) => (
         <Text
           key={i}
@@ -276,36 +221,9 @@ export function TownMap({
         </Text>
       ))}
 
-      {TOWN_PLOT_DEFS.map((def) => {
-        const state = plotStates[def.id] ?? { id: def.id, unlocked: def.unlockedByDefault, building: null, constructedBuildingId: null };
-        const levelLocked = !!def.minTownLevel && townLevel < def.minTownLevel;
-        // Phase 12①("空っぽスタート"): general/feed used to be forced into
-        // looking already-built (`{ ...state, unlocked: true, building:
-        // 'shop' }`) regardless of the plot's real, persisted state — the
-        // town always had these two shops standing from turn one. Now every
-        // plot (including these two) renders its real state, and whichever
-        // shopKind actually got built there (if any — could be any of the
-        // four shop kinds, or none) is read straight off the constructed
-        // BuildingOption instead of being tied to a fixed plot id. This also
-        // means weapon/armor shops now get the same real building art
-        // (SHOP_IMAGES) general/feed always had, instead of a plain emoji.
-        const constructedOption = getBuildingOption(state.constructedBuildingId);
-        const builtShopKind = state.building ? constructedOption?.shopKind ?? null : null;
-        return (
-          <PlotSprite
-            key={def.id}
-            def={def}
-            state={state}
-            shopEmoji={builtShopKind ? SHOP_DEFS[builtShopKind].emoji : undefined}
-            shopName={builtShopKind ? SHOP_DEFS[builtShopKind].name : undefined}
-            shopImage={builtShopKind ? SHOP_IMAGES[builtShopKind] : undefined}
-            levelLocked={levelLocked}
-            x={def.x * fieldWidth}
-            y={def.y * fieldHeight}
-            onPress={() => (builtShopKind ? onShopPress(builtShopKind) : onPlotPress(def.id))}
-          />
-        );
-      })}
+      {Object.values(buildings).map((b) => (
+        <BuildingSprite key={b.id} instance={b} x={b.x * fieldWidth} y={b.y * fieldHeight} onPress={() => onBuildingPress(b.id)} />
+      ))}
 
       <AnimatedPressable
         onPress={onTownHallPress}
@@ -686,81 +604,29 @@ function TreasureSprite({ treasure, x, y }: { treasure: TreasureNodeInstance; x:
   );
 }
 
-function PlotSprite({
-  def,
-  state,
-  shopEmoji,
-  shopName,
-  shopImage,
-  levelLocked,
-  x,
-  y,
-  onPress,
-}: {
-  def: (typeof TOWN_PLOT_DEFS)[number];
-  state: TownPlotState;
-  shopEmoji?: string;
-  shopName?: string;
-  shopImage?: number;
-  levelLocked: boolean;
-  x: number;
-  y: number;
-  onPress: () => void;
-}) {
-  if (!state.unlocked) {
-    // Plots gated behind a town level the player hasn't reached yet read as
-    // untamed, quietly-waiting ground (real grass art, dimmer, no cost
-    // shown since attempting is pointless right now) rather than the same
-    // "locked, here's the price" look as an affordable-but-unclaimed plot —
-    // both now share the same grass-tile backdrop (see data/tileImages.ts)
-    // instead of a flat gray/green box, just dimmed differently.
-    return (
-      <AnimatedPressable
-        style={[styles.plot, levelLocked ? styles.plotUntamed : styles.plotLocked, { left: x - 18, top: y - 18 }]}
-        onPress={onPress}
-      >
-        <Image source={TILE_IMAGES.grassPlain} resizeMode="cover" style={[styles.plotGrassBg, levelLocked && styles.plotGrassBgDim]} />
-        {levelLocked ? (
-          <Text style={styles.plotLevelReq}>Lv.{def.minTownLevel}</Text>
-        ) : (
-          <>
-            <Text style={styles.plotLockIcon}>🔒</Text>
-            {def.unlockCost && (
-              <Text style={styles.plotCostText}>
-                {def.unlockCost.gold}G
-                {def.unlockCost.materialId ? ` ${MATERIAL_ICON[def.unlockCost.materialId]}${def.unlockCost.materialAmount}` : ''}
-              </Text>
-            )}
-          </>
-        )}
-      </AnimatedPressable>
-    );
-  }
-
-  // A constructed plot's own BuildingOption (see data/buildingOptions.ts)
-  // has a more specific emoji than the generic per-BuildingKind fallback —
-  // e.g. the general-goods branch and the feed branch are both kind 'shop'
-  // but render as 🛠️/🌾 respectively once matched back to their option.
-  const constructedOption = getBuildingOption(state.constructedBuildingId);
-  const buildingIcon = constructedOption?.emoji ?? (state.building ? BUILDING_ICON[state.building] : '·');
-  // 'park'/'bathhouse' (Phase 11) have real art (see data/buildingImages.ts);
-  // 'garden' and the cosmetic workshop/warehouse fallbacks don't, and keep
-  // the emoji-in-a-card look below.
-  const amenityImage = constructedOption ? AMENITY_IMAGES[constructedOption.id] : undefined;
+// Step B ("building free placement"): a constructed shop/amenity, drawn at
+// its own freely-chosen (x, y) — replaces the old PlotSprite, which used to
+// also cover "locked"/"unlocked-but-empty" plot states that no longer exist
+// (every TownBuildingInstance is, by construction, already built — see
+// useTownStore's constructBuilding). getBuildingOption always resolves for a
+// real instance (it was looked up successfully at construction time), so
+// unlike the old PlotSprite there's no BUILDING_ICON fallback branch to
+// cover a missing option.
+function BuildingSprite({ instance, x, y, onPress }: { instance: TownBuildingInstance; x: number; y: number; onPress: () => void }) {
+  const option = getBuildingOption(instance.constructedBuildingId);
+  // 'park'/'bathhouse' (Phase 11) and every shop kind have real art (see
+  // data/buildingImages.ts); 'garden' doesn't, and keeps the
+  // emoji-in-a-card look below.
+  const shopImage = option?.shopKind ? SHOP_IMAGES[option.shopKind] : undefined;
+  const amenityImage = option ? AMENITY_IMAGES[option.id] : undefined;
   const buildingImage = shopImage ?? amenityImage;
-  // A real-device request: a constructed building (in particular the new
-  // park/bathhouse — see Phase 11) was hard to tell apart from any other
-  // small emoji dotted around the map, since only the bare icon rendered
-  // with no name at all. A short label underneath — same idea as the house/
-  // merchant/town-hall sprites already have — makes what's actually built
-  // here unambiguous at a glance.
-  const label = shopName ?? constructedOption?.name;
+  const label = option?.name;
 
   if (buildingImage) {
     // Real building art — a bigger, bottom-anchored (no card background)
     // box, same idea as the town-hall/house sprites: the art already has
     // its own ground shadow, so a background chip behind it would look
-    // like a sticker rather than a building standing on the plot.
+    // like a sticker rather than a building standing on the ground.
     return (
       <>
         <AnimatedPressable
@@ -785,11 +651,11 @@ function PlotSprite({
   return (
     <>
       <AnimatedPressable style={[styles.plot, styles.plotOpen, { left: x - 18, top: y - 18 }]} onPress={onPress}>
-        <Text style={styles.plotBuildingIcon}>{shopEmoji ?? buildingIcon}</Text>
+        <Text style={styles.plotBuildingIcon}>{option?.emoji ?? '·'}</Text>
       </AnimatedPressable>
-      {/* The plot box itself clips at 36x36 (overflow: hidden), so the
-          label is a separate sibling positioned just below it rather than a
-          child — otherwise it'd get cut off before ever becoming visible. */}
+      {/* The box itself clips at 36x36 (overflow: hidden), so the label is
+          a separate sibling positioned just below it rather than a child —
+          otherwise it'd get cut off before ever becoming visible. */}
       {label && (
         <Text pointerEvents="none" style={[styles.plotBuildingLabel, { left: x - 30, top: y + 19 }]} numberOfLines={1}>
           {label}
@@ -1152,8 +1018,6 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   fieldZoneLabel: { fontSize: 10, fontWeight: '800', color: theme.textPrimary },
-  roadHorizontal: { position: 'absolute', height: 8, borderRadius: 2, backgroundColor: theme.road, opacity: 0.75 },
-  roadVertical: { position: 'absolute', width: 8, borderRadius: 2, backgroundColor: theme.road, opacity: 0.75 },
   // Bottom-anchored (justifyContent: 'flex-end', no background/border card)
   // rather than the old fixed-size chip — the 5 town-hall images have very
   // different aspect ratios (a squat ボロ役場 vs. the towered トロロ自然
@@ -1214,19 +1078,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     zIndex: 2, // see `town`'s own zIndex comment above
   },
-  plotLocked: {
-    backgroundColor: theme.disabled,
-    borderWidth: 1,
-    borderColor: theme.cardBorder,
-  },
   plotOpen: {
     backgroundColor: theme.cardAlt,
     borderWidth: 1.5,
     borderStyle: 'dashed',
     borderColor: theme.pink,
   },
-  plotLockIcon: { fontSize: 16 },
-  plotCostText: { fontSize: 8, fontWeight: '700', color: theme.textMuted, marginTop: 1 },
   plotBuildingIcon: { fontSize: 22, color: theme.textMuted },
   // Real building art (shops, park/bathhouse) — bottom-anchored like the
   // town-hall/house sprites, no card background (the art has its own
@@ -1251,16 +1108,6 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     paddingHorizontal: 2,
   },
-  plotUntamed: {
-    borderWidth: 1,
-    borderColor: 'rgba(107, 189, 110, 0.3)',
-  },
-  // Real grass art behind both locked states (see data/tileImages.ts) —
-  // level-gated plots dim it further so they still read as "further off"
-  // than a merely gold-locked one.
-  plotGrassBg: { position: 'absolute', width: '100%', height: '100%', opacity: 0.75 },
-  plotGrassBgDim: { opacity: 0.4 },
-  plotLevelReq: { fontSize: 9, fontWeight: '800', color: theme.textPrimary },
   // zIndex: 1 keeps every sprite using this style (birds, the shopkeeper,
   // encounter markers, leisure spots) above ordinary field content but
   // below plots/the town hall (zIndex: 2 — see `town`'s comment) — birds no

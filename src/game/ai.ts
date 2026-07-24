@@ -53,7 +53,7 @@ import {
   VISIT_DWELL_TICKS,
 } from './config';
 import { TOWN_X, TOWN_Y } from '../data/world';
-import { getShopPosition, MERCHANT_SPOT } from '../data/townGrid';
+import { BASIC_TRADE_SPOT, MERCHANT_SPOT } from '../data/townGrid';
 import { MATERIAL_SELL_PRICE } from '../data/marketPrices';
 import { SHOP_DEFS } from '../data/shops';
 import { CONVERTIBLE_ITEM_IDS, ITEM_DEF_MAP, ITEM_DEFS } from '../data/items';
@@ -477,7 +477,7 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
 
   // Continue an already-committed selling trip, or roll to start a new one.
   if (bird.targetKind === 'shop' && bird.activity === 'selling') {
-    return executeSellTrip(bird);
+    return executeSellTrip(bird, world);
   }
   if (hasSellableInventory(bird)) {
     // Only *force* the trip (chance = 1) if the player can actually afford
@@ -491,7 +491,7 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
       bird.targetKind = 'shop';
       bird.activity = 'selling';
       bird.workProgress = 0;
-      return executeSellTrip(bird);
+      return executeSellTrip(bird, world);
     }
   }
 
@@ -663,7 +663,11 @@ function stepShopFood(bird: BirdState, world: AiWorld): AiStepOutcome {
   if (bird.activity !== 'eating') {
     bird.workProgress = 0;
   }
-  const shop = getShopPosition('feed');
+  // Step B: once a real feed shop is actually constructed somewhere, walk
+  // there instead of the fixed basic-trade spot — same "prefer the real
+  // building once it exists" idea pickFoodTreat already applies to whether
+  // a treat is even offered.
+  const shop = world.shopPositions.feed ?? BASIC_TRADE_SPOT;
   const arrived = moveToward(bird, shop.x, shop.y);
   bird.activity = 'eating';
   bird.targetKind = 'shop';
@@ -762,10 +766,12 @@ function pickSellOffer(bird: BirdState, cap: number): { materialId: MaterialId; 
 // decided right here at completion time, from the bird's actual inventory
 // then — not from whatever triggered the trip — so it stays correct even if
 // the bird's stock changed mid-trip.
-function executeSellTrip(bird: BirdState): AiStepOutcome {
+function executeSellTrip(bird: BirdState, world: AiWorld): AiStepOutcome {
   bird.location = 'town'; // map-split step 1: heading to the general shop
   const outcome = emptyOutcome();
-  const shop = getShopPosition('general');
+  // Step B: prefer the real constructed general shop once one exists, same
+  // as stepShopFood does for the feed shop.
+  const shop = world.shopPositions.general ?? BASIC_TRADE_SPOT;
   const arrived = moveToward(bird, shop.x, shop.y);
   bird.activity = 'selling';
   if (arrived) {

@@ -1,4 +1,5 @@
 import { BuildingKind, MaterialId, ShopKind } from '../types';
+import { BUILDING_COST_SCALING_STEP } from '../game/config';
 
 // A constructible building — offered in the ConstructionModal when tapping
 // an unlocked, still-empty plot (see useTownStore's constructBuilding).
@@ -134,4 +135,23 @@ export const BUILDING_OPTIONS: BuildingOption[] = [
 export function getBuildingOption(id: string | null): BuildingOption | null {
   if (!id) return null;
   return BUILDING_OPTIONS.find((o) => o.id === id) ?? null;
+}
+
+// Step B (building free placement): replaces the old per-plot ring-distance
+// unlock cost. `alreadyBuiltCount` is how many buildings already stand in
+// town (see useTownStore's constructBuilding) — the multiplier is 1.0 for
+// the very first building (full base price, same as today), then grows a
+// little with each one already built, same shape as the old ring-distance
+// scaling but keyed on "how developed is this town" instead of "how far
+// out is this specific plot."
+export function getScaledBuildingCost(
+  option: BuildingOption,
+  alreadyBuiltCount: number
+): { gold: number; materialId: MaterialId; materialAmount: number } {
+  const multiplier = 1 + alreadyBuiltCount * BUILDING_COST_SCALING_STEP;
+  return {
+    gold: Math.round(option.cost.gold * multiplier),
+    materialId: option.cost.materialId,
+    materialAmount: Math.round(option.cost.materialAmount * multiplier),
+  };
 }

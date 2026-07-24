@@ -2,7 +2,7 @@ import React from 'react';
 import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { MaterialId } from '../types';
-import { BUILDING_OPTIONS } from '../data/buildingOptions';
+import { BUILDING_OPTIONS, getScaledBuildingCost } from '../data/buildingOptions';
 import { MATERIAL_ICON } from '../data/materials';
 import { AnimatedPressable } from './AnimatedPressable';
 import { theme } from '../theme';
@@ -11,15 +11,27 @@ interface Props {
   visible: boolean;
   gold: number;
   materials: Partial<Record<MaterialId, number>>;
-  onBuild: (optionId: string) => void;
+  // Step B (building free placement): how many buildings already stand in
+  // town, and the current cap (see data/townGrid.ts's getTownBuildingCap) —
+  // used both to show "n/cap" and to scale each option's displayed cost
+  // (see data/buildingOptions.ts's getScaledBuildingCost).
+  builtCount: number;
+  cap: number;
+  // Picking an affordable option no longer builds immediately — it starts
+  // placement mode (see TownScreen), closing this modal so the player can
+  // tap wherever in town they want it to go.
+  onSelect: (optionId: string) => void;
   onClose: () => void;
 }
 
-// Tapping an unlocked, still-empty plot opens this — pick a building from
-// the catalog (data/buildingOptions.ts), see its cost measured against what
-// the player actually has, and build it on the spot if affordable. Replaces
-// the old free instant building-cycle tap (cosmetic only, no cost).
-export function ConstructionModal({ visible, gold, materials, onBuild, onClose }: Props) {
+// Tapping the "🏗️ 建てる" button opens this — pick a building from the
+// catalog (data/buildingOptions.ts), see its cost (scaled by how many
+// buildings already stand in town) measured against what the player
+// actually has, then tap anywhere in town to place it (see TownScreen's
+// placingBuildingOptionId/handleBuildMapTap).
+export function ConstructionModal({ visible, gold, materials, builtCount, cap, onSelect, onClose }: Props) {
+  const atCap = builtCount >= cap;
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
@@ -30,14 +42,20 @@ export function ConstructionModal({ visible, gold, materials, onBuild, onClose }
               <Text style={styles.closeButtonText}>閉じる</Text>
             </AnimatedPressable>
           </View>
-          <Text style={styles.bodySubText}>この土地に建てる建物を選んでください。</Text>
+          <Text style={styles.bodySubText}>
+            建てたい建物を選んでください({builtCount}/{cap})
+          </Text>
+          {atCap && (
+            <Text style={styles.capNote}>この街ではこれ以上建てられません。街レベルが上がると上限が増えます。</Text>
+          )}
 
           <ScrollView style={styles.list}>
             {BUILDING_OPTIONS.map((option) => {
-              const goldOk = gold >= option.cost.gold;
-              const have = materials[option.cost.materialId] ?? 0;
-              const materialOk = have >= option.cost.materialAmount;
-              const canBuild = goldOk && materialOk;
+              const cost = getScaledBuildingCost(option, builtCount);
+              const goldOk = gold >= cost.gold;
+              const have = materials[cost.materialId] ?? 0;
+              const materialOk = have >= cost.materialAmount;
+              const canBuild = !atCap && goldOk && materialOk;
 
               return (
                 <View key={option.id} style={styles.optionCard}>
@@ -51,16 +69,16 @@ export function ConstructionModal({ visible, gold, materials, onBuild, onClose }
 
                   <View style={styles.costRow}>
                     <Text style={[styles.costText, !goldOk && styles.costTextShort]}>
-                      🪙 {gold}/{option.cost.gold}
+                      🪙 {gold}/{cost.gold}
                     </Text>
                     <Text style={[styles.costText, !materialOk && styles.costTextShort]}>
-                      {MATERIAL_ICON[option.cost.materialId]} {have}/{option.cost.materialAmount}
+                      {MATERIAL_ICON[cost.materialId]} {have}/{cost.materialAmount}
                     </Text>
                   </View>
 
                   <AnimatedPressable
                     style={[styles.buildButton, !canBuild && styles.buildButtonDisabled]}
-                    onPress={canBuild ? () => onBuild(option.id) : undefined}
+                    onPress={canBuild ? () => onSelect(option.id) : undefined}
                     disabled={!canBuild}
                   >
                     <Text style={styles.buildButtonText}>建てる</Text>
@@ -95,7 +113,8 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   closeButtonText: { color: theme.blue, fontWeight: '700', fontSize: 13 },
-  bodySubText: { fontSize: 12, color: theme.textSecondary, marginBottom: 12 },
+  bodySubText: { fontSize: 12, color: theme.textSecondary, marginBottom: 4 },
+  capNote: { fontSize: 11, color: theme.red, marginBottom: 8 },
   list: { maxHeight: 420 },
   optionCard: {
     backgroundColor: theme.cardAlt,

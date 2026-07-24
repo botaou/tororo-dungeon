@@ -8,7 +8,7 @@ import { IsometricPrototypeScreen } from '../prototypes/isometric/IsometricProto
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useWorldStore } from '../store/useWorldStore';
 import { useTownStore } from '../store/useTownStore';
-import { TOWN_PLOT_DEFS } from '../data/townGrid';
+import { getTownBuildingCap } from '../data/townGrid';
 import { getBuildingOption } from '../data/buildingOptions';
 import { TownMap, DungeonMap, WORLD_CANVAS_HEIGHT, WORLD_CANVAS_WIDTH } from '../components/WorldMap';
 import { PannableMap } from '../components/PannableMap';
@@ -22,7 +22,6 @@ import { BirdRosterModal } from '../components/BirdRosterModal';
 import { MerchantModal } from '../components/MerchantModal';
 import { RecruitmentModal } from '../components/RecruitmentModal';
 import { TownLevelUpModal } from '../components/TownLevelUpModal';
-import { PlotUnlockModal } from '../components/PlotUnlockModal';
 import { ConstructionModal } from '../components/ConstructionModal';
 import { RecipeUnlockModal } from '../components/RecipeUnlockModal';
 import { SkillUnlockModal } from '../components/SkillUnlockModal';
@@ -39,7 +38,7 @@ import { CostumeCollectionModal } from '../components/CostumeCollectionModal';
 import { CosmeticTicketModal } from '../components/CosmeticTicketModal';
 import { ActivityLogPanel } from '../components/ActivityLogPanel';
 import { JobPreset } from '../data/jobPresets';
-import { HouseState, ItemId, PlotUnlockCost, ShopKind } from '../types';
+import { HouseState, ItemId, ShopKind } from '../types';
 import { cuteShadow, theme } from '../theme';
 
 export function TownScreen() {
@@ -58,13 +57,12 @@ export function TownScreen() {
   const unfavoriteTreasure = useWorldStore((s) => s.unfavoriteTreasure);
   const setCosmetic = useWorldStore((s) => s.setCosmetic);
   const giveGiftToBird = useWorldStore((s) => s.giveGiftToBird);
-  const plots = useTownStore((s) => s.plots);
+  const buildings = useTownStore((s) => s.buildings);
   const houses = useTownStore((s) => s.houses);
   const developmentPoints = useTownStore((s) => s.developmentPoints);
   const townLevel = useTownStore((s) => s.townLevel);
   const townQuestIndex = useTownStore((s) => s.townQuestIndex);
   const levelUpEvents = useTownStore((s) => s.levelUpEvents);
-  const tryUnlockPlot = useTownStore((s) => s.tryUnlockPlot);
   const constructBuilding = useTownStore((s) => s.constructBuilding);
   const buildHouse = useTownStore((s) => s.buildHouse);
   const assignHouseResident = useTownStore((s) => s.assignHouseResident);
@@ -84,12 +82,14 @@ export function TownScreen() {
   // when closed. Tracks defId rather than a bare boolean since the modal
   // needs to know *whose* house it's showing.
   const [houseTarget, setHouseTarget] = useState<string | null>(null);
-  // Locked-but-affordable plot currently showing its cost breakdown (see
-  // PlotUnlockModal) — null when closed.
-  const [unlockTarget, setUnlockTarget] = useState<{ plotId: string; cost: PlotUnlockCost } | null>(null);
-  // Unlocked, still-empty plot currently showing the construction menu (see
-  // ConstructionModal) — null when closed.
-  const [constructionTarget, setConstructionTarget] = useState<string | null>(null);
+  // Step B (building free placement): whether the building-type picker (see
+  // ConstructionModal) is currently open.
+  const [buildMenuVisible, setBuildMenuVisible] = useState(false);
+  // Which BuildingOption the player picked from that menu — non-null means
+  // the map is in building-placement mode (see placingHouse's own
+  // established pattern below), tapping anywhere attempts to construct this
+  // exact option there (see handleBuildMapTap). Null when not placing.
+  const [placingBuildingOptionId, setPlacingBuildingOptionId] = useState<string | null>(null);
   // How many of world.recruitmentEvents we've already shown a modal for —
   // the array only ever grows, so anything past this index is new (see
   // useWorldStore's recruitment-trigger checks). world itself isn't
@@ -182,8 +182,7 @@ export function TownScreen() {
     furnitureShopVisible ||
     mysteryShopVisible ||
     houseTarget !== null ||
-    unlockTarget !== null ||
-    constructionTarget !== null ||
+    buildMenuVisible ||
     assignHouseTarget !== null ||
     giftTarget !== null;
   const pendingRecruit = anyOtherModalOpen ? null : world.recruitmentEvents[shownRecruitCount] ?? null;
@@ -217,59 +216,49 @@ export function TownScreen() {
     postRequest(preset);
   };
 
-  const handlePlotPress = (plotId: string) => {
-    const def = TOWN_PLOT_DEFS.find((p) => p.id === plotId);
-    if (!def) return;
-    const state = plots[plotId] ?? { id: plotId, unlocked: def.unlockedByDefault, building: null, constructedBuildingId: null };
-    if (!state.unlocked) {
-      // Level-gated plots already show a "Lv.X" badge right on the map —
-      // nothing to tap into yet, since attempting is pointless until the
-      // town's actually reached that level.
-      if (def.minTownLevel && townLevel < def.minTownLevel) return;
-      if (def.unlockCost) setUnlockTarget({ plotId, cost: def.unlockCost });
-      return;
-    }
-    if (state.building) {
-      // Already built — a shop-kind building reopens its (shared-stock)
-      // shop modal; a decorative building (e.g. the garden) has nothing
-      // further to show.
-      const option = getBuildingOption(state.constructedBuildingId);
-      if (option?.shopKind) setOpenShop(option.shopKind);
-      return;
-    }
-    // Construction eligibility is governed purely by unlock state + town
-    // level (already checked above/below). Map-split step 2 removed the old
-    // town-zone ellipse entirely — the town screen is now its own
-    // independent space, so there's no separate "inside the zone" gate to
-    // worry about here anymore.
-    setConstructionTarget(plotId);
+  // Step B (building free placement): tapping an already-built shop-kind
+  // building reopens its (shared-stock) shop modal via handleShopPress
+  // (below) — a decorative building (e.g. the garden) has nothing further
+  // to show, same as the old grid's plot-tap behavior.
+  const handleBuildingPress = (buildingId: string) => {
+    const building = buildings[buildingId];
+    if (!building) return;
+    const option = getBuildingOption(building.constructedBuildingId);
+    if (option?.shopKind) handleShopPress(option.shopKind);
   };
 
-  const handleUnlock = () => {
-    if (!unlockTarget) return;
-    const def = TOWN_PLOT_DEFS.find((p) => p.id === unlockTarget.plotId);
-    if (tryUnlockPlot(unlockTarget.plotId, unlockTarget.cost, def?.minTownLevel)) {
-      setUnlockTarget(null);
-    }
+  // Picking an option from ConstructionModal doesn't build immediately
+  // anymore — it closes the picker and enters placement mode, same shape as
+  // Phase 14's house placement (see placingHouse below): the player then
+  // taps wherever in town they want it built.
+  const handleSelectBuildingOption = (optionId: string) => {
+    setBuildMenuVisible(false);
+    setPlacingBuildingOptionId(optionId);
   };
 
-  const handleBuild = (optionId: string) => {
-    if (!constructionTarget) return;
-    if (constructBuilding(constructionTarget, optionId)) {
-      setConstructionTarget(null);
-    }
-  };
-
-  // Phase 14: houses are the first (and so far only) freely-placed building
-  // — tapping the map while placingHouse is true attempts to build a vacant
-  // house right there (see useTownStore's buildHouse for the zone/overlap/
-  // cost checks). Deliberately stays in placement mode on failure so the
-  // player can just try another spot, with a quick alert explaining why.
-  const handleMapTap = (x: number, y: number) => {
-    if (buildHouse(x, y)) {
-      setPlacingHouse(false);
+  const handleBuildMapTap = (x: number, y: number) => {
+    if (!placingBuildingOptionId) return;
+    if (constructBuilding(placingBuildingOptionId, x, y)) {
+      setPlacingBuildingOptionId(null);
     } else {
-      Alert.alert('ここには建てられません', '街の外か、何かに近すぎるか、費用が足りない可能性があります。');
+      Alert.alert('ここには建てられません', '何かに近すぎるか、上限に達しているか、費用が足りない可能性があります。');
+    }
+  };
+
+  // Phase 14's house placement and Step B's building placement share the
+  // exact same "whole map becomes one big tap target" mechanism (see
+  // WorldMap's placementMode/onMapTap) — this dispatches to whichever one
+  // is actually active. Deliberately stays in placement mode on failure so
+  // the player can just try another spot, with a quick alert explaining why.
+  const handleMapTap = (x: number, y: number) => {
+    if (placingHouse) {
+      if (buildHouse(x, y)) {
+        setPlacingHouse(false);
+      } else {
+        Alert.alert('ここには建てられません', '街の外か、何かに近すぎるか、費用が足りない可能性があります。');
+      }
+    } else if (placingBuildingOptionId) {
+      handleBuildMapTap(x, y);
     }
   };
 
@@ -352,6 +341,12 @@ export function TownScreen() {
           >
             <Text style={styles.inventoryButtonText}>🏠+</Text>
           </AnimatedPressable>
+          <AnimatedPressable
+            style={[styles.inventoryButton, placingBuildingOptionId !== null && styles.inventoryButtonActive]}
+            onPress={() => setBuildMenuVisible(true)}
+          >
+            <Text style={styles.inventoryButtonText}>🏗️</Text>
+          </AnimatedPressable>
           {SHOW_ISOMETRIC_DEBUG_BUTTON ? (
             <AnimatedPressable style={styles.inventoryButton} onPress={() => setIsoPrototypeVisible(true)}>
               <Text style={styles.inventoryButtonText}>📐</Text>
@@ -364,6 +359,17 @@ export function TownScreen() {
         <View style={styles.placementBanner}>
           <Text style={styles.placementBannerText}>街エリア内をタップして、空き家を建てる場所を選んでください</Text>
           <AnimatedPressable style={styles.placementCancelButton} onPress={() => setPlacingHouse(false)}>
+            <Text style={styles.placementCancelButtonText}>✕ やめる</Text>
+          </AnimatedPressable>
+        </View>
+      )}
+
+      {placingBuildingOptionId !== null && (
+        <View style={styles.placementBanner}>
+          <Text style={styles.placementBannerText}>
+            {getBuildingOption(placingBuildingOptionId)?.name ?? '建物'}を建てる場所をタップしてください
+          </Text>
+          <AnimatedPressable style={styles.placementCancelButton} onPress={() => setPlacingBuildingOptionId(null)}>
             <Text style={styles.placementCancelButtonText}>✕ やめる</Text>
           </AnimatedPressable>
         </View>
@@ -389,17 +395,16 @@ export function TownScreen() {
           {activeScreen === 'town' ? (
             <TownMap
               birds={townBirds}
-              plotStates={plots}
+              buildings={buildings}
               houses={houses}
               townLevel={townLevel}
               merchant={world.merchant}
               onBirdPress={() => setRosterVisible(true)}
-              onPlotPress={handlePlotPress}
-              onShopPress={handleShopPress}
+              onBuildingPress={handleBuildingPress}
               onMerchantPress={() => setMerchantVisible(true)}
               onTownHallPress={() => setTownStatusVisible(true)}
               onHousePress={handleHousePress}
-              placementMode={placingHouse}
+              placementMode={placingHouse || placingBuildingOptionId !== null}
               onMapTap={handleMapTap}
               onDungeonGatePress={() => setActiveScreen('dungeon')}
             />
@@ -509,21 +514,14 @@ export function TownScreen() {
 
       <TownLevelUpModal event={pendingLevelUp} onClose={() => setShownLevelUpCount((c) => c + 1)} />
 
-      <PlotUnlockModal
-        visible={unlockTarget !== null}
-        cost={unlockTarget?.cost ?? null}
-        gold={gold}
-        materials={materials}
-        onUnlock={handleUnlock}
-        onClose={() => setUnlockTarget(null)}
-      />
-
       <ConstructionModal
-        visible={constructionTarget !== null}
+        visible={buildMenuVisible}
         gold={gold}
         materials={materials}
-        onBuild={handleBuild}
-        onClose={() => setConstructionTarget(null)}
+        builtCount={Object.keys(buildings).length}
+        cap={getTownBuildingCap(townLevel)}
+        onSelect={handleSelectBuildingOption}
+        onClose={() => setBuildMenuVisible(false)}
       />
 
       <RecipeUnlockModal event={pendingRecipeUnlock} onClose={() => setShownRecipeUnlockCount((c) => c + 1)} />

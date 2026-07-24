@@ -840,37 +840,25 @@ export type CosmeticSource = 'find' | 'drop' | 'craft';
 // (see data/townGrid.ts's getAllAmenityPositions).
 export type BuildingKind = 'workshop' | 'shop' | 'warehouse' | 'garden' | 'park' | 'bathhouse';
 
-export interface PlotUnlockCost {
-  gold: number;
-  materialId?: MaterialId;
-  materialAmount?: number;
-}
-
-// Design-time definition of one buildable cell in the town grid.
-export interface TownPlotDef {
+// "Building free placement": a constructed building anywhere in town, at an
+// arbitrary (x,y) rather than a fixed grid slot — the old 48-cell grid
+// (TownPlotDef/TownPlotState, TOWN_PLOT_DEFS) was removed entirely in favor
+// of this. Same shape/spirit as HouseState/FurnitureInstance — this is the
+// third independent implementation of this project's "clearance-check +
+// free {id,x,y} placement" pattern (see useTownStore's buildHouse/
+// useMayorRoomStore's placeFurniture for the other two), just applied to
+// shops/amenities instead of houses/furniture. There's no separate "unlock
+// this land" step anymore — see useTownStore's constructBuilding: how many
+// of these can exist at once is capped by town level (getTownBuildingCap),
+// and each one's cost scales with how many are already built (see
+// data/buildingOptions.ts's getScaledBuildingCost), replacing the old
+// per-plot ring-distance cost scaling.
+export interface TownBuildingInstance {
   id: string;
   x: number;
   y: number;
-  unlockedByDefault: boolean;
-  unlockCost: PlotUnlockCost | null; // null when unlockedByDefault
-  // The outer ring can't even be attempted below this town level — the town
-  // zone's own buildable land grows alongside its development stage, same
-  // idea as EnemyDef/MiningNodeDef.minTownLevel for the field. Absent (or 1)
-  // means always attemptable (subject to the usual gold/material cost).
-  minTownLevel?: number;
-}
-
-// Persisted per-plot progress: whether the player has claimed the land yet,
-// and what (if anything) they've put on it.
-export interface TownPlotState {
-  id: string;
-  unlocked: boolean;
-  building: BuildingKind | null;
-  // Which data/buildingOptions.ts entry was actually constructed here, if
-  // any — needed because `building` alone (a BuildingKind) can't tell two
-  // same-kind options apart (e.g. the general-goods shop branch vs the feed
-  // shop branch are both just 'shop'). Null for the always-present shop
-  // plots (SHOP_PLOT_IDS) and for anything left over from the old
-  // cosmetic-only cycleBuilding tap (pre-construction-system saves).
-  constructedBuildingId: string | null;
+  // Which data/buildingOptions.ts entry this is — BuildingKind/ShopKind are
+  // both derived from this via getBuildingOption, same lookup the old grid
+  // system already used.
+  constructedBuildingId: string;
 }

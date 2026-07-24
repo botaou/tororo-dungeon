@@ -2,16 +2,11 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import {
-  CONSTRUCTION_DEVELOPMENT_POINTS,
-  getAllBuiltPlotPositions,
-  PLOT_UNLOCK_DEVELOPMENT_POINTS,
-  TOWN_PLOT_DEFS,
-} from '../data/townGrid';
-import { BUILDING_OPTIONS } from '../data/buildingOptions';
+import { CONSTRUCTION_DEVELOPMENT_POINTS, getAllBuildingPositions, getTownBuildingCap } from '../data/townGrid';
+import { BUILDING_OPTIONS, getScaledBuildingCost } from '../data/buildingOptions';
 import { HOUSE_POSITIONS } from '../data/houses';
-import { HOUSE_BUILD_COST, HOUSE_CLEARANCE } from '../game/config';
-import { HouseState, PlotUnlockCost, TownPlotState } from '../types';
+import { HOUSE_BUILD_COST, HOUSE_CLEARANCE, TOWN_BUILDING_CLEARANCE } from '../game/config';
+import { HouseState, TownBuildingInstance } from '../types';
 import { usePlayerStore } from './usePlayerStore';
 import { TOWN_X, TOWN_Y } from '../data/world';
 
@@ -26,12 +21,17 @@ export interface TownLevelUpEvent {
 }
 
 interface TownState {
-  plots: Record<string, TownPlotState>;
-  // Flavor/reputation-adjacent currency — grows from unlocking land,
-  // constructing buildings, and completing job-board requests (see
-  // useWorldStore), shown in TownStatusModal. Phase 12②: no longer gates
-  // townLevel (see that field's own comment) — nothing else reads this
-  // either, it's purely a "how much has this town accomplished" readout.
+  // Step B ("building free placement"): every constructed shop/amenity,
+  // freely positioned rather than tied to one of the old grid's 48 fixed
+  // plot ids — see types.ts's TownBuildingInstance for why, and this
+  // store's own migrate() for how a pre-existing save's buildings land at
+  // the exact same (x,y) they always had.
+  buildings: Record<string, TownBuildingInstance>;
+  // Flavor/reputation-adjacent currency — grows from constructing buildings
+  // and completing job-board requests (see useWorldStore), shown in
+  // TownStatusModal. Phase 12②: no longer gates townLevel (see that field's
+  // own comment) — nothing else reads this either, it's purely a "how much
+  // has this town accomplished" readout.
   developmentPoints: number;
   // The town's popularity/renown — tracked independently from
   // developmentPoints on purpose (see job rewards in data/jobPresets.ts).
@@ -69,14 +69,14 @@ interface TownState {
 }
 
 interface TownActions {
-  // Unlocking spends gold/material up front — the caller passes the def's
-  // cost (and, for the level-gated outer ring, its minTownLevel) so this
-  // store doesn't need to import world data just to look it up.
-  tryUnlockPlot: (plotId: string, cost: PlotUnlockCost, minTownLevel?: number) => boolean;
-  // Spends a BuildingOption's cost (gold + one material) to place it on an
-  // unlocked, still-empty plot. False (no charge taken) if the plot isn't
-  // eligible or the cost isn't fully covered.
-  constructBuilding: (plotId: string, optionId: string) => boolean;
+  // Step B: spends a BuildingOption's cost (scaled by how many buildings
+  // already stand in town — see data/buildingOptions.ts's
+  // getScaledBuildingCost) to place it at an arbitrary (x, y). Returns false
+  // (no charge taken) if the town is already at its building cap for the
+  // current town level (getTownBuildingCap), the spot is too close to
+  // something else already standing there (isBuildingSpotBlocked), or the
+  // cost isn't fully covered.
+  constructBuilding: (optionId: string, x: number, y: number) => boolean;
   addDevelopmentPoints: (amount: number) => void;
   addReputation: (amount: number) => void;
   // Called once per completed job-board request (see useWorldStore) — feeds
@@ -89,13 +89,12 @@ interface TownActions {
   // per-tick condition check in useWorldStore could otherwise fire twice in
   // the same tick before townQuestIndex updates elsewhere reads it).
   completeTownQuest: (questId: string, questName: string, rewardText: string, grantsTownLevel: number) => void;
-  // Phase 14's free (non-grid) placement, scoped to houses only for now
-  // (see game/config.ts's HOUSE_BUILD_COST/HOUSE_CLEARANCE and this file's
-  // own isHouseSpotBlocked) — spends the cost and creates a new, vacant
+  // Phase 14's free (non-grid) placement, scoped to houses (see game/
+  // config.ts's HOUSE_BUILD_COST/HOUSE_CLEARANCE and this file's own
+  // isHouseSpotBlocked) — spends the cost and creates a new, vacant
   // (residentDefId: null) house at (x, y). Returns false (no charge taken)
   // if the spot is too close to anything else already standing there, or
-  // the player can't afford it (map-split step 2 removed the old "is this
-  // outside the town zone" check — see buildHouse's own comment).
+  // the player can't afford it.
   buildHouse: (x: number, y: number) => boolean;
   // Moves a recruited-but-unhoused bird into a vacant house. False (no
   // state change) if the house doesn't exist or already has a resident, or
@@ -105,31 +104,59 @@ interface TownActions {
   assignHouseResident: (houseId: string, defId: string) => boolean;
 }
 
-function ensurePlot(plots: Record<string, TownPlotState>, plotId: string, unlockedByDefault: boolean): TownPlotState {
-  return plots[plotId] ?? { id: plotId, unlocked: unlockedByDefault, building: null, constructedBuildingId: null };
-}
-
 let houseIdCounter = 0;
+let buildingIdCounter = 0;
 
 // Simple radius-clearance check (see game/config.ts's HOUSE_CLEARANCE) — not
 // real rectangle overlap math, same "good enough, and this project has been
 // bitten by fancier geometry before" precedent as ai.ts's
 // randomPointNearTown/BUILDING_CLEARANCE.
-function isHouseSpotBlocked(x: number, y: number, houses: Record<string, HouseState>, builtPlotPositions: { x: number; y: number }[]): boolean {
+function isHouseSpotBlocked(x: number, y: number, houses: Record<string, HouseState>, buildingPositions: { x: number; y: number }[]): boolean {
   if (Math.hypot(x - TOWN_X, y - TOWN_Y) < HOUSE_CLEARANCE) return true;
   for (const h of Object.values(houses)) {
     if (Math.hypot(x - h.x, y - h.y) < HOUSE_CLEARANCE) return true;
   }
-  for (const p of builtPlotPositions) {
+  for (const p of buildingPositions) {
     if (Math.hypot(x - p.x, y - p.y) < HOUSE_CLEARANCE) return true;
   }
   return false;
 }
 
+// Step B's own version of the clearance check above — a new building must
+// keep clear of the town hall, every house, and every other building
+// already standing (mutual with isHouseSpotBlocked: a house checks against
+// buildingPositions too, so neither category can be placed on top of the
+// other).
+function isBuildingSpotBlocked(x: number, y: number, buildings: Record<string, TownBuildingInstance>, houses: Record<string, HouseState>): boolean {
+  if (Math.hypot(x - TOWN_X, y - TOWN_Y) < TOWN_BUILDING_CLEARANCE) return true;
+  for (const b of Object.values(buildings)) {
+    if (Math.hypot(x - b.x, y - b.y) < TOWN_BUILDING_CLEARANCE) return true;
+  }
+  for (const h of Object.values(houses)) {
+    if (Math.hypot(x - h.x, y - h.y) < TOWN_BUILDING_CLEARANCE) return true;
+  }
+  return false;
+}
+
+// Superseded by Step B's free placement — kept only so migrate() below can
+// recover each old fixed-grid plot's exact (x, y) and preserve a
+// pre-existing save's building positions/look. The old grid's own
+// axisOffset formula had a "smaller outer-ring step" branch that, at the
+// constants actually shipped (OUTER_STEP == CELL), always collapsed to
+// plain `index * cell` for every ring — see git history for the full
+// original townGrid.ts if the real formula is ever needed again. Do not use
+// this for anything new.
+function legacyPlotPosition(plotId: string): { x: number; y: number } {
+  const [, rowStr, colStr] = plotId.split('_');
+  const CELL_W = 65 / 900;
+  const CELL_H = 65 / 1400;
+  return { x: TOWN_X + Number(colStr) * CELL_W, y: TOWN_Y + Number(rowStr) * CELL_H };
+}
+
 export const useTownStore = create<TownState & TownActions>()(
   persist(
     (set, get) => ({
-      plots: {},
+      buildings: {},
       developmentPoints: 0,
       reputation: 0,
       townLevel: 1,
@@ -138,52 +165,30 @@ export const useTownStore = create<TownState & TownActions>()(
       levelUpEvents: [],
       houses: {},
 
-      tryUnlockPlot: (plotId, cost, minTownLevel) => {
-        if (minTownLevel && get().townLevel < minTownLevel) return false;
-        const player = usePlayerStore.getState();
-        if (player.gold < cost.gold) return false;
-        if (cost.materialId && cost.materialAmount) {
-          const owned = player.materials[cost.materialId as keyof typeof player.materials] ?? 0;
-          if (owned < cost.materialAmount) return false;
-        }
-
-        player.trySpendGold(cost.gold);
-        if (cost.materialId && cost.materialAmount) {
-          player.addMaterials({ [cost.materialId]: -cost.materialAmount });
-        }
-
-        const plots = { ...get().plots };
-        const existing = ensurePlot(plots, plotId, false);
-        plots[plotId] = { ...existing, unlocked: true };
-        set({ plots, developmentPoints: get().developmentPoints + PLOT_UNLOCK_DEVELOPMENT_POINTS });
-        return true;
-      },
-
-      constructBuilding: (plotId, optionId) => {
+      constructBuilding: (optionId, x, y) => {
         const option = BUILDING_OPTIONS.find((o) => o.id === optionId);
         if (!option) return false;
-        // The 4 orthogonal ring-1 plots start unlocked by default and may
-        // never have been written to `plots` (only tryUnlockPlot/
-        // constructBuilding itself ever create an entry) — falling back to
-        // `get().plots[plotId]` alone made building on one of those a
-        // silent no-op, since `existing` was undefined and this bailed out
-        // before ever charging or setting anything (real-device report).
-        const def = TOWN_PLOT_DEFS.find((d) => d.id === plotId);
-        if (!def) return false;
-        const existing = ensurePlot(get().plots, plotId, def.unlockedByDefault);
-        if (!existing.unlocked || existing.building) return false;
 
+        const s = get();
+        const builtCount = Object.keys(s.buildings).length;
+        if (builtCount >= getTownBuildingCap(s.townLevel)) return false;
+        if (isBuildingSpotBlocked(x, y, s.buildings, s.houses)) return false;
+
+        const cost = getScaledBuildingCost(option, builtCount);
         const player = usePlayerStore.getState();
-        if (player.gold < option.cost.gold) return false;
-        const owned = player.materials[option.cost.materialId] ?? 0;
-        if (owned < option.cost.materialAmount) return false;
+        if (player.gold < cost.gold) return false;
+        const owned = player.materials[cost.materialId] ?? 0;
+        if (owned < cost.materialAmount) return false;
 
-        player.trySpendGold(option.cost.gold);
-        player.addMaterials({ [option.cost.materialId]: -option.cost.materialAmount });
+        player.trySpendGold(cost.gold);
+        player.addMaterials({ [cost.materialId]: -cost.materialAmount });
 
-        const plots = { ...get().plots };
-        plots[plotId] = { ...existing, building: option.buildingKind, constructedBuildingId: option.id };
-        set({ plots, developmentPoints: get().developmentPoints + CONSTRUCTION_DEVELOPMENT_POINTS });
+        buildingIdCounter += 1;
+        const id = `building_${buildingIdCounter}_${Date.now()}`;
+        set({
+          buildings: { ...s.buildings, [id]: { id, x, y, constructedBuildingId: option.id } },
+          developmentPoints: s.developmentPoints + CONSTRUCTION_DEVELOPMENT_POINTS,
+        });
         return true;
       },
 
@@ -213,14 +218,13 @@ export const useTownStore = create<TownState & TownActions>()(
       },
 
       buildHouse: (x, y) => {
-        // Map-split step 2: the "is this inside the town zone" gate is gone
-        // — TownMap is now its own dedicated screen (see components/
-        // WorldMap.tsx), so there's no more shared field canvas a house
-        // could accidentally be placed out into. Overlap/clearance checking
-        // (below) is the only placement guard left, same as the mayor's
-        // room's own furniture placement never needed a zone check either.
+        // Map-split step 2 removed the old "is this inside the town zone"
+        // gate — TownMap is its own dedicated screen now. Overlap/clearance
+        // checking (below) is the only placement guard left, same as the
+        // mayor's room's own furniture placement never needed a zone check
+        // either.
         const s = get();
-        if (isHouseSpotBlocked(x, y, s.houses, getAllBuiltPlotPositions(s.plots))) return false;
+        if (isHouseSpotBlocked(x, y, s.houses, getAllBuildingPositions(s.buildings))) return false;
 
         const player = usePlayerStore.getState();
         if (player.gold < HOUSE_BUILD_COST.gold) return false;
@@ -256,7 +260,7 @@ export const useTownStore = create<TownState & TownActions>()(
     {
       name: 'tororo-dungeon-town-v1',
       storage: createJSONStorage(() => AsyncStorage),
-      version: 2,
+      version: 3,
       // Phase 12②: pre-existing saves have developmentPoints but no
       // explicit townLevel field (see TownState.townLevel's own comment on
       // why level used to be derived from points instead of stored).
@@ -270,7 +274,9 @@ export const useTownStore = create<TownState & TownActions>()(
       // grantsTownLevel this grandfathered level already covers, over the
       // next few ticks, without re-granting or re-notifying anything.
       migrate: (persisted: unknown, version) => {
-        let state = persisted as Partial<TownState>;
+        let state = persisted as Partial<TownState> & {
+          plots?: Record<string, { id: string; unlocked: boolean; building: string | null; constructedBuildingId: string | null }>;
+        };
         if (version < 1) {
           const points = state?.developmentPoints ?? 0;
           const thresholds = [0, 60, 180, 400, 800];
@@ -307,12 +313,29 @@ export const useTownStore = create<TownState & TownActions>()(
             ),
           };
         }
+        if (version < 3) {
+          // Step B ("building free placement"): the old fixed 48-slot grid
+          // (TOWN_PLOT_DEFS) is gone — every already-built plot becomes a
+          // free-placed TownBuildingInstance at that exact same (x, y) (see
+          // legacyPlotPosition above) so a returning player's town looks
+          // pixel-identical the moment this ships. Plots that were merely
+          // *unlocked* but never built have nothing to migrate — there's no
+          // more "claimed but empty land" concept, so they just disappear,
+          // which is strictly a superset of what they were (any spot, not
+          // just former plot slots, is now buildable).
+          const legacyPlots = state?.plots ?? {};
+          const buildings: Record<string, TownBuildingInstance> = {};
+          for (const [plotId, plotState] of Object.entries(legacyPlots)) {
+            if (!plotState.building || !plotState.constructedBuildingId) continue;
+            buildingIdCounter += 1;
+            const id = `building_migrated_${buildingIdCounter}`;
+            buildings[id] = { id, ...legacyPlotPosition(plotId), constructedBuildingId: plotState.constructedBuildingId };
+          }
+          state = { ...state, buildings };
+          delete state.plots;
+        }
         return state as unknown as TownState & TownActions;
       },
     }
   )
 );
-
-export function getPlotState(plots: Record<string, TownPlotState>, plotId: string, unlockedByDefault: boolean): TownPlotState {
-  return plots[plotId] ?? { id: plotId, unlocked: unlockedByDefault, building: null, constructedBuildingId: null };
-}

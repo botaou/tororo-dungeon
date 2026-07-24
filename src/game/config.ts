@@ -476,6 +476,22 @@ export const HOUSE_CLEARANCE = 0.05;
 // there's no matching FURNITURE_BUILD_COST here.
 export const FURNITURE_CLEARANCE = 0.08;
 
+// "Building free placement" (Step B): general shops/amenities (see
+// useTownStore's constructBuilding, data/buildingOptions.ts) are the third
+// thing in this project to use the same clearance-radius placement pattern
+// as HOUSE_CLEARANCE/FURNITURE_CLEARANCE above — buildings are visually
+// bigger than a house icon (see WorldMap's PLOT_BUILT_SIZE), so this is a
+// touch more generous than HOUSE_CLEARANCE.
+export const TOWN_BUILDING_CLEARANCE = 0.06;
+
+// Replaces the old per-plot ring-distance unlock-cost scaling: each
+// BuildingOption's own base cost (data/buildingOptions.ts) is multiplied by
+// `1 + alreadyBuiltCount * BUILDING_COST_SCALING_STEP` (see
+// getScaledBuildingCost) — the 1st building in town costs exactly its base
+// price, and each one after that costs a bit more, so the economy still
+// feels "cheap early, pricier later" without needing numbered land parcels.
+export const BUILDING_COST_SCALING_STEP = 0.08;
+
 // How long a visiting bird lingers in the mayor's room before wandering off
 // again (see ai.ts's executeVisitMayorRoom) — same shape as PLAY_DWELL_TICKS.
 export const VISIT_DWELL_TICKS = 3;

@@ -118,7 +118,7 @@ import { useQuestStore } from './useQuestStore';
 import { useRecipeStore } from './useRecipeStore';
 import { useTownStore } from './useTownStore';
 import { useMayorRoomStore } from './useMayorRoomStore';
-import { getAllAmenityPositions, getAllBuiltPlotPositions, getAllShopPositions } from '../data/townGrid';
+import { getAllAmenityPositions, getAllBuildingPositions, getAllShopPositions } from '../data/townGrid';
 import { checkTownQuestCondition, TOWN_QUESTS } from '../data/townQuests';
 
 const INSPIRATION_STAT_LABEL: Record<InspirationStat, string> = {
@@ -854,13 +854,13 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       leisureSpots: world.leisureSpots,
       requests,
       shopStock: usePlayerStore.getState().shopStock,
-      shopPositions: getAllShopPositions(useTownStore.getState().plots),
+      shopPositions: getAllShopPositions(useTownStore.getState().buildings),
       merchant,
       playerGold: usePlayerStore.getState().gold,
-      amenityPositions: getAllAmenityPositions(useTownStore.getState().plots),
-      // Phase 12③: town hall (always at TOWN_X/TOWN_Y) plus every plot that
-      // actually has something built on it — see ai.ts's randomPointNearTown.
-      occupiedSpots: [{ x: TOWN_X, y: TOWN_Y }, ...getAllBuiltPlotPositions(useTownStore.getState().plots)],
+      amenityPositions: getAllAmenityPositions(useTownStore.getState().buildings),
+      // Phase 12③: town hall (always at TOWN_X/TOWN_Y) plus every building
+      // actually constructed — see ai.ts's randomPointNearTown.
+      occupiedSpots: [{ x: TOWN_X, y: TOWN_Y }, ...getAllBuildingPositions(useTownStore.getState().buildings)],
       housePositions,
       availableGiftItemIds: (Object.keys(usePlayerStore.getState().items) as ItemId[]).filter(
         (id) => (usePlayerStore.getState().items[id] ?? 0) > 0
@@ -1326,7 +1326,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     const activeTownQuest = TOWN_QUESTS[townState.townQuestIndex];
     if (
       activeTownQuest &&
-      checkTownQuestCondition(activeTownQuest, { plots: townState.plots, completedRequestCount: townState.completedRequestCount })
+      checkTownQuestCondition(activeTownQuest, { buildings: townState.buildings, completedRequestCount: townState.completedRequestCount })
     ) {
       useTownStore
         .getState()
