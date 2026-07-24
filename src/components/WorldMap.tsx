@@ -26,7 +26,7 @@ import {
   TOWNHALL_IMAGES,
 } from '../data/buildingImages';
 import { ENEMY_IMAGES, FIELD_OBJECT_AFTER_IMAGES, FIELD_OBJECT_IMAGES } from '../data/fieldImages';
-import { getShrineStageDef, SHRINE_SPOT } from '../data/shrine';
+import { ALSHEL_NPC, ALSHEL_REVEAL_TOWN_LEVEL, getShrineStageDef, SHRINE_SPOT } from '../data/shrine';
 import { CharacterAvatar } from './CharacterAvatar';
 import { AnimatedPressable } from './AnimatedPressable';
 import { DEBUG_SHOW_SPRITE_BOUNDS, TICK_MS } from '../game/config';
@@ -174,6 +174,15 @@ interface TownMapProps {
   // (a house, or a specific building type) and routes onMapTap accordingly.
   placementMode?: boolean;
   onMapTap?: (x: number, y: number) => void;
+  // Construction placement preview — set while the player has picked a
+  // building type and is tapping around to choose where it goes (see
+  // TownScreen's previewPosition), null the rest of the time (including
+  // while placing a house, which has no preview step). `blocked` is a
+  // pure read-only check (see useTownStore's isBuildingPlacementBlocked) —
+  // it doesn't reflect the building cap, only spot clearance, since the cap
+  // is already enforced back in ConstructionModal before placement mode
+  // even starts.
+  previewBuilding?: { x: number; y: number; optionId: string; blocked: boolean } | null;
   // Map-split follow-up: tapping the town-side gate marker below jumps
   // straight to the dungeon screen (same effect as TownScreen's own tab
   // switcher) — purely a convenience shortcut, not a new game mechanic.
@@ -203,6 +212,7 @@ export function TownMap({
   onHousePress,
   placementMode,
   onMapTap,
+  previewBuilding,
   onDungeonGatePress,
 }: TownMapProps) {
   const fieldWidth = WORLD_CANVAS_WIDTH;
@@ -246,6 +256,8 @@ export function TownMap({
 
       <ShrineSprite x={SHRINE_SPOT.x * fieldWidth} y={SHRINE_SPOT.y * fieldHeight} townLevel={townLevel} />
 
+      <AlshelSprite x={SHRINE_SPOT.x * fieldWidth} y={SHRINE_SPOT.y * fieldHeight + 40} townLevel={townLevel} />
+
       <GateMarker
         x={DUNGEON_GATE_SPOT.x * fieldWidth}
         y={DUNGEON_GATE_SPOT.y * fieldHeight}
@@ -285,6 +297,15 @@ export function TownMap({
         >
           <View style={[styles.placementOverlay, { width: fieldWidth, height: fieldHeight }]} />
         </TouchableWithoutFeedback>
+      )}
+
+      {previewBuilding && (
+        <PlacementPreviewSprite
+          x={previewBuilding.x * fieldWidth}
+          y={previewBuilding.y * fieldHeight}
+          optionId={previewBuilding.optionId}
+          blocked={previewBuilding.blocked}
+        />
       )}
     </View>
   );
@@ -665,11 +686,30 @@ function BuildingSprite({ instance, x, y, onPress }: { instance: TownBuildingIns
   );
 }
 
+// Construction placement preview — a semi-transparent, color-coded (green =
+// placeable, red = blocked, see useTownStore's isBuildingPlacementBlocked)
+// stand-in shown at wherever the player last tapped, before they've
+// confirmed the actual build (see TownScreen's previewPosition/
+// handleConfirmBuild). Purely a rendering aid: pointerEvents="none" so it
+// never intercepts the tap overlay underneath it, which is what actually
+// moves the preview on each re-tap.
+function PlacementPreviewSprite({ x, y, optionId, blocked }: { x: number; y: number; optionId: string; blocked: boolean }) {
+  const option = getBuildingOption(optionId);
+  return (
+    <View
+      pointerEvents="none"
+      style={[styles.previewSprite, blocked ? styles.previewBlocked : styles.previewOk, { left: x - 22, top: y - 22 }]}
+    >
+      <Text style={styles.previewEmoji}>{option?.emoji ?? '·'}</Text>
+    </View>
+  );
+}
+
 // Phase 15②: the town's abandoned shrine — always present from game start,
 // no tap interaction (nothing to open yet, same as the leisure spots below),
 // just a visual cue that gradually brightens/decorates as townLevel rises
-// (see data/shrine.ts's SHRINE_STAGE_DEFS), until アルシェル moves in once
-// the town reaches its top tier (see game/recruitment.ts's checkAlshel).
+// (see data/shrine.ts's SHRINE_STAGE_DEFS), until it's fully restored and
+// アルシェル (see AlshelSprite below) reveals herself right beside it.
 function ShrineSprite({ x, y, townLevel }: { x: number; y: number; townLevel: number }) {
   const stage = getShrineStageDef(townLevel);
   return (
@@ -681,6 +721,42 @@ function ShrineSprite({ x, y, townLevel }: { x: number; y: number; townLevel: nu
       </Text>
       <Text style={styles.nameTag}>{stage.label}</Text>
     </View>
+  );
+}
+
+// アルシェル — the shrine's own fixed keeper/spirit (see data/shrine.ts's
+// ALSHEL_NPC's own comment for the full spec correction this replaces: she
+// is NOT a recruitable bird, never gathers/fights/shops, and never leaves
+// the shrine). Modeled directly on ShopkeeperSprite above — a fixed,
+// non-interactive presence with a gentle idle bob — rather than on
+// BirdSprite/the bird-AI pipeline. Renders nothing until the shrine is fully
+// restored (see ALSHEL_REVEAL_TOWN_LEVEL); her actual roles (prayer buffs,
+// seasonal events, calling rare birds/spirits, omikuji, shrine level
+// management) are intentionally not implemented yet — this is just her
+// fixed presence.
+function AlshelSprite({ x, y, townLevel }: { x: number; y: number; townLevel: number }) {
+  const bob = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(bob, { toValue: 1, duration: 1400, useNativeDriver: true, easing: Easing.inOut(Easing.sin) }),
+        Animated.timing(bob, { toValue: 0, duration: 1400, useNativeDriver: true, easing: Easing.inOut(Easing.sin) }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [bob]);
+
+  if (townLevel < ALSHEL_REVEAL_TOWN_LEVEL) return null;
+
+  const bobY = bob.interpolate({ inputRange: [0, 1], outputRange: [0, -3] });
+
+  return (
+    <Animated.View pointerEvents="none" style={[styles.sprite, { left: x, top: y, transform: [{ translateY: bobY }] }]}>
+      <Text style={styles.emojiLarge}>{ALSHEL_NPC.emoji}</Text>
+      <Text style={styles.nameTag}>{ALSHEL_NPC.name}様</Text>
+    </Animated.View>
   );
 }
 
@@ -1068,6 +1144,22 @@ const styles = StyleSheet.create({
   // building/sprite zIndex split from Phase 12③) so a tap anywhere reaches
   // onMapTap instead of whatever sprite happens to be underneath it.
   placementOverlay: { position: 'absolute', left: 0, top: 0, zIndex: 50, backgroundColor: 'rgba(232,163,61,0.08)' },
+  // Sits above the placement overlay (zIndex 50) so it's actually visible
+  // while placing — pointerEvents: none (see PlacementPreviewSprite's own
+  // comment) keeps it from stealing the overlay's own taps.
+  previewSprite: {
+    position: 'absolute',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 60,
+  },
+  previewOk: { backgroundColor: 'rgba(90, 200, 120, 0.4)', borderColor: 'rgba(52, 168, 83, 0.95)' },
+  previewBlocked: { backgroundColor: 'rgba(220, 90, 90, 0.4)', borderColor: 'rgba(196, 60, 60, 0.95)' },
+  previewEmoji: { fontSize: 22 },
   plot: {
     position: 'absolute',
     width: 36,

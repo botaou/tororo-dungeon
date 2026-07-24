@@ -52,7 +52,7 @@ import {
   STARTING_SATIETY,
   VISIT_DWELL_TICKS,
 } from './config';
-import { TOWN_X, TOWN_Y } from '../data/world';
+import { DUNGEON_GATE_SPOT, FIELD_TOWN_GATE_SPOT, TOWN_X, TOWN_Y } from '../data/world';
 import { BASIC_TRADE_SPOT, MERCHANT_SPOT } from '../data/townGrid';
 import { MATERIAL_SELL_PRICE } from '../data/marketPrices';
 import { SHOP_DEFS } from '../data/shops';
@@ -103,6 +103,35 @@ function moveToward(bird: BirdState, tx: number, ty: number): boolean {
   const step = Math.min(dist, MOVE_SPEED);
   bird.x += (dx / dist) * step;
   bird.y += (dy / dist) * step;
+  return false;
+}
+
+// Map-split follow-up: birds now visibly pass through the 🚪 gate marker
+// (see WorldMap.tsx's GateMarker, DUNGEON_GATE_SPOT/FIELD_TOWN_GATE_SPOT)
+// when crossing between town and dungeon, instead of instantly teleporting
+// to wherever their next task happens to be. Every place that used to just
+// assign `bird.location = 'town' | 'dungeon'` now calls this first: while
+// still on the departure screen, it walks the bird toward that screen's own
+// gate spot; the tick it actually arrives, it flips `location` and snaps the
+// bird to the *other* screen's gate spot (so it reads as "walked out one
+// door, in the other") but still returns false for that one tick — same
+// "make it a real, visible beat" idea as executeDetour's own dwell — so the
+// bird visibly stands at the arrival gate for a full tick's render before
+// the caller's real movement/logic resumes toward wherever it's actually
+// going, starting the tick after. A no-op (returns true immediately) once
+// already at the requested location — every caller sets this every tick it
+// needs that location, not just on the transition, same as the plain
+// assignment this replaces.
+function crossGate(bird: BirdState, nextLocation: 'town' | 'dungeon'): boolean {
+  if (bird.location === nextLocation) return true;
+  const townSideGate = DUNGEON_GATE_SPOT; // the door as drawn on TownMap
+  const dungeonSideGate = FIELD_TOWN_GATE_SPOT; // the door as drawn on DungeonMap
+  const departureGate = bird.location === 'town' ? townSideGate : dungeonSideGate;
+  const arrivalGate = nextLocation === 'town' ? townSideGate : dungeonSideGate;
+  if (!moveToward(bird, departureGate.x, departureGate.y)) return false;
+  bird.location = nextLocation;
+  bird.x = arrivalGate.x;
+  bird.y = arrivalGate.y;
   return false;
 }
 
@@ -580,10 +609,10 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
 // only once HP is completely full does stepBird let normal behavior (and
 // combat) resume.
 function stepRecover(bird: BirdState, world: AiWorld): AiStepOutcome {
-  bird.location = 'town'; // map-split step 1: heading home to recover
+  bird.activity = 'recovering';
+  if (!crossGate(bird, 'town')) return emptyOutcome();
   const house = getHomePosition(world, bird.defId);
   const arrived = moveToward(bird, house.x, house.y);
-  bird.activity = 'recovering';
   bird.targetKind = null;
   bird.targetRefUid = null;
   if (arrived) {
@@ -596,13 +625,14 @@ function stepRecover(bird: BirdState, world: AiWorld): AiStepOutcome {
 // clears back to normal instead of waiting on the ambient refresh timer.
 // "Home" is the bird's own house.
 function stepHomeNeed(bird: BirdState, activity: 'resting', world: AiWorld): AiStepOutcome {
-  bird.location = 'town'; // map-split step 1: heading home
-  if (bird.activity !== activity) {
+  const enteringFresh = bird.activity !== activity;
+  bird.activity = activity;
+  if (!crossGate(bird, 'town')) return emptyOutcome();
+  if (enteringFresh) {
     bird.workProgress = 0;
   }
   const house = getHomePosition(world, bird.defId);
   const arrived = moveToward(bird, house.x, house.y);
-  bird.activity = activity;
   bird.targetKind = null;
   bird.targetRefUid = null;
   if (arrived) {
@@ -658,9 +688,11 @@ function pickFoodTreat(bird: BirdState, world: AiWorld): { itemId: ItemId; price
 // always resolves no matter how poor it is. That fallback is unchanged from
 // before the feed shop existed.
 function stepShopFood(bird: BirdState, world: AiWorld): AiStepOutcome {
-  bird.location = 'town'; // map-split step 1: heading to the feed shop
   const outcome = emptyOutcome();
-  if (bird.activity !== 'eating') {
+  const enteringFresh = bird.activity !== 'eating';
+  bird.activity = 'eating';
+  if (!crossGate(bird, 'town')) return outcome;
+  if (enteringFresh) {
     bird.workProgress = 0;
   }
   // Step B: once a real feed shop is actually constructed somewhere, walk
@@ -669,7 +701,6 @@ function stepShopFood(bird: BirdState, world: AiWorld): AiStepOutcome {
   // a treat is even offered.
   const shop = world.shopPositions.feed ?? BASIC_TRADE_SPOT;
   const arrived = moveToward(bird, shop.x, shop.y);
-  bird.activity = 'eating';
   bird.targetKind = 'shop';
   bird.targetRefUid = null;
   if (arrived) {
@@ -698,11 +729,11 @@ function stepShopFood(bird: BirdState, world: AiWorld): AiStepOutcome {
 // "what is this bird carrying right now" is a real, visible thing rather
 // than resources teleporting into its stash the instant they're picked up.
 function stepCarrying(bird: BirdState, world: AiWorld): AiStepOutcome {
-  bird.location = 'town'; // map-split step 1: carrying a haul home
   const outcome = emptyOutcome();
+  bird.activity = 'carrying';
+  if (!crossGate(bird, 'town')) return outcome;
   const house = getHomePosition(world, bird.defId);
   const arrived = moveToward(bird, house.x, house.y);
-  bird.activity = 'carrying';
   if (arrived && bird.carrying) {
     const { materialId, amount } = bird.carrying;
     const before = bird.inventory[materialId] ?? 0;
@@ -767,13 +798,13 @@ function pickSellOffer(bird: BirdState, cap: number): { materialId: MaterialId; 
 // then — not from whatever triggered the trip — so it stays correct even if
 // the bird's stock changed mid-trip.
 function executeSellTrip(bird: BirdState, world: AiWorld): AiStepOutcome {
-  bird.location = 'town'; // map-split step 1: heading to the general shop
   const outcome = emptyOutcome();
+  bird.activity = 'selling';
+  if (!crossGate(bird, 'town')) return outcome;
   // Step B: prefer the real constructed general shop once one exists, same
   // as stepShopFood does for the feed shop.
   const shop = world.shopPositions.general ?? BASIC_TRADE_SPOT;
   const arrived = moveToward(bird, shop.x, shop.y);
-  bird.activity = 'selling';
   if (arrived) {
     bird.workProgress += 1;
     if (bird.workProgress >= SELL_DWELL_TICKS) {
@@ -827,7 +858,6 @@ function pickGearOffer(bird: BirdState, world: AiWorld): { itemId: ItemId; price
 // it. If stock/affordability (or the offer's shop itself) changed since the
 // trip was committed to, the trip just concludes with nothing bought.
 function executeGearShopTrip(bird: BirdState, world: AiWorld): AiStepOutcome {
-  bird.location = 'town'; // map-split step 1: heading to a gear shop
   const outcome = emptyOutcome();
   const offer = pickGearOffer(bird, world);
   if (!offer) {
@@ -836,9 +866,10 @@ function executeGearShopTrip(bird: BirdState, world: AiWorld): AiStepOutcome {
     bird.workProgress = 0;
     return outcome;
   }
+  bird.activity = 'buyingGear';
+  if (!crossGate(bird, 'town')) return outcome;
   const shop = world.shopPositions[offer.shopKind]!;
   const arrived = moveToward(bird, shop.x, shop.y);
-  bird.activity = 'buyingGear';
   if (arrived) {
     bird.workProgress += 1;
     if (bird.workProgress >= SELL_DWELL_TICKS) {
@@ -876,10 +907,10 @@ function pickMerchantSellOffer(bird: BirdState): { itemId: ItemId; amount: numbe
 // sells off its best-stocked item — the store looks up the value and
 // applies the 50/50 split (see MERCHANT_BUYBACK_SPLIT).
 function executeMerchantSellTrip(bird: BirdState): AiStepOutcome {
-  bird.location = 'town'; // map-split step 1: the merchant sets up inside the town zone
   const outcome = emptyOutcome();
-  const arrived = moveToward(bird, MERCHANT_SPOT.x, MERCHANT_SPOT.y);
   bird.activity = 'merchantSelling';
+  if (!crossGate(bird, 'town')) return outcome;
+  const arrived = moveToward(bird, MERCHANT_SPOT.x, MERCHANT_SPOT.y);
   if (arrived) {
     bird.workProgress += 1;
     if (bird.workProgress >= SELL_DWELL_TICKS) {
@@ -908,10 +939,10 @@ function pickMerchantBuyOffer(bird: BirdState, world: AiWorld): { itemId: ItemId
 // the trip was committed to (someone else bought the last one), the trip
 // just concludes with nothing bought.
 function executeMerchantBuyTrip(bird: BirdState, world: AiWorld): AiStepOutcome {
-  bird.location = 'town'; // map-split step 1: the merchant sets up inside the town zone
   const outcome = emptyOutcome();
-  const arrived = moveToward(bird, MERCHANT_SPOT.x, MERCHANT_SPOT.y);
   bird.activity = 'merchantBuying';
+  if (!crossGate(bird, 'town')) return outcome;
+  const arrived = moveToward(bird, MERCHANT_SPOT.x, MERCHANT_SPOT.y);
   if (arrived) {
     bird.workProgress += 1;
     if (bird.workProgress >= SELL_DWELL_TICKS) {
@@ -929,7 +960,6 @@ function executeMerchantBuyTrip(bird: BirdState, world: AiWorld): AiStepOutcome 
 
 // Any bird that rolls combat fights whichever enemy is nearest to it.
 function executeCombat(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutcome {
-  bird.location = 'dungeon'; // map-split step 1: fighting out in the field
   const outcome = emptyOutcome();
   const aliveEnemies = world.enemies.filter((e) => !e.defeated && e.hp > 0);
 
@@ -943,9 +973,11 @@ function executeCombat(bird: BirdState, def: CharacterDef, world: AiWorld): AiSt
     bird.targetRefUid = target.uid;
   }
 
+  bird.activity = 'enemy';
+  if (!crossGate(bird, 'dungeon')) return outcome;
+
   const enemy = aliveEnemies.find((e) => e.uid === bird.targetRefUid)!;
   const arrived = moveToward(bird, enemy.x, enemy.y);
-  bird.activity = 'enemy';
   if (arrived) {
     outcome.assignments.push({
       unitUid: bird.defId,
@@ -959,7 +991,6 @@ function executeCombat(bird: BirdState, def: CharacterDef, world: AiWorld): AiSt
 
 // Any bird that rolls mining gathers whichever rock/treasure is nearest.
 function executeGather(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutcome {
-  bird.location = 'dungeon'; // map-split step 1: gathering out in the field
   const outcome = emptyOutcome();
   const uncollectedMining = world.miningNodes.filter((m) => !m.collected);
   const uncollectedTreasure = world.treasures.filter((t) => !t.collected);
@@ -990,8 +1021,9 @@ function executeGather(bird: BirdState, def: CharacterDef, world: AiWorld): AiSt
   if (bird.targetKind === 'mining' && bird.targetRefUid) {
     const node = uncollectedMining.find((m) => m.uid === bird.targetRefUid);
     if (node) {
-      const arrived = moveToward(bird, node.x, node.y);
       bird.activity = 'mining';
+      if (!crossGate(bird, 'dungeon')) return outcome;
+      const arrived = moveToward(bird, node.x, node.y);
       if (arrived) {
         bird.workProgress += 1;
         if (bird.workProgress >= ENCOUNTER_HOLD_TICKS) {
@@ -1029,8 +1061,9 @@ function executeGather(bird: BirdState, def: CharacterDef, world: AiWorld): AiSt
   if (bird.targetKind === 'treasure' && bird.targetRefUid) {
     const treasure = uncollectedTreasure.find((t) => t.uid === bird.targetRefUid);
     if (treasure) {
-      const arrived = moveToward(bird, treasure.x, treasure.y);
       bird.activity = 'treasure';
+      if (!crossGate(bird, 'dungeon')) return outcome;
+      const arrived = moveToward(bird, treasure.x, treasure.y);
       if (arrived) {
         bird.workProgress += 1;
         if (bird.workProgress >= ENCOUNTER_HOLD_TICKS) {
@@ -1052,7 +1085,8 @@ function executeGather(bird: BirdState, def: CharacterDef, world: AiWorld): AiSt
 // arrival (clearing targetKind) so the bird reconsiders its next move
 // fresh, rather than wandering forever once picked.
 function executeExplore(bird: BirdState, world: AiWorld): AiStepOutcome {
-  bird.location = 'dungeon'; // map-split step 1: exploring out in the field
+  bird.activity = 'idle';
+  if (!crossGate(bird, 'dungeon')) return emptyOutcome();
   const hasDest = bird.wanderX !== null && bird.wanderY !== null;
   if (!hasDest) {
     const dest = randomPointInField();
@@ -1076,14 +1110,17 @@ function executeExplore(bird: BirdState, world: AiWorld): AiStepOutcome {
 // town — either way it's a deliberate choice, not a fallback.
 function executeRest(bird: BirdState, world: AiWorld): AiStepOutcome {
   if (bird.targetKind === 'river' || bird.targetKind === 'pond') {
-    bird.location = 'dungeon'; // map-split step 1: leisure spots sit out in the field, geographically outside the town zone
     const spot = world.leisureSpots.find((s) => s.uid === bird.targetRefUid);
     if (!spot) {
       bird.targetKind = null;
       return emptyOutcome();
     }
-    const arrived = moveToward(bird, spot.x, spot.y);
+    // Leisure spots sit out in the field — cross the gate first (see
+    // crossGate's own comment); once actually at the spot this reads as
+    // "walked out to the river/pond through the dungeon door."
     bird.activity = spot.kind === 'river' ? 'bathing' : 'fishing';
+    if (!crossGate(bird, 'dungeon')) return emptyOutcome();
+    const arrived = moveToward(bird, spot.x, spot.y);
     if (arrived) {
       bird.workProgress += 1;
       if (bird.workProgress >= LEISURE_DWELL_TICKS) {
@@ -1096,10 +1133,10 @@ function executeRest(bird: BirdState, world: AiWorld): AiStepOutcome {
   }
 
   if (bird.targetKind === 'rest') {
-    bird.location = 'town'; // map-split step 1: milling around near town
+    bird.activity = 'idle';
+    if (!crossGate(bird, 'town')) return emptyOutcome();
     const hasDest = bird.wanderX !== null && bird.wanderY !== null;
     const arrived = hasDest ? moveToward(bird, bird.wanderX!, bird.wanderY!) : true;
-    bird.activity = 'idle';
     if (!hasDest || arrived) {
       bird.targetKind = null;
       bird.wanderX = null;
@@ -1126,7 +1163,10 @@ function executeRest(bird: BirdState, world: AiWorld): AiStepOutcome {
   if (world.leisureSpots.length > 0 && Math.random() < LEISURE_CHANCE) {
     const spot = nearest(world.leisureSpots, bird.x, bird.y);
     if (spot) {
-      bird.location = 'dungeon'; // map-split step 1: heading straight out to a leisure spot
+      // Just commits to the decision this tick — the actual gate-crossing
+      // walk starts next tick via this function's own 'river'/'pond' branch
+      // above, same as the "milling near town" fallback below only sets up
+      // wanderX/Y for the 'rest' branch to walk toward next tick.
       bird.targetKind = spot.kind;
       bird.targetRefUid = spot.uid;
       bird.workProgress = 0;
@@ -1134,7 +1174,6 @@ function executeRest(bird: BirdState, world: AiWorld): AiStepOutcome {
       return emptyOutcome();
     }
   }
-  bird.location = 'town'; // map-split step 1: milling around near town
   const dest = randomPointNearTown(world.occupiedSpots);
   bird.wanderX = dest.x;
   bird.wanderY = dest.y;
@@ -1173,11 +1212,11 @@ function executeDetour(bird: BirdState): AiStepOutcome {
 // tired. Dwells far longer than any other rest sub-behavior (NAP_DWELL_TICKS)
 // so it reads as an actual pause in the pace, not another quick errand.
 function executeNap(bird: BirdState, world: AiWorld): AiStepOutcome {
-  bird.location = 'town'; // map-split step 1: napping at home
   const outcome = emptyOutcome();
+  bird.activity = 'napping';
+  if (!crossGate(bird, 'town')) return outcome;
   const house = getHomePosition(world, bird.defId);
   const arrived = moveToward(bird, house.x, house.y);
-  bird.activity = 'napping';
   if (arrived) {
     bird.workProgress += 1;
     if (bird.workProgress === 1) outcome.startedNapping = true;
@@ -1211,7 +1250,6 @@ function applyStatInspiration(bird: BirdState): InspirationStat {
 // permanent skill (checked first, since it's the rarer of the two) or a
 // small stat bump — see config.ts's INSPIRATION_* constants.
 function executePlay(bird: BirdState, world: AiWorld): AiStepOutcome {
-  bird.location = 'town'; // map-split step 1: parks/bathhouses are built on the town's own plot grid
   const outcome = emptyOutcome();
   const stillValid = bird.targetKind === 'play' && world.amenityPositions.some((a) => a.id === bird.targetRefUid);
   if (!stillValid) {
@@ -1227,8 +1265,9 @@ function executePlay(bird: BirdState, world: AiWorld): AiStepOutcome {
   const spot = world.amenityPositions.find((a) => a.id === bird.targetRefUid);
   if (!spot) return outcome;
 
-  const arrived = moveToward(bird, spot.x, spot.y);
   bird.activity = 'playing';
+  if (!crossGate(bird, 'town')) return outcome;
+  const arrived = moveToward(bird, spot.x, spot.y);
   if (arrived) {
     bird.workProgress += 1;
     if (bird.workProgress === 1) outcome.startedPlaying = spot.kind;
@@ -1269,11 +1308,16 @@ function executePlay(bird: BirdState, world: AiWorld): AiStepOutcome {
 // TOWN_X/TOWN_Y (job hand-in, the shopkeeper, etc.) — visually indistinguishable
 // from "went inside." Same one-leg-then-dwell shape as executePlay/executeNap.
 function executeVisitMayorRoom(bird: BirdState, world: AiWorld): AiStepOutcome {
-  bird.location = 'town'; // map-split step 1: the mayor's room is inside the town hall
   const outcome = emptyOutcome();
+  bird.activity = 'visiting';
+  // The mayor's room is inside the town hall — crossGate handles the
+  // dungeon->town leg (if needed) same as everywhere else; once actually in
+  // town, this still warps the last little bit straight to the town hall
+  // rather than walking there tile-by-tile, per this function's own
+  // existing "簡易的なワープ処理でよい" design (see its own comment below).
+  if (!crossGate(bird, 'town')) return outcome;
   bird.x = TOWN_X;
   bird.y = TOWN_Y;
-  bird.activity = 'visiting';
   bird.workProgress += 1;
   if (bird.workProgress === 1) {
     outcome.startedVisiting = true;
@@ -1322,10 +1366,10 @@ function stepJob(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutc
   }
 
   if (bird.jobStage === 'toAccept' || bird.jobStage === null) {
-    bird.location = 'town'; // map-split step 1: heading to the town hall to accept the job
     bird.targetKind = 'townHall';
     bird.targetRefUid = null;
     bird.activity = 'idle';
+    if (!crossGate(bird, 'town')) return outcome;
     if (moveToward(bird, TOWN_X, TOWN_Y)) {
       bird.jobStage = 'working';
       bird.targetKind = null;
@@ -1334,10 +1378,10 @@ function stepJob(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutc
   }
 
   if (bird.jobStage === 'toDeliver') {
-    bird.location = 'town'; // map-split step 1: heading to the town hall to deliver
     bird.targetKind = 'townHall';
     bird.targetRefUid = null;
     bird.activity = 'idle';
+    if (!crossGate(bird, 'town')) return outcome;
     if (moveToward(bird, TOWN_X, TOWN_Y)) {
       outcome.jobCompletedId = request.id;
       bird.currentJobId = null;
@@ -1397,9 +1441,9 @@ function stepJob(bird: BirdState, def: CharacterDef, world: AiWorld): AiStepOutc
   const node = matching.find((m) => m.uid === bird.targetRefUid);
   if (!node) return outcome;
 
-  bird.location = 'dungeon'; // map-split step 1: pursuing a job's gather node out in the field
-  const arrived = moveToward(bird, node.x, node.y);
   bird.activity = 'mining';
+  if (!crossGate(bird, 'dungeon')) return outcome;
+  const arrived = moveToward(bird, node.x, node.y);
   if (arrived) {
     bird.workProgress += 1;
     if (bird.workProgress >= ENCOUNTER_HOLD_TICKS) {
@@ -1457,9 +1501,9 @@ function stepHuntJob(bird: BirdState, def: CharacterDef, world: AiWorld, enemyNa
   const enemy = matching.find((e) => e.uid === bird.targetRefUid);
   if (!enemy) return outcome;
 
-  bird.location = 'dungeon'; // map-split step 1: pursuing a hunt job's target out in the field
-  const arrived = moveToward(bird, enemy.x, enemy.y);
   bird.activity = 'enemy';
+  if (!crossGate(bird, 'dungeon')) return outcome;
+  const arrived = moveToward(bird, enemy.x, enemy.y);
   if (arrived) {
     outcome.assignments.push({
       unitUid: bird.defId,

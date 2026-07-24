@@ -7,7 +7,7 @@ import { IsometricPrototypeScreen } from '../prototypes/isometric/IsometricProto
 
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useWorldStore } from '../store/useWorldStore';
-import { useTownStore } from '../store/useTownStore';
+import { isBuildingPlacementBlocked, useTownStore } from '../store/useTownStore';
 import { getTownBuildingCap } from '../data/townGrid';
 import { getBuildingOption } from '../data/buildingOptions';
 import { TownMap, DungeonMap, WORLD_CANVAS_HEIGHT, WORLD_CANVAS_WIDTH } from '../components/WorldMap';
@@ -87,9 +87,15 @@ export function TownScreen() {
   const [buildMenuVisible, setBuildMenuVisible] = useState(false);
   // Which BuildingOption the player picked from that menu — non-null means
   // the map is in building-placement mode (see placingHouse's own
-  // established pattern below), tapping anywhere attempts to construct this
-  // exact option there (see handleBuildMapTap). Null when not placing.
+  // established pattern below). Unlike a house, tapping doesn't build
+  // immediately: it just drops/moves a preview (see previewPosition) that
+  // still needs an explicit confirm.
   const [placingBuildingOptionId, setPlacingBuildingOptionId] = useState<string | null>(null);
+  // Where the semi-transparent placement preview currently sits (see
+  // WorldMap's PlacementPreviewSprite) — null until the player taps
+  // somewhere at least once. Re-tapping anywhere just moves this, same spot
+  // as before; only handleConfirmBuild actually spends anything.
+  const [previewPosition, setPreviewPosition] = useState<{ x: number; y: number } | null>(null);
   // How many of world.recruitmentEvents we've already shown a modal for —
   // the array only ever grows, so anything past this index is new (see
   // useWorldStore's recruitment-trigger checks). world itself isn't
@@ -229,20 +235,42 @@ export function TownScreen() {
 
   // Picking an option from ConstructionModal doesn't build immediately
   // anymore — it closes the picker and enters placement mode, same shape as
-  // Phase 14's house placement (see placingHouse below): the player then
-  // taps wherever in town they want it built.
+  // Phase 14's house placement (see placingHouse below), except a building
+  // gets a preview-then-confirm step (see previewPosition) rather than
+  // building the instant the player taps.
   const handleSelectBuildingOption = (optionId: string) => {
     setBuildMenuVisible(false);
     setPlacingBuildingOptionId(optionId);
+    setPreviewPosition(null);
   };
 
+  // Tapping the map while placing a building never builds directly — it
+  // just drops (or moves) the preview sprite there, so the player can see
+  // exactly where it'll land, and whether that spot is currently blocked
+  // (see WorldMap's PlacementPreviewSprite), before committing.
   const handleBuildMapTap = (x: number, y: number) => {
-    if (!placingBuildingOptionId) return;
-    if (constructBuilding(placingBuildingOptionId, x, y)) {
+    setPreviewPosition({ x, y });
+  };
+
+  // The explicit "ここに建てる" confirm — only this actually spends
+  // gold/materials and creates the building (see useTownStore's
+  // constructBuilding, which re-validates cap/clearance/cost itself; the
+  // preview's own green/red tint is just a read-only hint, not the source
+  // of truth). Deliberately stays in placement mode (preview intact) on
+  // failure so the player can just try again, with a quick alert.
+  const handleConfirmBuild = () => {
+    if (!placingBuildingOptionId || !previewPosition) return;
+    if (constructBuilding(placingBuildingOptionId, previewPosition.x, previewPosition.y)) {
       setPlacingBuildingOptionId(null);
+      setPreviewPosition(null);
     } else {
       Alert.alert('ここには建てられません', '何かに近すぎるか、上限に達しているか、費用が足りない可能性があります。');
     }
+  };
+
+  const handleCancelBuildPlacement = () => {
+    setPlacingBuildingOptionId(null);
+    setPreviewPosition(null);
   };
 
   // Phase 14's house placement and Step B's building placement share the
@@ -367,11 +395,28 @@ export function TownScreen() {
       {placingBuildingOptionId !== null && (
         <View style={styles.placementBanner}>
           <Text style={styles.placementBannerText}>
-            {getBuildingOption(placingBuildingOptionId)?.name ?? '建物'}を建てる場所をタップしてください
+            {previewPosition
+              ? `${getBuildingOption(placingBuildingOptionId)?.name ?? '建物'}をここに建てますか?タップし直すと場所を変更できます`
+              : `${getBuildingOption(placingBuildingOptionId)?.name ?? '建物'}を建てる場所をタップしてください`}
           </Text>
-          <AnimatedPressable style={styles.placementCancelButton} onPress={() => setPlacingBuildingOptionId(null)}>
-            <Text style={styles.placementCancelButtonText}>✕ やめる</Text>
-          </AnimatedPressable>
+          <View style={styles.placementButtonRow}>
+            {previewPosition &&
+              (() => {
+                const blocked = isBuildingPlacementBlocked(previewPosition.x, previewPosition.y);
+                return (
+                  <AnimatedPressable
+                    style={[styles.placementConfirmButton, blocked && styles.placementConfirmButtonDisabled]}
+                    onPress={blocked ? undefined : handleConfirmBuild}
+                    disabled={blocked}
+                  >
+                    <Text style={styles.placementConfirmButtonText}>ここに建てる</Text>
+                  </AnimatedPressable>
+                );
+              })()}
+            <AnimatedPressable style={styles.placementCancelButton} onPress={handleCancelBuildPlacement}>
+              <Text style={styles.placementCancelButtonText}>✕ やめる</Text>
+            </AnimatedPressable>
+          </View>
         </View>
       )}
 
@@ -406,6 +451,16 @@ export function TownScreen() {
               onHousePress={handleHousePress}
               placementMode={placingHouse || placingBuildingOptionId !== null}
               onMapTap={handleMapTap}
+              previewBuilding={
+                placingBuildingOptionId && previewPosition
+                  ? {
+                      x: previewPosition.x,
+                      y: previewPosition.y,
+                      optionId: placingBuildingOptionId,
+                      blocked: isBuildingPlacementBlocked(previewPosition.x, previewPosition.y),
+                    }
+                  : null
+              }
               onDungeonGatePress={() => setActiveScreen('dungeon')}
             />
           ) : (
@@ -618,6 +673,10 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   placementBannerText: { flex: 1, fontSize: 12, fontWeight: '700', color: theme.textPrimary, marginRight: 8 },
+  placementButtonRow: { flexDirection: 'row', gap: 8 },
+  placementConfirmButton: { backgroundColor: theme.gold, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
+  placementConfirmButtonDisabled: { backgroundColor: theme.disabled },
+  placementConfirmButtonText: { fontSize: 11, fontWeight: '700', color: '#fff' },
   placementCancelButton: { backgroundColor: theme.card, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6 },
   placementCancelButtonText: { fontSize: 11, fontWeight: '700', color: theme.textSecondary },
   screenTabRow: { flexDirection: 'row', paddingHorizontal: 12, marginTop: 8, gap: 8 },

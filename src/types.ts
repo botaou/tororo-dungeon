@@ -251,10 +251,12 @@ export interface CharacterDef {
   baseLuck: number; // reserved for future drop/crit-rate use; display-only today
   materialBonusPercent?: number; // bonus % applied when this bird delivers materials
   // Phase 15②: whether this character is offered on CharacterSelectScreen's
-  // starter picker. Absent (or true) for the original 4 — a later recruit
-  // like アルシェル (who joins via the shrine's own restoration condition,
-  // see game/recruitment.ts's checkAlshel) sets this false so she doesn't
-  // show up as a pickable starting bird before she's even met.
+  // starter picker. Absent (or true) for the original 4 — a future
+  // mid-game recruit joining via its own trigger (not the starter picker)
+  // would set this false so it doesn't show up as a pickable starting bird
+  // before the player's even met it. No CHARACTERS entry uses this today
+  // (アルシェル was originally meant to, but she isn't a recruitable bird at
+  // all — see data/shrine.ts's ALSHEL_NPC).
   isStarter?: boolean;
 }
 

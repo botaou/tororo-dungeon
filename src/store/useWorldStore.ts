@@ -36,7 +36,6 @@ import { respawnPosition, stepEnemy } from '../game/enemyAi';
 import { AttackAssignment, applyHealing, resolveAttacks } from '../game/combat';
 import { scoreRequestAcceptance, tryAcceptRequest } from '../game/requests';
 import {
-  checkAlshel,
   checkHaku,
   checkMoneEncounter,
   checkTororoEncounter,
@@ -1349,7 +1348,6 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
       haku: () => checkHaku(quests.isComplete(HAKU_QUEST_ID)),
       tororo: () => checkTororoEncounter(activeBirdPositions),
       mone: () => checkMoneEncounter(activeBirdPositions, quests.isComplete(MONE_WOLF_KILL_MILESTONE_ID)),
-      alshel: () => checkAlshel(townLevel),
     };
     for (const bird of finalBirds) {
       if (bird.isRecruited) continue;

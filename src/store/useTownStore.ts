@@ -138,6 +138,18 @@ function isBuildingSpotBlocked(x: number, y: number, buildings: Record<string, T
   return false;
 }
 
+// Placement-preview UX: a pure, read-only check (no state mutation, no
+// cost/cap check — those are only meaningful at actual construction time,
+// see constructBuilding) so the UI can color a moveable preview sprite
+// green/red as the player taps around before committing. Reads live store
+// state directly rather than taking it as a parameter, since this is called
+// straight from render code (see TownScreen's previewPosition) rather than
+// from inside a set()/get() callback.
+export function isBuildingPlacementBlocked(x: number, y: number): boolean {
+  const s = useTownStore.getState();
+  return isBuildingSpotBlocked(x, y, s.buildings, s.houses);
+}
+
 // Superseded by Step B's free placement — kept only so migrate() below can
 // recover each old fixed-grid plot's exact (x, y) and preserve a
 // pre-existing save's building positions/look. The old grid's own
