@@ -6,6 +6,7 @@ import { CONSTRUCTION_DEVELOPMENT_POINTS, getAllBuildingPositions, getTownBuildi
 import { BUILDING_OPTIONS, getScaledBuildingCost } from '../data/buildingOptions';
 import { HOUSE_POSITIONS } from '../data/houses';
 import { HOUSE_BUILD_COST, HOUSE_CLEARANCE, TOWN_BUILDING_CLEARANCE } from '../game/config';
+import { isKnownCharacterId } from '../data/characters';
 import { HouseState, TownBuildingInstance } from '../types';
 import { usePlayerStore } from './usePlayerStore';
 import { TOWN_X, TOWN_Y } from '../data/world';
@@ -272,7 +273,7 @@ export const useTownStore = create<TownState & TownActions>()(
     {
       name: 'tororo-dungeon-town-v1',
       storage: createJSONStorage(() => AsyncStorage),
-      version: 3,
+      version: 4,
       // Phase 12②: pre-existing saves have developmentPoints but no
       // explicit townLevel field (see TownState.townLevel's own comment on
       // why level used to be derived from points instead of stored).
@@ -345,6 +346,30 @@ export const useTownStore = create<TownState & TownActions>()(
           }
           state = { ...state, buildings };
           delete state.plots;
+        }
+        if (version < 4) {
+          // A save from before アルシェル was pulled out of CHARACTERS (see
+          // characters.ts's isKnownCharacterId) could have had her assigned
+          // to a house via HouseAssignModal while she was still recruitable
+          // — WorldMap.tsx's house rendering calls getCharacterDef(house.
+          // residentDefId) unconditionally, which would throw and crash the
+          // app the moment TownScreen tried to render that house. Vacate
+          // (not delete) any house whose resident no longer exists, so the
+          // building itself stays standing and simply becomes assignable
+          // to another bird again — same "heal, don't discard the player's
+          // structure" precedent as this store's other migrate steps.
+          const houses = state?.houses ?? {};
+          state = {
+            ...state,
+            houses: Object.fromEntries(
+              Object.entries(houses).map(([id, house]) => [
+                id,
+                house.residentDefId && !isKnownCharacterId(house.residentDefId)
+                  ? { ...house, residentDefId: null }
+                  : house,
+              ])
+            ),
+          };
         }
         return state as unknown as TownState & TownActions;
       },

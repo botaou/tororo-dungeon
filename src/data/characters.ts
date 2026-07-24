@@ -77,3 +77,12 @@ export function getCharacterDef(defId: string): CharacterDef {
   if (!def) throw new Error(`Unknown character: ${defId}`);
   return def;
 }
+
+// Guard for persisted data that may reference a defId no longer in this
+// roster (e.g. a save from before アルシェル was pulled out of CHARACTERS —
+// see useBirdEconomyStore's wallets and useTownStore's houses, both of
+// which self-heal by dropping/vacating anything that fails this check
+// instead of ever calling getCharacterDef on it and crashing at startup).
+export function isKnownCharacterId(defId: string): boolean {
+  return CHARACTERS.some((c) => c.id === defId);
+}

@@ -3,7 +3,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { EquipSlot, ItemId, MaterialId } from '../types';
-import { getCharacterDef } from '../data/characters';
+import { getCharacterDef, isKnownCharacterId } from '../data/characters';
 import { ITEM_DEF_MAP } from '../data/items';
 import {
   BIRD_INVENTORY_CAP,
@@ -260,7 +260,31 @@ export const useBirdEconomyStore = create<BirdEconomyState & BirdEconomyActions>
       getAllWallets: () => {
         const raw = get().wallets;
         const result: Record<string, BirdWallet> = {};
-        for (const defId of Object.keys(raw)) result[defId] = get().getWallet(defId);
+        // A wallet whose defId no longer exists in CHARACTERS (e.g. a save
+        // from before アルシェル was pulled out of the roster — see
+        // characters.ts's isKnownCharacterId) would otherwise crash the
+        // whole app on the very next getWallet() call below, since that
+        // calls getCharacterDef(defId) to build the default stat baseline.
+        // Drop it here instead — same self-healing precedent as the NaN/
+        // atk backfill and stale-item pruning above — and persist the
+        // drop so it doesn't have to be repeated every launch.
+        let droppedAny = false;
+        for (const defId of Object.keys(raw)) {
+          if (!isKnownCharacterId(defId)) {
+            droppedAny = true;
+            continue;
+          }
+          result[defId] = get().getWallet(defId);
+        }
+        if (droppedAny) {
+          set((s) => {
+            const wallets: Record<string, BirdWallet> = {};
+            for (const [defId, wallet] of Object.entries(s.wallets)) {
+              if (isKnownCharacterId(defId)) wallets[defId] = wallet;
+            }
+            return { wallets };
+          });
+        }
         return result;
       },
 
@@ -274,6 +298,28 @@ export const useBirdEconomyStore = create<BirdEconomyState & BirdEconomyActions>
     {
       name: 'tororo-dungeon-bird-economy-v1',
       storage: createJSONStorage(() => AsyncStorage),
+      version: 1,
+      // A save from before アルシェル was pulled out of CHARACTERS (see
+      // characters.ts's isKnownCharacterId) can have a `wallets['alshel']`
+      // entry — every read of it (getWallet/getAllWallets, both above) calls
+      // getCharacterDef(defId) to build stat defaults, which throws for any
+      // defId no longer in the roster and crashed the app on the very first
+      // launch after that change (real-device report: "Unknown character:
+      // alshel" at startup, via useGameTimeStore's catchUpOffline →
+      // getAllWallets). getAllWallets self-heals this on every read already,
+      // but migrating it away once here too means a save doesn't have to
+      // rely on that path running before anything else touches `wallets`.
+      migrate: (persisted, version) => {
+        const state = persisted as { wallets?: Record<string, BirdWallet> };
+        if (version < 1 && state?.wallets) {
+          const wallets: Record<string, BirdWallet> = {};
+          for (const [defId, wallet] of Object.entries(state.wallets)) {
+            if (isKnownCharacterId(defId)) wallets[defId] = wallet;
+          }
+          return { ...state, wallets };
+        }
+        return state;
+      },
     }
   )
 );
