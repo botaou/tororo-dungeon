@@ -27,6 +27,7 @@ import {
 } from '../data/buildingImages';
 import { ENEMY_IMAGES, FIELD_OBJECT_AFTER_IMAGES, FIELD_OBJECT_IMAGES } from '../data/fieldImages';
 import { ALSHEL_NPC, ALSHEL_REVEAL_TOWN_LEVEL, getShrineStageDef, SHRINE_SPOT } from '../data/shrine';
+import { depthKey, gridToScreen, IsoTileSize, screenToGrid } from '../game/isoMath';
 import { CharacterAvatar } from './CharacterAvatar';
 import { AnimatedPressable } from './AnimatedPressable';
 import { DEBUG_SHOW_SPRITE_BOUNDS, TICK_MS } from '../game/config';
@@ -46,6 +47,55 @@ import { cuteShadow, theme } from '../theme';
 // actually draws did.
 export const WORLD_CANVAS_WIDTH = 900;
 export const WORLD_CANVAS_HEIGHT = 1400;
+
+// Step C ("街画面のアイソメトリック移行") — TownMap only; DungeonMap keeps its
+// plain top-down x*width/y*height placement entirely unchanged (see
+// DungeonMap's own render below). Every town entity's already-normalized
+// (0..1) x/y (Step B's free-placement building/house coords, TOWN_X/
+// TOWN_Y, SHRINE_SPOT, MERCHANT_SPOT, the gate spots, a bird's own x/y,
+// ...) is fed straight into isoMath's gridToScreen/depthKey as a grid
+// coordinate — no extra scaling step, no new data model, so every existing
+// save's building/house positions land at the exact same *logical* spot
+// they always did; only how that spot is drawn on screen changes.
+// tileHeight is exactly half tileWidth — the classic shallow-diamond ratio
+// (see game/isoMath.ts's own comment) the Phase-13 prototype validated.
+const TOWN_ISO_TILE: IsoTileSize = { width: 760, height: 380 };
+// gridToScreen(gridX, gridY, tile) always maps equal coordinates (gridX ===
+// gridY, e.g. TOWN_X/TOWN_Y's own (0.5, 0.5)) to (0, tile.height / 2)
+// regardless of tile size — so centering the origin on this canvas's own
+// geometric center, then nudging it up by exactly half the tile's height,
+// makes the town hall's own iso screen position land on precisely
+// (WORLD_CANVAS_WIDTH/2, WORLD_CANVAS_HEIGHT/2). That's the same point
+// PannableMap's initialFocus={{x: TOWN_X, y: TOWN_Y}} already assumes (a
+// plain x*width/y*height multiply — see PannableMap.tsx), so it keeps
+// centering correctly on first mount with zero changes to PannableMap or
+// TownScreen, and leaves DungeonMap (which shares this exact canvas size
+// with TownMap in TownScreen) completely untouched.
+const TOWN_ISO_ORIGIN_X = WORLD_CANVAS_WIDTH / 2;
+const TOWN_ISO_ORIGIN_Y = WORLD_CANVAS_HEIGHT / 2 - TOWN_ISO_TILE.height / 2;
+
+function townIsoScreenPos(gridX: number, gridY: number): { x: number; y: number } {
+  const p = gridToScreen(gridX, gridY, TOWN_ISO_TILE);
+  return { x: p.x + TOWN_ISO_ORIGIN_X, y: p.y + TOWN_ISO_ORIGIN_Y };
+}
+
+// Painter's-algorithm depth (see game/isoMath.ts's depthKey) shared by every
+// kind of TownMap entity — buildings/houses/the town hall/birds/etc. are all
+// sorted together into one paint order (townIsoSortedItems below) rather
+// than drawn in separate fixed layers, so a bird correctly renders in front
+// of a building it has walked past and behind one it hasn't reached yet.
+function townIsoDepth(gridX: number, gridY: number): number {
+  return depthKey(gridX, gridY);
+}
+
+// A screen-space tap (already relative to the field's own top-left corner,
+// e.g. a TouchableWithoutFeedback's locationX/Y) back to the same
+// normalized (0..1) x/y every store action (constructBuilding, buildHouse,
+// ...) already expects — the exact inverse of townIsoScreenPos above, used
+// by TownMap's placement-mode tap overlay.
+function townIsoScreenToGrid(screenX: number, screenY: number): { x: number; y: number } {
+  return screenToGrid(screenX - TOWN_ISO_ORIGIN_X, screenY - TOWN_ISO_ORIGIN_Y, TOWN_ISO_TILE);
+}
 
 // Low-opacity, tiled ground-texture patches suggesting the field's loose
 // zoning (forest / quarry / mushroom patch / lake / ruins) — matches the
@@ -189,16 +239,42 @@ interface TownMapProps {
   onDungeonGatePress: () => void;
 }
 
+// Grid-space nudges for two fixed presences that used to be positioned with
+// a raw pixel offset from the town hall/shrine (44px / 40px respectively, at
+// the old flat fieldHeight=1400 scale) — converted to an equivalent small
+// offset in normalized grid units (44/1400 ≈ 0.03) so they keep "standing
+// just in front of" their landmark once that offset also has to survive
+// being run through the iso projection (a raw pixel nudge applied *after*
+// projecting would no longer point in a consistent visual direction).
+const SHOPKEEPER_GRID_OFFSET = 0.03;
+const ALSHEL_GRID_OFFSET = 0.03;
+
+// One entry in TownMap's single Y-sorted paint order — every kind of town
+// entity (building, house, the town hall, a bird, ...) reduces to "where is
+// its footprint in grid space" (gx/gy) plus a render callback that receives
+// the already-projected screen position and this item's computed zIndex.
+// Painting everything through one sorted list (rather than the old fixed
+// per-category layering) is what makes a bird correctly walk behind a
+// building it hasn't reached yet and in front of one it's already passed.
+interface TownIsoItem {
+  key: string;
+  gx: number;
+  gy: number;
+  render: (pos: { x: number; y: number }, zIndex: number) => React.ReactNode;
+}
+
 // Map-split step 2: the town's own screen — town hall, shrine, shops,
 // houses, and only recruited birds currently "in town" (see
 // TownMapProps.birds). No town-zone ellipse/fence anymore (see this file's
 // previous revision in git history) — now that this is its own dedicated
 // screen rather than a carved-out region of one shared map, there's nothing
-// left for that ellipse to distinguish; the background is just a plain flat
-// fill (see styles.field), per the request's own "凝った演出は不要". Step B
-// (building free placement) additionally removed the fixed 48-plot grid and
-// its road-grid geometry — buildings render wherever their own (x, y) says,
-// same as houses already did.
+// left for that ellipse to distinguish. Step B (building free placement)
+// removed the fixed 48-plot grid — buildings render wherever their own
+// (x, y) says, same as houses already did. Step C ("アイソメトリックへの移行")
+// projects every one of those (x, y) positions through isoMath's
+// gridToScreen (see townIsoScreenPos above) and paints them all in one
+// Y-sorted (townIsoDepth) list instead of the old flat top-down layering —
+// DungeonMap below is completely unaffected, still plain top-down.
 export function TownMap({
   birds,
   buildings,
@@ -219,81 +295,155 @@ export function TownMap({
   const fieldHeight = WORLD_CANVAS_HEIGHT;
   const townLevelDef = getTownLevelDef(townLevel);
 
-  return (
-    <View style={[styles.field, { width: fieldWidth, height: fieldHeight }]}>
-      {TOWN_DECOR.map((d, i) => (
-        <Text
-          key={i}
-          pointerEvents="none"
-          style={[styles.decor, { left: d.x * fieldWidth - 12, top: d.y * fieldHeight - 12 }]}
-        >
+  const isoItems: TownIsoItem[] = [];
+
+  TOWN_DECOR.forEach((d, i) => {
+    isoItems.push({
+      key: `decor-${i}`,
+      gx: d.x,
+      gy: d.y,
+      render: (pos, zIndex) => (
+        <Text key={`decor-${i}`} pointerEvents="none" style={[styles.decor, { left: pos.x - 12, top: pos.y - 12, zIndex }]}>
           {d.emoji}
         </Text>
-      ))}
+      ),
+    });
+  });
 
-      {Object.values(buildings).map((b) => (
-        <BuildingSprite key={b.id} instance={b} x={b.x * fieldWidth} y={b.y * fieldHeight} onPress={() => onBuildingPress(b.id)} />
-      ))}
+  Object.values(buildings).forEach((b) => {
+    isoItems.push({
+      key: b.id,
+      gx: b.x,
+      gy: b.y,
+      render: (pos, zIndex) => (
+        <BuildingSprite key={b.id} instance={b} x={pos.x} y={pos.y} zIndex={zIndex} onPress={() => onBuildingPress(b.id)} />
+      ),
+    });
+  });
 
+  isoItems.push({
+    key: 'townhall',
+    gx: TOWN_X,
+    gy: TOWN_Y,
+    render: (pos, zIndex) => (
       <AnimatedPressable
+        key="townhall"
         onPress={onTownHallPress}
-        style={[styles.town, { left: TOWN_X * fieldWidth - 32, top: TOWN_Y * fieldHeight - 32 }]}
+        style={[styles.town, { left: pos.x - 32, top: pos.y - 32, zIndex }]}
       >
+        <View pointerEvents="none" style={styles.shadowEllipse} />
         <Image source={TOWNHALL_IMAGES[townLevel]} resizeMode="contain" style={styles.townImage} />
         <Text style={styles.townLabel}>{townLevelDef.name}</Text>
       </AnimatedPressable>
+    ),
+  });
 
-      <ShopkeeperSprite x={TOWN_X * fieldWidth} y={TOWN_Y * fieldHeight + 44} />
+  isoItems.push({
+    key: 'shopkeeper',
+    gx: TOWN_X,
+    gy: TOWN_Y + SHOPKEEPER_GRID_OFFSET,
+    render: (pos, zIndex) => <ShopkeeperSprite key="shopkeeper" x={pos.x} y={pos.y} zIndex={zIndex} />,
+  });
 
-      {merchant && (
-        <MerchantSprite
-          merchant={merchant}
-          x={MERCHANT_SPOT.x * fieldWidth}
-          y={MERCHANT_SPOT.y * fieldHeight}
-          onPress={onMerchantPress}
-        />
-      )}
+  if (merchant) {
+    isoItems.push({
+      key: 'merchant',
+      gx: MERCHANT_SPOT.x,
+      gy: MERCHANT_SPOT.y,
+      render: (pos, zIndex) => (
+        <MerchantSprite key="merchant" merchant={merchant} x={pos.x} y={pos.y} zIndex={zIndex} onPress={onMerchantPress} />
+      ),
+    });
+  }
 
-      <ShrineSprite x={SHRINE_SPOT.x * fieldWidth} y={SHRINE_SPOT.y * fieldHeight} townLevel={townLevel} />
+  isoItems.push({
+    key: 'shrine',
+    gx: SHRINE_SPOT.x,
+    gy: SHRINE_SPOT.y,
+    render: (pos, zIndex) => <ShrineSprite key="shrine" x={pos.x} y={pos.y} townLevel={townLevel} zIndex={zIndex} />,
+  });
 
-      <AlshelSprite x={SHRINE_SPOT.x * fieldWidth} y={SHRINE_SPOT.y * fieldHeight + 40} townLevel={townLevel} />
+  isoItems.push({
+    key: 'alshel',
+    gx: SHRINE_SPOT.x,
+    gy: SHRINE_SPOT.y + ALSHEL_GRID_OFFSET,
+    render: (pos, zIndex) => <AlshelSprite key="alshel" x={pos.x} y={pos.y} townLevel={townLevel} zIndex={zIndex} />,
+  });
 
-      <GateMarker
-        x={DUNGEON_GATE_SPOT.x * fieldWidth}
-        y={DUNGEON_GATE_SPOT.y * fieldHeight}
-        emoji="🚪"
-        label="ダンジョンへ"
-        onPress={onDungeonGatePress}
-      />
+  isoItems.push({
+    key: 'dungeon-gate',
+    gx: DUNGEON_GATE_SPOT.x,
+    gy: DUNGEON_GATE_SPOT.y,
+    render: (pos, zIndex) => (
+      <GateMarker key="dungeon-gate" x={pos.x} y={pos.y} zIndex={zIndex} emoji="🚪" label="ダンジョンへ" onPress={onDungeonGatePress} />
+    ),
+  });
 
-      {Object.values(houses).map((house) => {
+  Object.values(houses).forEach((house) => {
+    isoItems.push({
+      key: house.id,
+      gx: house.x,
+      gy: house.y,
+      render: (pos, zIndex) => {
         const resident = house.residentDefId ? getCharacterDef(house.residentDefId) : null;
         const houseImage = house.residentDefId ? HOUSE_IMAGES[house.residentDefId] ?? HOUSE_VACANT_IMAGE : HOUSE_VACANT_IMAGE;
         return (
           <AnimatedPressable
             key={house.id}
-            style={[styles.house, { left: house.x * fieldWidth - 18, top: house.y * fieldHeight - 18 }]}
+            style={[styles.house, { left: pos.x - 18, top: pos.y - 18, zIndex }]}
             onPress={() => onHousePress(house)}
           >
+            <View pointerEvents="none" style={styles.shadowEllipse} />
             <Image source={houseImage} resizeMode="contain" style={styles.houseImage} />
             <Text style={styles.houseTag}>{resident ? resident.emoji : '🔑'}</Text>
           </AnimatedPressable>
         );
-      })}
+      },
+    });
+  });
 
-      {birds.map((b) => (
-        <BirdSprite
-          key={b.defId}
-          bird={b}
-          targetX={b.x * fieldWidth}
-          targetY={b.y * fieldHeight}
-          onPress={() => onBirdPress(b.defId)}
-        />
-      ))}
+  birds.forEach((b) => {
+    isoItems.push({
+      key: b.defId,
+      gx: b.x,
+      gy: b.y,
+      render: (pos, zIndex) => (
+        <BirdSprite key={b.defId} bird={b} targetX={pos.x} targetY={pos.y} zIndex={zIndex} onPress={() => onBirdPress(b.defId)} />
+      ),
+    });
+  });
+
+  // Painter's algorithm: further-back (smaller gx+gy) first, closer-to-
+  // camera (larger gx+gy) last — see game/isoMath.ts's depthKey comment.
+  const sortedIsoItems = [...isoItems].sort((a, b) => townIsoDepth(a.gx, a.gy) - townIsoDepth(b.gx, b.gy));
+
+  return (
+    <View style={[styles.field, styles.isoField, { width: fieldWidth, height: fieldHeight }]}>
+      {/* Step C's background rework: a soft rounded "land" patch standing
+          out from the pale sky-toned backdrop set by styles.isoField above
+          (see styles.isoGroundPatch) — deliberately simple (no new art, no
+          real diamond-tiled ground) per the request's own "凝った演出は不要". */}
+      <View
+        pointerEvents="none"
+        style={[
+          styles.isoGroundPatch,
+          {
+            left: TOWN_ISO_ORIGIN_X - TOWN_ISO_TILE.width / 2 - 60,
+            top: TOWN_ISO_ORIGIN_Y - 70,
+            width: TOWN_ISO_TILE.width + 120,
+            height: TOWN_ISO_TILE.height + 170,
+          },
+        ]}
+      />
+
+      {sortedIsoItems.map((item) => item.render(townIsoScreenPos(item.gx, item.gy), Math.round(townIsoDepth(item.gx, item.gy) * 1000) + 10))}
 
       {placementMode && onMapTap && (
         <TouchableWithoutFeedback
-          onPress={(e) => onMapTap(e.nativeEvent.locationX / fieldWidth, e.nativeEvent.locationY / fieldHeight)}
+          onPress={(e) => {
+            const { x, y } = townIsoScreenToGrid(e.nativeEvent.locationX, e.nativeEvent.locationY);
+            onMapTap(x, y);
+          }}
         >
           <View style={[styles.placementOverlay, { width: fieldWidth, height: fieldHeight }]} />
         </TouchableWithoutFeedback>
@@ -301,8 +451,7 @@ export function TownMap({
 
       {previewBuilding && (
         <PlacementPreviewSprite
-          x={previewBuilding.x * fieldWidth}
-          y={previewBuilding.y * fieldHeight}
+          pos={townIsoScreenPos(previewBuilding.x, previewBuilding.y)}
           optionId={previewBuilding.optionId}
           blocked={previewBuilding.blocked}
         />
@@ -437,7 +586,7 @@ export function DungeonMap({
 // The player's stand-in — the town's manager/shopkeeper. Not controllable,
 // just a friendly presence standing near the town hall with a gentle idle
 // bob, so the diorama reads as "someone lives here" rather than an empty lot.
-function ShopkeeperSprite({ x, y }: { x: number; y: number }) {
+function ShopkeeperSprite({ x, y, zIndex }: { x: number; y: number; zIndex?: number }) {
   const bob = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -454,7 +603,7 @@ function ShopkeeperSprite({ x, y }: { x: number; y: number }) {
   const bobY = bob.interpolate({ inputRange: [0, 1], outputRange: [0, -3] });
 
   return (
-    <Animated.View pointerEvents="none" style={[styles.sprite, { left: x, top: y, transform: [{ translateY: bobY }] }]}>
+    <Animated.View pointerEvents="none" style={[styles.sprite, { left: x, top: y, zIndex, transform: [{ translateY: bobY }] }]}>
       <Text style={styles.emojiLarge}>🧑‍🌾</Text>
       <Text style={styles.nameTag}>店主</Text>
     </Animated.View>
@@ -497,11 +646,13 @@ function MerchantSprite({
   merchant,
   x,
   y,
+  zIndex,
   onPress,
 }: {
   merchant: MerchantState;
   x: number;
   y: number;
+  zIndex?: number;
   onPress: () => void;
 }) {
   const bob = useRef(new Animated.Value(0)).current;
@@ -530,8 +681,9 @@ function MerchantSprite({
     // houses/plot buildings.
     <AnimatedPressable
       onPress={onPress}
-      style={[styles.merchantBox, { left: x - 16, top: y - 21 }]}
+      style={[styles.merchantBox, { left: x - 16, top: y - 21, zIndex }]}
     >
+      <View pointerEvents="none" style={styles.shadowEllipse} />
       <Animated.View style={{ transform: [{ translateY: bobY }] }}>
         <Image source={MERCHANT_TENT_IMAGE} resizeMode="contain" style={styles.merchantTentImage} />
       </Animated.View>
@@ -633,7 +785,19 @@ function TreasureSprite({ treasure, x, y }: { treasure: TreasureNodeInstance; x:
 // real instance (it was looked up successfully at construction time), so
 // unlike the old PlotSprite there's no BUILDING_ICON fallback branch to
 // cover a missing option.
-function BuildingSprite({ instance, x, y, onPress }: { instance: TownBuildingInstance; x: number; y: number; onPress: () => void }) {
+function BuildingSprite({
+  instance,
+  x,
+  y,
+  zIndex,
+  onPress,
+}: {
+  instance: TownBuildingInstance;
+  x: number;
+  y: number;
+  zIndex?: number;
+  onPress: () => void;
+}) {
   const option = getBuildingOption(instance.constructedBuildingId);
   // 'park'/'bathhouse' (Phase 11) and every shop kind have real art (see
   // data/buildingImages.ts); 'garden' doesn't, and keeps the
@@ -651,15 +815,16 @@ function BuildingSprite({ instance, x, y, onPress }: { instance: TownBuildingIns
     return (
       <>
         <AnimatedPressable
-          style={[styles.plotBuilt, { left: x - PLOT_BUILT_SIZE / 2, top: y - PLOT_BUILT_SIZE / 2 }]}
+          style={[styles.plotBuilt, { left: x - PLOT_BUILT_SIZE / 2, top: y - PLOT_BUILT_SIZE / 2, zIndex }]}
           onPress={onPress}
         >
+          <View pointerEvents="none" style={styles.shadowEllipse} />
           <Image source={buildingImage} resizeMode="contain" style={styles.plotBuiltImage} />
         </AnimatedPressable>
         {label && (
           <Text
             pointerEvents="none"
-            style={[styles.plotBuildingLabel, { left: x - 30, top: y + PLOT_BUILT_SIZE / 2 + 1 }]}
+            style={[styles.plotBuildingLabel, { left: x - 30, top: y + PLOT_BUILT_SIZE / 2 + 1, zIndex }]}
             numberOfLines={1}
           >
             {label}
@@ -671,14 +836,14 @@ function BuildingSprite({ instance, x, y, onPress }: { instance: TownBuildingIns
 
   return (
     <>
-      <AnimatedPressable style={[styles.plot, styles.plotOpen, { left: x - 18, top: y - 18 }]} onPress={onPress}>
+      <AnimatedPressable style={[styles.plot, styles.plotOpen, { left: x - 18, top: y - 18, zIndex }]} onPress={onPress}>
         <Text style={styles.plotBuildingIcon}>{option?.emoji ?? '·'}</Text>
       </AnimatedPressable>
       {/* The box itself clips at 36x36 (overflow: hidden), so the label is
           a separate sibling positioned just below it rather than a child —
           otherwise it'd get cut off before ever becoming visible. */}
       {label && (
-        <Text pointerEvents="none" style={[styles.plotBuildingLabel, { left: x - 30, top: y + 19 }]} numberOfLines={1}>
+        <Text pointerEvents="none" style={[styles.plotBuildingLabel, { left: x - 30, top: y + 19, zIndex }]} numberOfLines={1}>
           {label}
         </Text>
       )}
@@ -693,12 +858,20 @@ function BuildingSprite({ instance, x, y, onPress }: { instance: TownBuildingIns
 // handleConfirmBuild). Purely a rendering aid: pointerEvents="none" so it
 // never intercepts the tap overlay underneath it, which is what actually
 // moves the preview on each re-tap.
-function PlacementPreviewSprite({ x, y, optionId, blocked }: { x: number; y: number; optionId: string; blocked: boolean }) {
+function PlacementPreviewSprite({
+  pos,
+  optionId,
+  blocked,
+}: {
+  pos: { x: number; y: number };
+  optionId: string;
+  blocked: boolean;
+}) {
   const option = getBuildingOption(optionId);
   return (
     <View
       pointerEvents="none"
-      style={[styles.previewSprite, blocked ? styles.previewBlocked : styles.previewOk, { left: x - 22, top: y - 22 }]}
+      style={[styles.previewSprite, blocked ? styles.previewBlocked : styles.previewOk, { left: pos.x - 22, top: pos.y - 22 }]}
     >
       <Text style={styles.previewEmoji}>{option?.emoji ?? '·'}</Text>
     </View>
@@ -710,10 +883,10 @@ function PlacementPreviewSprite({ x, y, optionId, blocked }: { x: number; y: num
 // just a visual cue that gradually brightens/decorates as townLevel rises
 // (see data/shrine.ts's SHRINE_STAGE_DEFS), until it's fully restored and
 // アルシェル (see AlshelSprite below) reveals herself right beside it.
-function ShrineSprite({ x, y, townLevel }: { x: number; y: number; townLevel: number }) {
+function ShrineSprite({ x, y, townLevel, zIndex }: { x: number; y: number; townLevel: number; zIndex?: number }) {
   const stage = getShrineStageDef(townLevel);
   return (
-    <View pointerEvents="none" style={[styles.sprite, { left: x, top: y, opacity: stage.opacity }]}>
+    <View pointerEvents="none" style={[styles.sprite, { left: x, top: y, zIndex, opacity: stage.opacity }]}>
       <Text style={styles.emojiLarge}>
         {stage.decor ? `${stage.decor} ` : ''}
         {stage.emoji}
@@ -734,7 +907,7 @@ function ShrineSprite({ x, y, townLevel }: { x: number; y: number; townLevel: nu
 // seasonal events, calling rare birds/spirits, omikuji, shrine level
 // management) are intentionally not implemented yet — this is just her
 // fixed presence.
-function AlshelSprite({ x, y, townLevel }: { x: number; y: number; townLevel: number }) {
+function AlshelSprite({ x, y, townLevel, zIndex }: { x: number; y: number; townLevel: number; zIndex?: number }) {
   const bob = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -753,7 +926,7 @@ function AlshelSprite({ x, y, townLevel }: { x: number; y: number; townLevel: nu
   const bobY = bob.interpolate({ inputRange: [0, 1], outputRange: [0, -3] });
 
   return (
-    <Animated.View pointerEvents="none" style={[styles.sprite, { left: x, top: y, transform: [{ translateY: bobY }] }]}>
+    <Animated.View pointerEvents="none" style={[styles.sprite, { left: x, top: y, zIndex, transform: [{ translateY: bobY }] }]}>
       <Text style={styles.emojiLarge}>{ALSHEL_NPC.emoji}</Text>
       <Text style={styles.nameTag}>{ALSHEL_NPC.name}様</Text>
     </Animated.View>
@@ -766,9 +939,23 @@ function AlshelSprite({ x, y, townLevel }: { x: number; y: number; townLevel: nu
 // shared gate rather than vanishing/appearing out of nowhere. Purely
 // decorative + a tap shortcut — no bird actually paths through this spot,
 // same as before.
-function GateMarker({ x, y, emoji, label, onPress }: { x: number; y: number; emoji: string; label: string; onPress: () => void }) {
+function GateMarker({
+  x,
+  y,
+  zIndex,
+  emoji,
+  label,
+  onPress,
+}: {
+  x: number;
+  y: number;
+  zIndex?: number;
+  emoji: string;
+  label: string;
+  onPress: () => void;
+}) {
   return (
-    <AnimatedPressable onPress={onPress} style={[styles.sprite, { left: x, top: y }]}>
+    <AnimatedPressable onPress={onPress} style={[styles.sprite, { left: x, top: y, zIndex }]}>
       <Text style={styles.emojiLarge}>{emoji}</Text>
       <Text style={styles.nameTag}>{label}</Text>
     </AnimatedPressable>
@@ -878,11 +1065,13 @@ function BirdSprite({
   bird,
   targetX,
   targetY,
+  zIndex,
   onPress,
 }: {
   bird: BirdState;
   targetX: number;
   targetY: number;
+  zIndex?: number;
   onPress: () => void;
 }) {
   const def = getCharacterDef(bird.defId);
@@ -1016,7 +1205,7 @@ function BirdSprite({
     <Animated.View
       style={[
         styles.sprite,
-        { transform: [{ translateX: pos.x }, { translateY: Animated.add(pos.y, Animated.add(bobY, hopY)) }] },
+        { zIndex, transform: [{ translateX: pos.x }, { translateY: Animated.add(pos.y, Animated.add(bobY, hopY)) }] },
       ]}
     >
       {retreatLine ? (
@@ -1074,6 +1263,39 @@ const styles = StyleSheet.create({
   field: {
     backgroundColor: theme.ground,
   },
+  // Step C: TownMap's own background — a pale "sky" backdrop (rather than
+  // the flat meadow-green fill DungeonMap still uses) so the isoGroundPatch
+  // below reads as a distinct patch of land the town stands on, not just
+  // more of the same color. DungeonMap is untouched (still plain `field`).
+  isoField: {
+    backgroundColor: theme.bgTop,
+  },
+  // The "land" itself — a single soft-edged patch roughly matching the
+  // projected content's own footprint (see TOWN_ISO_TILE/TOWN_ISO_ORIGIN_Y
+  // above), deliberately plain (a big rounded rect, no tile art, no real
+  // diamond shape) per the request's own "凝った演出は不要" — this is meant
+  // to fix "地面に立っている感が薄い", not to be a finished ground texture.
+  isoGroundPatch: {
+    position: 'absolute',
+    backgroundColor: theme.ground,
+    borderRadius: 260,
+    opacity: 0.95,
+  },
+  // A soft dark ellipse under a structure's own footprint — the same "does
+  // this thing look like it's standing on the ground" fix the Phase-13
+  // prototype's shadow toggle validated, now always-on rather than a
+  // debug toggle. `alignSelf: 'center'` + a percentage width means one
+  // shared style scales correctly across every bottom-anchored container
+  // that uses it (town hall/house/building — all differently sized).
+  shadowEllipse: {
+    position: 'absolute',
+    bottom: -4,
+    alignSelf: 'center',
+    width: '68%',
+    height: 9,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+  },
   // Softer than before (was 0.45) so the patch blends into the surrounding
   // field green instead of reading as a hard-edged circle of color.
   fieldZonePatch: { position: 'absolute', opacity: 0.32, overflow: 'hidden' },
@@ -1106,11 +1328,12 @@ const styles = StyleSheet.create({
     height: 64,
     alignItems: 'center',
     justifyContent: 'flex-end',
-    // Phase 12③: a simple z-order fix so birds visibly walk behind the town
-    // hall/plot buildings instead of appearing to pass straight over them
-    // (see `plot`/`plotBuilt` below and `sprite`'s own zIndex) — not real
-    // per-tile pathfinding, just resolves the "sprite floats on top of a
-    // building" look the request explicitly allowed as a first pass.
+    // A plain fallback zIndex (Phase 12③'s original static "buildings always
+    // above birds" fix) — TownMap always overrides this per-instance with
+    // its own Y-sorted depth (see townIsoDepth/TownIsoItem above) now that
+    // Step C's isometric migration needs a bird to correctly render in
+    // front of a building it's already passed and behind one it hasn't
+    // reached yet, not a fixed layer order.
     zIndex: 2,
   },
   townImage: { width: '100%', height: '100%' },
@@ -1140,13 +1363,18 @@ const styles = StyleSheet.create({
   houseImage: { width: '100%', height: '100%' },
   houseTag: { position: 'absolute', bottom: -2, right: -2, fontSize: 14 },
   // Phase 14's house-placement mode — a transparent full-canvas tap target
-  // sitting above every other sprite (zIndex, same convention as the
-  // building/sprite zIndex split from Phase 12③) so a tap anywhere reaches
-  // onMapTap instead of whatever sprite happens to be underneath it.
-  placementOverlay: { position: 'absolute', left: 0, top: 0, zIndex: 50, backgroundColor: 'rgba(232,163,61,0.08)' },
-  // Sits above the placement overlay (zIndex 50) so it's actually visible
-  // while placing — pointerEvents: none (see PlacementPreviewSprite's own
-  // comment) keeps it from stealing the overlay's own taps.
+  // sitting above every other sprite so a tap anywhere reaches onMapTap
+  // instead of whatever sprite happens to be underneath it. Bumped from 50
+  // to 9000 for Step C: TownMap's Y-sorted iso items now carry a per-
+  // instance zIndex of up to roughly depth*1000 (see townIsoDepth/
+  // TownIsoItem — depth is gx+gy, which can reach ~2 for the far corner of
+  // the grid), which would otherwise render above this overlay for any
+  // building/bird past the map's very near edge.
+  placementOverlay: { position: 'absolute', left: 0, top: 0, zIndex: 9000, backgroundColor: 'rgba(232,163,61,0.08)' },
+  // Sits above the placement overlay (zIndex 9000 — see its own comment)
+  // so it's actually visible while placing — pointerEvents: none (see
+  // PlacementPreviewSprite's own comment) keeps it from stealing the
+  // overlay's own taps.
   previewSprite: {
     position: 'absolute',
     width: 44,
@@ -1155,7 +1383,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 60,
+    zIndex: 9010,
   },
   previewOk: { backgroundColor: 'rgba(90, 200, 120, 0.4)', borderColor: 'rgba(52, 168, 83, 0.95)' },
   previewBlocked: { backgroundColor: 'rgba(220, 90, 90, 0.4)', borderColor: 'rgba(196, 60, 60, 0.95)' },

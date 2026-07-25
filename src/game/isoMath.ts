@@ -1,7 +1,8 @@
-// Phase-13 feasibility prototype (see IsometricPrototypeScreen.tsx) — pure,
-// dependency-free math only. Deliberately kept separate from anything in
-// src/game or src/components so this can be deleted or promoted to a real
-// module later without having touched production code at all.
+// Promoted from the Phase-13 feasibility prototype
+// (src/prototypes/isometric/IsometricPrototypeScreen.tsx, which still
+// imports this same module for its own demo) — pure, dependency-free math
+// only. Now the real projection used by TownMap (see WorldMap.tsx) for
+// Step C's isometric migration.
 //
 // Standard 2:1 isometric grid→screen projection (the same one Kairosoft-
 // style games use): a tile that's `tileWidth` wide and `tileHeight` tall on

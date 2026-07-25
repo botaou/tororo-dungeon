@@ -3,7 +3,7 @@ import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from 'reac
 
 import { AMENITY_IMAGES, TOWNHALL_IMAGES, SHOP_IMAGES } from '../../data/buildingImages';
 import { BIRD_BASE_SPRITES } from '../../game/birdBaseSprites';
-import { depthKey, gridToScreen, IsoTileSize } from './isoMath';
+import { depthKey, gridToScreen, IsoTileSize } from '../../game/isoMath';
 
 // Phase-13 feasibility prototype ("大型変更: アイソメトリックへの移行", ステップ
 // 1). A throwaway 6x6-tile scene — NOT wired into the real game's own
