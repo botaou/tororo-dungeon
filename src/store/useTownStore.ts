@@ -78,6 +78,13 @@ interface TownActions {
   // something else already standing there (isBuildingSpotBlocked), or the
   // cost isn't fully covered.
   constructBuilding: (optionId: string, x: number, y: number) => boolean;
+  // Relocates an already-built building to a new (x, y) — same clearance
+  // rule as constructBuilding (isBuildingSpotBlocked), except the building's
+  // own current spot is excluded from that check (so it never collides with
+  // itself), and there's no cost/cap check since nothing new is being
+  // built. Returns false (no state change) if the building doesn't exist or
+  // the new spot is blocked by something else.
+  moveBuilding: (buildingId: string, x: number, y: number) => boolean;
   addDevelopmentPoints: (amount: number) => void;
   addReputation: (amount: number) => void;
   // Called once per completed job-board request (see useWorldStore) — feeds
@@ -127,10 +134,19 @@ function isHouseSpotBlocked(x: number, y: number, houses: Record<string, HouseSt
 // keep clear of the town hall, every house, and every other building
 // already standing (mutual with isHouseSpotBlocked: a house checks against
 // buildingPositions too, so neither category can be placed on top of the
-// other).
-function isBuildingSpotBlocked(x: number, y: number, buildings: Record<string, TownBuildingInstance>, houses: Record<string, HouseState>): boolean {
+// other). `excludeBuildingId` skips one building's own entry from the
+// check — used when relocating a building (see moveBuilding), so its old
+// spot never counts as "something else in the way" of its own new spot.
+function isBuildingSpotBlocked(
+  x: number,
+  y: number,
+  buildings: Record<string, TownBuildingInstance>,
+  houses: Record<string, HouseState>,
+  excludeBuildingId?: string
+): boolean {
   if (Math.hypot(x - TOWN_X, y - TOWN_Y) < TOWN_BUILDING_CLEARANCE) return true;
   for (const b of Object.values(buildings)) {
+    if (b.id === excludeBuildingId) continue;
     if (Math.hypot(x - b.x, y - b.y) < TOWN_BUILDING_CLEARANCE) return true;
   }
   for (const h of Object.values(houses)) {
@@ -145,10 +161,14 @@ function isBuildingSpotBlocked(x: number, y: number, buildings: Record<string, T
 // green/red as the player taps around before committing. Reads live store
 // state directly rather than taking it as a parameter, since this is called
 // straight from render code (see TownScreen's previewPosition) rather than
-// from inside a set()/get() callback.
-export function isBuildingPlacementBlocked(x: number, y: number): boolean {
+// from inside a set()/get() callback. `excludeBuildingId` — see
+// isBuildingSpotBlocked's own comment — is passed while relocating an
+// existing building (see TownScreen's movingBuildingId) so the preview
+// doesn't read as "blocked" just from sitting near/on the building's own
+// current (soon to be vacated) spot.
+export function isBuildingPlacementBlocked(x: number, y: number, excludeBuildingId?: string): boolean {
   const s = useTownStore.getState();
-  return isBuildingSpotBlocked(x, y, s.buildings, s.houses);
+  return isBuildingSpotBlocked(x, y, s.buildings, s.houses, excludeBuildingId);
 }
 
 // Superseded by Step B's free placement — kept only so migrate() below can
@@ -202,6 +222,16 @@ export const useTownStore = create<TownState & TownActions>()(
           buildings: { ...s.buildings, [id]: { id, x, y, constructedBuildingId: option.id } },
           developmentPoints: s.developmentPoints + CONSTRUCTION_DEVELOPMENT_POINTS,
         });
+        return true;
+      },
+
+      moveBuilding: (buildingId, x, y) => {
+        const s = get();
+        const building = s.buildings[buildingId];
+        if (!building) return false;
+        if (isBuildingSpotBlocked(x, y, s.buildings, s.houses, buildingId)) return false;
+
+        set({ buildings: { ...s.buildings, [buildingId]: { ...building, x, y } } });
         return true;
       },
 

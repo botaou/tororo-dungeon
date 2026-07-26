@@ -71,6 +71,7 @@ export function TownScreen() {
   const townQuestIndex = useTownStore((s) => s.townQuestIndex);
   const levelUpEvents = useTownStore((s) => s.levelUpEvents);
   const constructBuilding = useTownStore((s) => s.constructBuilding);
+  const moveBuilding = useTownStore((s) => s.moveBuilding);
   const buildHouse = useTownStore((s) => s.buildHouse);
   const assignHouseResident = useTownStore((s) => s.assignHouseResident);
 
@@ -103,6 +104,13 @@ export function TownScreen() {
   // somewhere at least once. Re-tapping anywhere just moves this, same spot
   // as before; only handleConfirmBuild actually spends anything.
   const [previewPosition, setPreviewPosition] = useState<{ x: number; y: number } | null>(null);
+  // Non-null while relocating an already-built building (see
+  // handleStartMoveBuilding) — shares the exact same placement-mode/
+  // previewPosition/confirm-button UI as fresh construction above, except
+  // the confirm calls moveBuilding instead of constructBuilding, and this
+  // building itself is hidden from the map (see visibleBuildings below) so
+  // the ghost preview doesn't appear to be a second copy of it.
+  const [movingBuildingId, setMovingBuildingId] = useState<string | null>(null);
   // How many of world.recruitmentEvents we've already shown a modal for —
   // the array only ever grows, so anything past this index is new (see
   // useWorldStore's recruitment-trigger checks). world itself isn't
@@ -169,6 +177,17 @@ export function TownScreen() {
   const townBirds = activeBirds.filter((b) => b.location === 'town');
   const dungeonBirds = activeBirds.filter((b) => b.location === 'dungeon');
 
+  // While relocating a building (see movingBuildingId), hide it from the
+  // map entirely — the ghost preview (see previewBuilding below) already
+  // represents it at its candidate new spot, so leaving the real one
+  // rendered at its old spot too would look like two copies of the same
+  // building. This also means the dynamically-generated roads (see
+  // WorldMap's TownMap) naturally skip it too, since they're derived from
+  // this same filtered object.
+  const visibleBuildings = movingBuildingId
+    ? Object.fromEntries(Object.entries(buildings).filter(([id]) => id !== movingBuildingId))
+    : buildings;
+
   // RecruitmentModal/TownLevelUpModal/RecipeUnlockModal/SkillUnlockModal each
   // render their own <Modal> the instant their queued event is non-null,
   // completely independent of whatever the player currently has open — a
@@ -229,15 +248,33 @@ export function TownScreen() {
     postRequest(preset);
   };
 
-  // Step B (building free placement): tapping an already-built shop-kind
-  // building reopens its (shared-stock) shop modal via handleShopPress
-  // (below) — a decorative building (e.g. the garden) has nothing further
-  // to show, same as the old grid's plot-tap behavior.
+  // Step B (building free placement) + this round's relocation feature:
+  // tapping an already-built building now shows a short menu instead of
+  // going straight to its shop — "商品を見る" (shop-kind buildings only) and
+  // "移動する" (every building). A decorative building (e.g. the garden) just
+  // gets the move option, same as before it had nothing to show at all.
   const handleBuildingPress = (buildingId: string) => {
     const building = buildings[buildingId];
     if (!building) return;
     const option = getBuildingOption(building.constructedBuildingId);
-    if (option?.shopKind) handleShopPress(option.shopKind);
+    const buttons: { text: string; onPress?: () => void; style?: 'cancel' | 'destructive' }[] = [];
+    if (option?.shopKind) buttons.push({ text: '商品を見る', onPress: () => handleShopPress(option.shopKind!) });
+    buttons.push({ text: '移動する', onPress: () => handleStartMoveBuilding(buildingId) });
+    buttons.push({ text: 'キャンセル', style: 'cancel' });
+    Alert.alert(option?.name ?? '建物', undefined, buttons);
+  };
+
+  // Enters the exact same placement-mode/preview/confirm flow as fresh
+  // construction (see placingBuildingOptionId above), except for relocating
+  // this already-built building instead. Seeds previewPosition with the
+  // building's own current spot so the ghost preview starts exactly where
+  // it already stands — confirming without tapping anywhere else is a
+  // (harmless) no-op move back to the same place.
+  const handleStartMoveBuilding = (buildingId: string) => {
+    const building = buildings[buildingId];
+    if (!building) return;
+    setMovingBuildingId(buildingId);
+    setPreviewPosition({ x: building.x, y: building.y });
   };
 
   // Picking an option from ConstructionModal doesn't build immediately
@@ -259,14 +296,25 @@ export function TownScreen() {
     setPreviewPosition({ x, y });
   };
 
-  // The explicit "ここに建てる" confirm — only this actually spends
-  // gold/materials and creates the building (see useTownStore's
-  // constructBuilding, which re-validates cap/clearance/cost itself; the
-  // preview's own green/red tint is just a read-only hint, not the source
-  // of truth). Deliberately stays in placement mode (preview intact) on
-  // failure so the player can just try again, with a quick alert.
+  // The explicit "ここに建てる"/"ここに移動する" confirm — only this actually
+  // spends gold/materials and creates the building (constructBuilding) or,
+  // while relocating (movingBuildingId), moves the existing one instead
+  // (moveBuilding) — both re-validate clearance themselves; the preview's
+  // own green/red tint is just a read-only hint, not the source of truth.
+  // Deliberately stays in placement mode (preview intact) on failure so the
+  // player can just try again, with a quick alert.
   const handleConfirmBuild = () => {
-    if (!placingBuildingOptionId || !previewPosition) return;
+    if (!previewPosition) return;
+    if (movingBuildingId) {
+      if (moveBuilding(movingBuildingId, previewPosition.x, previewPosition.y)) {
+        setMovingBuildingId(null);
+        setPreviewPosition(null);
+      } else {
+        Alert.alert('ここには移動できません', '何かに近すぎる可能性があります。');
+      }
+      return;
+    }
+    if (!placingBuildingOptionId) return;
     if (constructBuilding(placingBuildingOptionId, previewPosition.x, previewPosition.y)) {
       setPlacingBuildingOptionId(null);
       setPreviewPosition(null);
@@ -277,14 +325,16 @@ export function TownScreen() {
 
   const handleCancelBuildPlacement = () => {
     setPlacingBuildingOptionId(null);
+    setMovingBuildingId(null);
     setPreviewPosition(null);
   };
 
-  // Phase 14's house placement and Step B's building placement share the
-  // exact same "whole map becomes one big tap target" mechanism (see
-  // WorldMap's placementMode/onMapTap) — this dispatches to whichever one
-  // is actually active. Deliberately stays in placement mode on failure so
-  // the player can just try another spot, with a quick alert explaining why.
+  // Phase 14's house placement and Step B's building placement (+ this
+  // round's building relocation) share the exact same "whole map becomes
+  // one big tap target" mechanism (see WorldMap's placementMode/onMapTap)
+  // — this dispatches to whichever one is actually active. Deliberately
+  // stays in placement mode on failure so the player can just try another
+  // spot, with a quick alert explaining why.
   const handleMapTap = (x: number, y: number) => {
     if (placingHouse) {
       if (buildHouse(x, y)) {
@@ -292,7 +342,7 @@ export function TownScreen() {
       } else {
         Alert.alert('ここには建てられません', '街の外か、何かに近すぎるか、費用が足りない可能性があります。');
       }
-    } else if (placingBuildingOptionId) {
+    } else if (placingBuildingOptionId || movingBuildingId) {
       handleBuildMapTap(x, y);
     }
   };
@@ -399,33 +449,49 @@ export function TownScreen() {
         </View>
       )}
 
-      {placingBuildingOptionId !== null && (
-        <View style={styles.placementBanner}>
-          <Text style={styles.placementBannerText}>
-            {previewPosition
-              ? `${getBuildingOption(placingBuildingOptionId)?.name ?? '建物'}をここに建てますか?タップし直すと場所を変更できます`
-              : `${getBuildingOption(placingBuildingOptionId)?.name ?? '建物'}を建てる場所をタップしてください`}
-          </Text>
-          <View style={styles.placementButtonRow}>
-            {previewPosition &&
-              (() => {
-                const blocked = isBuildingPlacementBlocked(previewPosition.x, previewPosition.y);
-                return (
-                  <AnimatedPressable
-                    style={[styles.placementConfirmButton, blocked && styles.placementConfirmButtonDisabled]}
-                    onPress={blocked ? undefined : handleConfirmBuild}
-                    disabled={blocked}
-                  >
-                    <Text style={styles.placementConfirmButtonText}>ここに建てる</Text>
-                  </AnimatedPressable>
-                );
-              })()}
-            <AnimatedPressable style={styles.placementCancelButton} onPress={handleCancelBuildPlacement}>
-              <Text style={styles.placementCancelButtonText}>✕ やめる</Text>
-            </AnimatedPressable>
-          </View>
-        </View>
-      )}
+      {(placingBuildingOptionId !== null || movingBuildingId !== null) &&
+        (() => {
+          // The building relocation feature reuses this exact banner/preview
+          // flow — the only difference is which optionId's art to preview
+          // (the freshly-picked one, or the moving building's own existing
+          // one) and the wording ("建てる" vs "移動する").
+          const activeOptionId = movingBuildingId
+            ? buildings[movingBuildingId]?.constructedBuildingId ?? null
+            : placingBuildingOptionId;
+          const buildingName = activeOptionId ? getBuildingOption(activeOptionId)?.name ?? '建物' : '建物';
+          const verb = movingBuildingId ? '移動' : '建設';
+          return (
+            <View style={styles.placementBanner}>
+              <Text style={styles.placementBannerText}>
+                {previewPosition
+                  ? `${buildingName}をここに${verb}しますか?タップし直すと場所を変更できます`
+                  : `${buildingName}の${verb}先をタップしてください`}
+              </Text>
+              <View style={styles.placementButtonRow}>
+                {previewPosition &&
+                  (() => {
+                    const blocked = isBuildingPlacementBlocked(
+                      previewPosition.x,
+                      previewPosition.y,
+                      movingBuildingId ?? undefined
+                    );
+                    return (
+                      <AnimatedPressable
+                        style={[styles.placementConfirmButton, blocked && styles.placementConfirmButtonDisabled]}
+                        onPress={blocked ? undefined : handleConfirmBuild}
+                        disabled={blocked}
+                      >
+                        <Text style={styles.placementConfirmButtonText}>ここに{verb}する</Text>
+                      </AnimatedPressable>
+                    );
+                  })()}
+                <AnimatedPressable style={styles.placementCancelButton} onPress={handleCancelBuildPlacement}>
+                  <Text style={styles.placementCancelButtonText}>✕ やめる</Text>
+                </AnimatedPressable>
+              </View>
+            </View>
+          );
+        })()}
 
       <View style={styles.screenTabRow}>
         <AnimatedPressable
@@ -458,7 +524,7 @@ export function TownScreen() {
           {activeScreen === 'town' ? (
             <TownMap
               birds={townBirds}
-              buildings={buildings}
+              buildings={visibleBuildings}
               houses={houses}
               townLevel={townLevel}
               merchant={world.merchant}
@@ -467,18 +533,21 @@ export function TownScreen() {
               onMerchantPress={() => setMerchantVisible(true)}
               onTownHallPress={() => setTownStatusVisible(true)}
               onHousePress={handleHousePress}
-              placementMode={placingHouse || placingBuildingOptionId !== null}
+              placementMode={placingHouse || placingBuildingOptionId !== null || movingBuildingId !== null}
               onMapTap={handleMapTap}
-              previewBuilding={
-                placingBuildingOptionId && previewPosition
-                  ? {
-                      x: previewPosition.x,
-                      y: previewPosition.y,
-                      optionId: placingBuildingOptionId,
-                      blocked: isBuildingPlacementBlocked(previewPosition.x, previewPosition.y),
-                    }
-                  : null
-              }
+              previewBuilding={(() => {
+                if (!previewPosition) return null;
+                const optionId = movingBuildingId
+                  ? buildings[movingBuildingId]?.constructedBuildingId ?? null
+                  : placingBuildingOptionId;
+                if (!optionId) return null;
+                return {
+                  x: previewPosition.x,
+                  y: previewPosition.y,
+                  optionId,
+                  blocked: isBuildingPlacementBlocked(previewPosition.x, previewPosition.y, movingBuildingId ?? undefined),
+                };
+              })()}
               onDungeonGatePress={() => setActiveScreen('dungeon')}
             />
           ) : (

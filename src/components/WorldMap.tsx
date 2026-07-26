@@ -459,6 +459,21 @@ export function TownMap({
   // camera (larger gx+gy) last — see game/isoMath.ts's depthKey comment.
   const sortedIsoItems = [...isoItems].sort((a, b) => townIsoDepth(a.gx, a.gy) - townIsoDepth(b.gx, b.gy));
 
+  // This round's road feature: a straight dirt-road segment from the town
+  // hall to every constructed building, in the exact same iso-projected
+  // screen space as everything else — since it's derived fresh from
+  // `buildings` on every render (not stored anywhere), it automatically
+  // "re-generates" the instant a building is constructed, relocated
+  // (useTownStore's moveBuilding), or removed, with zero extra wiring.
+  // Purely a ground-level decoration (see RoadSegment/styles.roadSegment
+  // below) — rendered before the Y-sorted items so buildings/birds always
+  // draw on top of the road surface, never underneath it.
+  const townHallScreenPos = townIsoScreenPos(TOWN_X, TOWN_Y);
+  const roadSegments = Object.values(buildings).map((b) => ({
+    key: `road-${b.id}`,
+    to: townIsoScreenPos(b.x, b.y),
+  }));
+
   return (
     <View style={[styles.field, styles.isoField, { width: fieldWidth, height: fieldHeight }]}>
       {/* Step C's background rework: a soft rounded "land" patch standing
@@ -477,6 +492,10 @@ export function TownMap({
           },
         ]}
       />
+
+      {roadSegments.map((r) => (
+        <RoadSegment key={r.key} from={townHallScreenPos} to={r.to} />
+      ))}
 
       {sortedIsoItems.map((item) => item.render(townIsoScreenPos(item.gx, item.gy), Math.round(townIsoDepth(item.gx, item.gy) * 1000) + 10))}
 
@@ -890,6 +909,41 @@ function BuildingSprite({
         </Text>
       )}
     </>
+  );
+}
+
+// This round's road feature — a single straight dirt-road band between two
+// already-projected screen points (see TownMap's roadSegments, always town
+// hall -> a building). Positioned/sized so its own box's *center* sits at
+// the segment's midpoint, then rotated to the from->to angle — since RN's
+// default transform-origin is an element's own center, this is the
+// standard technique for drawing a line between two points without
+// needing `transformOrigin` support or SVG. pointerEvents="none": purely a
+// ground decoration, never a tap target.
+const ROAD_WIDTH = 14;
+
+function RoadSegment({ from, to }: { from: { x: number; y: number }; to: { x: number; y: number } }) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const length = Math.hypot(dx, dy);
+  const angleDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
+  const midX = (from.x + to.x) / 2;
+  const midY = (from.y + to.y) / 2;
+
+  return (
+    <View
+      pointerEvents="none"
+      style={[
+        styles.roadSegment,
+        {
+          left: midX - length / 2,
+          top: midY - ROAD_WIDTH / 2,
+          width: length,
+          height: ROAD_WIDTH,
+          transform: [{ rotate: `${angleDeg}deg` }],
+        },
+      ]}
+    />
   );
 }
 
@@ -1322,6 +1376,19 @@ const styles = StyleSheet.create({
     backgroundColor: theme.ground,
     borderRadius: 260,
     opacity: 0.95,
+  },
+  // This round's dynamic road segments (see RoadSegment above) — a flat
+  // solid tan band (theme.road, previously defined for the old fixed-grid
+  // road system that Step B removed, never reused until now) rather than
+  // new tile art, per the request's own "既存の道の表現(単色〜グラデーション
+  // の帯)を流用してください". Rounded ends (borderRadius) so a road reads as
+  // one continuous band rather than a hard-edged rectangle where it meets
+  // the town hall / a building.
+  roadSegment: {
+    position: 'absolute',
+    backgroundColor: theme.road,
+    borderRadius: ROAD_WIDTH / 2,
+    opacity: 0.75,
   },
   // A soft dark ellipse under a structure's own footprint — the same "does
   // this thing look like it's standing on the ground" fix the Phase-13
