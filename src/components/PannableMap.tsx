@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { LayoutChangeEvent, ScrollView, StyleSheet, View } from 'react-native';
 
 import { theme } from '../theme';
@@ -30,26 +30,54 @@ export function PannableMap({ contentWidth, contentHeight, initialFocus, childre
   const scrollRef = useRef<ScrollView>(null);
   const [minZoom, setMinZoom] = useState(0.4);
   const hasCenteredRef = useRef(false);
+  // Last known viewport size (from onLayout) — kept around so the re-fit
+  // effect below can recompute minZoom/scroll position without waiting for
+  // another layout pass (the viewport's own size on screen doesn't change
+  // when contentWidth/contentHeight do; only the content inside it does).
+  const viewportSizeRef = useRef<{ width: number; height: number } | null>(null);
+
+  const fit = useCallback(
+    (width: number, height: number) => {
+      // A little slack so "zoomed all the way out" still leaves a sliver of
+      // breathing room at the map's own edges instead of cropping flush.
+      const fitScale = Math.min(width / contentWidth, height / contentHeight) * 0.92;
+      setMinZoom(Math.min(1, Math.max(0.15, fitScale)));
+      const x = Math.max(0, initialFocus.x * contentWidth - width / 2);
+      const y = Math.max(0, initialFocus.y * contentHeight - height / 2);
+      // No animation — this is a framing reset (initial mount, or a content-
+      // size change — see the effect below), not a user-triggered jump.
+      requestAnimationFrame(() => scrollRef.current?.scrollTo({ x, y, animated: false }));
+    },
+    [contentWidth, contentHeight, initialFocus.x, initialFocus.y]
+  );
 
   const handleLayout = useCallback(
     (e: LayoutChangeEvent) => {
       const { width, height } = e.nativeEvent.layout;
       if (width <= 0 || height <= 0) return;
-      // A little slack so "zoomed all the way out" still leaves a sliver of
-      // breathing room at the map's own edges instead of cropping flush.
-      const fitScale = Math.min(width / contentWidth, height / contentHeight) * 0.92;
-      setMinZoom(Math.min(1, Math.max(0.15, fitScale)));
-
+      viewportSizeRef.current = { width, height };
       if (!hasCenteredRef.current) {
         hasCenteredRef.current = true;
-        const x = Math.max(0, initialFocus.x * contentWidth - width / 2);
-        const y = Math.max(0, initialFocus.y * contentHeight - height / 2);
-        // No animation — this is the initial framing, not a user-triggered jump.
-        requestAnimationFrame(() => scrollRef.current?.scrollTo({ x, y, animated: false }));
+        fit(width, height);
       }
     },
-    [contentWidth, contentHeight, initialFocus.x, initialFocus.y]
+    [fit]
   );
+
+  // TownScreen hands TownMap and DungeonMap each their own contentWidth/
+  // contentHeight (they no longer share one fixed canvas — see WorldMap.tsx's
+  // TOWN_ISO_CANVAS_WIDTH/HEIGHT bug-fix comment), and both screens sit
+  // under the same mounted PannableMap. Without this, switching tabs would
+  // leave the old screen's scroll offset/zoom applied to the new screen's
+  // differently-sized content — e.g. scrolled to a spot that's off in blank
+  // space, or zoomed to a scale that no longer fits. Re-running the exact
+  // same fit the initial layout does, whenever the content size itself
+  // actually changes, keeps every tab switch framed exactly like a fresh
+  // mount would be. Skipped before the first layout (viewportSizeRef is
+  // still null) — handleLayout's own initial fit covers that case.
+  useEffect(() => {
+    if (viewportSizeRef.current) fit(viewportSizeRef.current.width, viewportSizeRef.current.height);
+  }, [contentWidth, contentHeight, fit]);
 
   return (
     <View style={styles.viewport} onLayout={handleLayout}>

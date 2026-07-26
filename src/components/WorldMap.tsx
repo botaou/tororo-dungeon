@@ -59,20 +59,60 @@ export const WORLD_CANVAS_HEIGHT = 1400;
 // they always did; only how that spot is drawn on screen changes.
 // tileHeight is exactly half tileWidth — the classic shallow-diamond ratio
 // (see game/isoMath.ts's own comment) the Phase-13 prototype validated.
-const TOWN_ISO_TILE: IsoTileSize = { width: 760, height: 380 };
+//
+// Bug fix (real-device report): the first cut of this used a much smaller
+// tile ({760, 380}) sized as if buildings/houses would spread across the
+// *entire* 0..1 domain — but Step B's clearance checks (HOUSE_CLEARANCE/
+// TOWN_BUILDING_CLEARANCE, game/config.ts, both ~0.05) operate on that same
+// 0..1 space, so a pair of buildings sitting at exactly the minimum legal
+// distance apart barely moved on screen after that small a projection,
+// reading as one solid clump with unreadable overlapping labels. The iso
+// projection isn't a uniform-scale rotation — it's an anisotropic linear
+// map — so its *worst-case* pixels-per-unit-grid-distance (the direction a
+// clearance check can't protect against) is exactly (tile.height / 2) *
+// sqrt(2) (calculus: minimizing |gridToScreen(unit vector)| over every
+// direction). Setting tile.height so that HOUSE_CLEARANCE (0.05, the
+// smaller of the two) times that worst-case factor is comfortably above a
+// building sprite's own footprint (PLOT_BUILT_SIZE=44) plus its label
+// (plotBuildingLabel, 60px wide) is what actually fixes the overlap — a
+// bigger *tile*, not a bigger clearance constant, because existing saves'
+// building positions (already placed under the old, smaller projection)
+// can't retroactively gain more clearance in the data itself; only the
+// rendering math can give them more visual room. With {4500, 2250}, worst-
+// case separation for two buildings exactly HOUSE_CLEARANCE apart is
+// (2250/2)*Math.SQRT2*0.05 ≈ 80px — comfortably more than the sprite/label
+// footprint above.
+const TOWN_ISO_TILE: IsoTileSize = { width: 4500, height: 2250 };
+// A tile this large projects the full 0..1 domain far outside the old flat
+// canvas (WORLD_CANVAS_WIDTH/HEIGHT, sized for DungeonMap's own top-down
+// layout) — TownMap gets its own, bigger canvas instead. Sized to
+// comfortably fit every fixed landmark (SHRINE_SPOT, MERCHANT_SPOT, the
+// gate spots) plus the realistic building-placement area around TOWN_X/
+// TOWN_Y (buildings cluster near the town hall in practice, same as the
+// old flat layout's own density — nothing stops a tap further out, but
+// there's no reason for one either) with real margin to spare, verified
+// against every one of those fixed spots in this session's own check
+// script. `PannableMap` already exists to pan/zoom around an
+// intentionally-oversized canvas (see WORLD_CANVAS_WIDTH's own comment),
+// so a bigger canvas here is the same established pattern, not a new one.
+export const TOWN_ISO_CANVAS_WIDTH = 3200;
+export const TOWN_ISO_CANVAS_HEIGHT = 2400;
 // gridToScreen(gridX, gridY, tile) always maps equal coordinates (gridX ===
 // gridY, e.g. TOWN_X/TOWN_Y's own (0.5, 0.5)) to (0, tile.height / 2)
 // regardless of tile size — so centering the origin on this canvas's own
 // geometric center, then nudging it up by exactly half the tile's height,
 // makes the town hall's own iso screen position land on precisely
-// (WORLD_CANVAS_WIDTH/2, WORLD_CANVAS_HEIGHT/2). That's the same point
-// PannableMap's initialFocus={{x: TOWN_X, y: TOWN_Y}} already assumes (a
-// plain x*width/y*height multiply — see PannableMap.tsx), so it keeps
-// centering correctly on first mount with zero changes to PannableMap or
-// TownScreen, and leaves DungeonMap (which shares this exact canvas size
-// with TownMap in TownScreen) completely untouched.
-const TOWN_ISO_ORIGIN_X = WORLD_CANVAS_WIDTH / 2;
-const TOWN_ISO_ORIGIN_Y = WORLD_CANVAS_HEIGHT / 2 - TOWN_ISO_TILE.height / 2;
+// (TOWN_ISO_CANVAS_WIDTH/2, TOWN_ISO_CANVAS_HEIGHT/2). That's the same
+// point PannableMap's initialFocus={{x: TOWN_X, y: TOWN_Y}} already assumes
+// (a plain x*width/y*height multiply — see PannableMap.tsx) as long as
+// TownScreen passes this canvas's own size (not WORLD_CANVAS_WIDTH/HEIGHT)
+// as PannableMap's contentWidth/contentHeight while TownMap is showing —
+// see PannableMap's own re-fit-on-content-size-change fix, added alongside
+// this bug fix so switching to/from DungeonMap's differently-sized canvas
+// re-centers instead of keeping a scroll offset that means something
+// different in the new content.
+const TOWN_ISO_ORIGIN_X = TOWN_ISO_CANVAS_WIDTH / 2;
+const TOWN_ISO_ORIGIN_Y = TOWN_ISO_CANVAS_HEIGHT / 2 - TOWN_ISO_TILE.height / 2;
 
 function townIsoScreenPos(gridX: number, gridY: number): { x: number; y: number } {
   const p = gridToScreen(gridX, gridY, TOWN_ISO_TILE);
@@ -291,8 +331,10 @@ export function TownMap({
   previewBuilding,
   onDungeonGatePress,
 }: TownMapProps) {
-  const fieldWidth = WORLD_CANVAS_WIDTH;
-  const fieldHeight = WORLD_CANVAS_HEIGHT;
+  // Its own (bigger — see TOWN_ISO_TILE's bug-fix comment above) canvas,
+  // not WORLD_CANVAS_WIDTH/HEIGHT — DungeonMap keeps using those.
+  const fieldWidth = TOWN_ISO_CANVAS_WIDTH;
+  const fieldHeight = TOWN_ISO_CANVAS_HEIGHT;
   const townLevelDef = getTownLevelDef(townLevel);
 
   const isoItems: TownIsoItem[] = [];
