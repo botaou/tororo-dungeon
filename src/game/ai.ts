@@ -61,6 +61,7 @@ import { BIRD_SKILL_DEFS } from '../data/skills';
 import { getEffectiveStats, maybeAutoEquip } from './birdStats';
 import { AttackAssignment } from './combat';
 import { addCappedInventory, addItemCapped, totalInventoryAmount } from './inventoryCap';
+import { buildRoadEdges, planRoadRoute, RoadEdge, RoadNode } from './roadNetwork';
 
 // Personality doesn't gate any activity outright — it just weights how
 // likely each of the four is to be picked when a bird is free to choose.
@@ -95,7 +96,15 @@ export const PERSONALITY_PROFILES: Record<Personality, PersonalityProfile> = {
 // purposes; our roster tops out well under this.
 const DANGER_ATK_REFERENCE = 8;
 
-function moveToward(bird: BirdState, tx: number, ty: number): boolean {
+// The original single-target stepping primitive — advances at most
+// MOVE_SPEED per call straight toward (tx, ty), returns true once already
+// within ARRIVAL_THRESHOLD (checked *before* moving, so arrival is only
+// reported the tick after the bird's position first lands exactly on the
+// target — a pre-existing characteristic this file's other movement code
+// already relies on, unchanged here). moveToward below is now the public
+// entry point every caller actually uses; this is just its per-waypoint
+// building block.
+function stepToward(bird: BirdState, tx: number, ty: number): boolean {
   const dx = tx - bird.x;
   const dy = ty - bird.y;
   const dist = Math.hypot(dx, dy);
@@ -104,6 +113,68 @@ function moveToward(bird: BirdState, tx: number, ty: number): boolean {
   bird.x += (dx / dist) * step;
   bird.y += (dy / dist) * step;
   return false;
+}
+
+// Real-device feedback: the road network (see game/roadNetwork.ts,
+// WorldMap.tsx's TownMap) used to be purely decorative — birds walked in a
+// straight line to wherever they were going, ignoring it entirely. Set once
+// per tick by useWorldStore.tick() (see setTownRoadNetwork), read here so a
+// bird currently in town routes its walk through the actual road network
+// instead. Module-level rather than threaded as a parameter through every
+// one of moveToward's ~20 call sites (stepJob/executeGather/executeCombat/
+// stepShopFood/...) — it's genuinely tick-scoped shared context (identical
+// for every bird stepped within the same tick), the same shape as any other
+// per-tick precomputed lookup table already passed around as `world`,
+// just one more caller wouldn't otherwise need to know about individually.
+let townRoadNodes: RoadNode[] = [];
+let townRoadEdges: RoadEdge[] = [];
+
+// Called once per tick (see useWorldStore.tick()) with the town hall plus
+// every currently-constructed building — exactly the same node list
+// WorldMap.tsx's TownMap builds for drawing the road network, so movement
+// and rendering are always looking at the identical graph. Recomputing the
+// O(n²) MST every tick is trivial at this game's building-count scale
+// (capped at 48) and buildings rarely change anyway.
+export function setTownRoadNetwork(nodes: RoadNode[]): void {
+  townRoadNodes = nodes;
+  townRoadEdges = buildRoadEdges(nodes);
+}
+
+// The public movement entry point — same (bird, tx, ty) => boolean contract
+// stepToward always had, so every existing call site needed zero changes.
+// Outside town (bird.location !== 'town', i.e. out in the dungeon, which has
+// no road network at all) this is just stepToward with no detour. In town,
+// it plans a route along the road network the first time a given
+// destination is requested (see game/roadNetwork.ts's planRoadRoute), caches
+// it on the bird (BirdState.routeWaypoints/routeDestX/routeDestY) so it's
+// not recomputed every tick, and advances through the cached waypoints one
+// stepToward call per tick — never more than one, so a multi-waypoint route
+// never lets a bird move faster than MOVE_SPEED per tick just because it
+// crossed a waypoint boundary.
+function moveToward(bird: BirdState, tx: number, ty: number): boolean {
+  if (bird.location !== 'town') {
+    bird.routeWaypoints = null; // stale town route — drop it, not needed out here
+    return stepToward(bird, tx, ty);
+  }
+
+  const needsNewRoute = !bird.routeWaypoints || bird.routeWaypoints.length === 0 || bird.routeDestX !== tx || bird.routeDestY !== ty;
+  if (needsNewRoute) {
+    bird.routeWaypoints = planRoadRoute(townRoadNodes, townRoadEdges, { x: bird.x, y: bird.y }, { x: tx, y: ty });
+    bird.routeDestX = tx;
+    bird.routeDestY = ty;
+  }
+
+  const waypoints = bird.routeWaypoints!;
+  const nextWaypoint = waypoints[0];
+  const arrivedAtWaypoint = stepToward(bird, nextWaypoint.x, nextWaypoint.y);
+  if (!arrivedAtWaypoint) return false;
+
+  waypoints.shift();
+  if (waypoints.length > 0) return false;
+
+  bird.routeDestX = null;
+  bird.routeDestY = null;
+  return true;
 }
 
 // Map-split follow-up: birds now visibly pass through the 🚪 gate marker

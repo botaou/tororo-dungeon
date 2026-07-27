@@ -28,7 +28,7 @@ import {
   TREASURE_DEFS,
 } from '../data/world';
 import { rollRandomMood } from '../data/moods';
-import { AiWorld, InspirationStat, separateBirds, stepBird } from '../game/ai';
+import { AiWorld, InspirationStat, separateBirds, setTownRoadNetwork, stepBird } from '../game/ai';
 import { addCappedInventory, addItemCapped } from '../game/inventoryCap';
 import { BIRD_SKILL_DEF_MAP } from '../data/skills';
 import { CHAT_LINES, HOUSELESS_LINES } from '../game/thoughts';
@@ -259,6 +259,9 @@ function buildInitialWorld(): WorldState {
       houselessSulkLogged: wallet.houselessSulkLogged,
       houselessWarningShown: wallet.houselessWarningShown,
       location: wallet.location,
+      routeWaypoints: null,
+      routeDestX: null,
+      routeDestY: null,
     };
   });
 
@@ -841,6 +844,19 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
     // Each bird now acts fully independently — no personality gets to see
     // another's decision first, since none of them assist/follow anymore.
     const nextBirds = birdsWithMood;
+
+    // Real-device feedback: bird movement used to ignore the road network
+    // entirely (a straight line to wherever a bird was going). Refreshed
+    // every tick, before any bird is stepped below, so ai.ts's moveToward
+    // always routes against the town's current buildings — the exact same
+    // node list WorldMap.tsx's TownMap builds for drawing the roads
+    // themselves, so movement and rendering never disagree.
+    const townBuildingsForRoads = useTownStore.getState().buildings;
+    setTownRoadNetwork([
+      { id: 'townhall', x: TOWN_X, y: TOWN_Y },
+      ...Object.values(townBuildingsForRoads).map((b) => ({ id: b.id, x: b.x, y: b.y })),
+    ]);
+
     // Field-zone content past the current level is left out of aiWorld
     // entirely — not deleted from `enemies`/`miningNodes` themselves, just
     // never targetable — so it starts showing up the moment the town

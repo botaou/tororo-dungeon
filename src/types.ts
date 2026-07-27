@@ -645,6 +645,15 @@ export interface BirdState {
   // bird, matching today's single shared map where nothing has ever
   // "started" anywhere else.
   location: 'town' | 'dungeon';
+  // Road-network movement cache (see game/roadNetwork.ts, game/ai.ts's
+  // moveToward) — the remaining waypoints of the bird's current in-town
+  // route, and the (tx, ty) they were planned for, so a route is only
+  // recomputed when the requested destination actually changes rather than
+  // every tick. Ephemeral (not part of BirdWallet) — irrelevant the instant
+  // a new route is needed, same as wanderX/wanderY/chatLine above.
+  routeWaypoints: { x: number; y: number }[] | null;
+  routeDestX: number | null;
+  routeDestY: number | null;
 }
 
 export type JobStatus = 'open' | 'inProgress' | 'done';

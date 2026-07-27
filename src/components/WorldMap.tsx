@@ -28,6 +28,7 @@ import {
 import { ENEMY_IMAGES, FIELD_OBJECT_AFTER_IMAGES, FIELD_OBJECT_IMAGES } from '../data/fieldImages';
 import { ALSHEL_NPC, ALSHEL_REVEAL_TOWN_LEVEL, getShrineStageDef, SHRINE_SPOT } from '../data/shrine';
 import { depthKey, gridToScreen, IsoTileSize, screenToGrid } from '../game/isoMath';
+import { buildRoadEdges, RoadNode } from '../game/roadNetwork';
 import { CharacterAvatar } from './CharacterAvatar';
 import { AnimatedPressable } from './AnimatedPressable';
 import { DEBUG_SHOW_SPRITE_BOUNDS, TICK_MS } from '../game/config';
@@ -928,57 +929,6 @@ function BuildingSprite({
       )}
     </>
   );
-}
-
-// One town-hall-or-building node in the road network — grid-space (not yet
-// projected) x/y, plus an id used both to identify it and to seed each of
-// its edges' bend (see bentMidpoint/seedFromString below) deterministically.
-interface RoadNode {
-  id: string;
-  x: number;
-  y: number;
-}
-
-// Real-device feedback: a road straight from the town hall to *every*
-// building read as an unnatural spoked wheel, not "a town that feels
-// connected." Builds a branching network instead — Prim's-algorithm minimum
-// spanning tree rooted at the town hall: starting from just the town hall,
-// repeatedly connects whichever not-yet-connected node is *closest to any
-// already-connected node* (not necessarily the town hall itself), so a
-// building usually ends up connected to its nearest neighboring building
-// rather than converging on one central point — "近くの建物同士をつなぎ、
-// それが結果的に街全体を繋ぐネットワークになる" is exactly what this
-// produces. Distance is plain Euclidean in grid space (matching the same
-// clearance-radius math the rest of Step B/C already uses), not post-
-// projection screen space — "nearest" should mean nearest in the actual
-// game world, not however the current iso tile happens to skew things.
-// O(n²), fine at this game's building-count scale (capped at 48 — see
-// TOWN_BUILDING_CAP_BY_LEVEL).
-function buildRoadEdges(nodes: RoadNode[]): { from: RoadNode; to: RoadNode }[] {
-  if (nodes.length < 2) return [];
-  const connected = [nodes[0]];
-  const remaining = nodes.slice(1);
-  const edges: { from: RoadNode; to: RoadNode }[] = [];
-  while (remaining.length > 0) {
-    let bestConnectedIndex = -1;
-    let bestRemainingIndex = -1;
-    let bestDist = Infinity;
-    for (let i = 0; i < connected.length; i++) {
-      for (let j = 0; j < remaining.length; j++) {
-        const d = Math.hypot(connected[i].x - remaining[j].x, connected[i].y - remaining[j].y);
-        if (d < bestDist) {
-          bestDist = d;
-          bestConnectedIndex = i;
-          bestRemainingIndex = j;
-        }
-      }
-    }
-    const newNode = remaining[bestRemainingIndex];
-    edges.push({ from: connected[bestConnectedIndex], to: newNode });
-    connected.push(newNode);
-    remaining.splice(bestRemainingIndex, 1);
-  }
-  return edges;
 }
 
 // A short, stable numeric hash for a string (e.g. "buildingA|buildingB") —
