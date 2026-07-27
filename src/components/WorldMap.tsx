@@ -459,20 +459,23 @@ export function TownMap({
   // camera (larger gx+gy) last — see game/isoMath.ts's depthKey comment.
   const sortedIsoItems = [...isoItems].sort((a, b) => townIsoDepth(a.gx, a.gy) - townIsoDepth(b.gx, b.gy));
 
-  // This round's road feature: a straight dirt-road segment from the town
-  // hall to every constructed building, in the exact same iso-projected
-  // screen space as everything else — since it's derived fresh from
-  // `buildings` on every render (not stored anywhere), it automatically
-  // "re-generates" the instant a building is constructed, relocated
-  // (useTownStore's moveBuilding), or removed, with zero extra wiring.
-  // Purely a ground-level decoration (see RoadSegment/styles.roadSegment
-  // below) — rendered before the Y-sorted items so buildings/birds always
-  // draw on top of the road surface, never underneath it.
-  const townHallScreenPos = townIsoScreenPos(TOWN_X, TOWN_Y);
-  const roadSegments = Object.values(buildings).map((b) => ({
-    key: `road-${b.id}`,
-    to: townIsoScreenPos(b.x, b.y),
-  }));
+  // The road network: a branching web of dirt-road segments connecting
+  // nearby buildings to each other (see buildRoadEdges above — a Prim's-
+  // algorithm minimum spanning tree rooted at the town hall, computed in
+  // grid space), not a hub where every single building connects straight
+  // back to the town hall (real-device feedback: that read as an unnatural
+  // spoked wheel). Derived fresh from `buildings` on every render (not
+  // stored anywhere), so it automatically "re-generates" the instant a
+  // building is constructed, relocated (useTownStore's moveBuilding), or
+  // removed, with zero extra wiring. Purely a ground-level decoration (see
+  // RoadSegment/styles.roadSegment below) — rendered before the Y-sorted
+  // items so buildings/birds always draw on top of the road surface, never
+  // underneath it.
+  const roadNetworkNodes: RoadNode[] = [
+    { id: 'townhall', x: TOWN_X, y: TOWN_Y },
+    ...Object.values(buildings).map((b) => ({ id: b.id, x: b.x, y: b.y })),
+  ];
+  const roadEdges = buildRoadEdges(roadNetworkNodes);
 
   return (
     <View style={[styles.field, styles.isoField, { width: fieldWidth, height: fieldHeight }]}>
@@ -493,9 +496,24 @@ export function TownMap({
         ]}
       />
 
-      {roadSegments.map((r) => (
-        <RoadSegment key={r.key} from={townHallScreenPos} to={r.to} />
-      ))}
+      {roadEdges.map((edge) => {
+        const fromPos = townIsoScreenPos(edge.from.x, edge.from.y);
+        const toPos = townIsoScreenPos(edge.to.x, edge.to.y);
+        // A gentle, stable-per-edge bend (see bentMidpoint) instead of one
+        // dead-straight segment — real-device feedback specifically asked
+        // for roads that "curve or bend a little" rather than ruler-straight
+        // lines. Two straight RoadSegments meeting at the bent midpoint is
+        // the same "line between two points" trick RoadSegment already
+        // uses, just applied twice — no new rendering primitive needed.
+        const seed = pseudoRandom(seedFromString(`${edge.from.id}|${edge.to.id}`));
+        const bend = bentMidpoint(fromPos, toPos, seed);
+        return (
+          <React.Fragment key={`road-${edge.from.id}-${edge.to.id}`}>
+            <RoadSegment from={fromPos} to={bend} />
+            <RoadSegment from={bend} to={toPos} />
+          </React.Fragment>
+        );
+      })}
 
       {sortedIsoItems.map((item) => item.render(townIsoScreenPos(item.gx, item.gy), Math.round(townIsoDepth(item.gx, item.gy) * 1000) + 10))}
 
@@ -912,14 +930,95 @@ function BuildingSprite({
   );
 }
 
-// This round's road feature — a single straight dirt-road band between two
-// already-projected screen points (see TownMap's roadSegments, always town
-// hall -> a building). Positioned/sized so its own box's *center* sits at
-// the segment's midpoint, then rotated to the from->to angle — since RN's
-// default transform-origin is an element's own center, this is the
-// standard technique for drawing a line between two points without
-// needing `transformOrigin` support or SVG. pointerEvents="none": purely a
-// ground decoration, never a tap target.
+// One town-hall-or-building node in the road network — grid-space (not yet
+// projected) x/y, plus an id used both to identify it and to seed each of
+// its edges' bend (see bentMidpoint/seedFromString below) deterministically.
+interface RoadNode {
+  id: string;
+  x: number;
+  y: number;
+}
+
+// Real-device feedback: a road straight from the town hall to *every*
+// building read as an unnatural spoked wheel, not "a town that feels
+// connected." Builds a branching network instead — Prim's-algorithm minimum
+// spanning tree rooted at the town hall: starting from just the town hall,
+// repeatedly connects whichever not-yet-connected node is *closest to any
+// already-connected node* (not necessarily the town hall itself), so a
+// building usually ends up connected to its nearest neighboring building
+// rather than converging on one central point — "近くの建物同士をつなぎ、
+// それが結果的に街全体を繋ぐネットワークになる" is exactly what this
+// produces. Distance is plain Euclidean in grid space (matching the same
+// clearance-radius math the rest of Step B/C already uses), not post-
+// projection screen space — "nearest" should mean nearest in the actual
+// game world, not however the current iso tile happens to skew things.
+// O(n²), fine at this game's building-count scale (capped at 48 — see
+// TOWN_BUILDING_CAP_BY_LEVEL).
+function buildRoadEdges(nodes: RoadNode[]): { from: RoadNode; to: RoadNode }[] {
+  if (nodes.length < 2) return [];
+  const connected = [nodes[0]];
+  const remaining = nodes.slice(1);
+  const edges: { from: RoadNode; to: RoadNode }[] = [];
+  while (remaining.length > 0) {
+    let bestConnectedIndex = -1;
+    let bestRemainingIndex = -1;
+    let bestDist = Infinity;
+    for (let i = 0; i < connected.length; i++) {
+      for (let j = 0; j < remaining.length; j++) {
+        const d = Math.hypot(connected[i].x - remaining[j].x, connected[i].y - remaining[j].y);
+        if (d < bestDist) {
+          bestDist = d;
+          bestConnectedIndex = i;
+          bestRemainingIndex = j;
+        }
+      }
+    }
+    const newNode = remaining[bestRemainingIndex];
+    edges.push({ from: connected[bestConnectedIndex], to: newNode });
+    connected.push(newNode);
+    remaining.splice(bestRemainingIndex, 1);
+  }
+  return edges;
+}
+
+// A short, stable numeric hash for a string (e.g. "buildingA|buildingB") —
+// feeds pseudoRandom (already defined above for tile-variant selection) so
+// each road edge's bend is deterministic/stable across re-renders instead
+// of jittering every tick, without storing anything.
+function seedFromString(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return h;
+}
+
+// Nudges a straight segment's midpoint sideways (perpendicular to the
+// from->to direction) by a small, seeded amount — real-device feedback
+// specifically asked for roads that "curve or bend a little" rather than
+// perfectly straight lines. Two straight segments meeting at this bent
+// point (see TownMap's roadEdges.map) read as one gently-kinked path, no
+// bezier/SVG needed. Capped at 40px regardless of segment length so a very
+// long edge doesn't get an exaggerated kink.
+function bentMidpoint(from: { x: number; y: number }, to: { x: number; y: number }, seed: number): { x: number; y: number } {
+  const midX = (from.x + to.x) / 2;
+  const midY = (from.y + to.y) / 2;
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const length = Math.hypot(dx, dy);
+  if (length < 1e-6) return { x: midX, y: midY };
+  const perpX = -dy / length;
+  const perpY = dx / length;
+  const magnitude = Math.min(length * 0.18, 40) * (seed * 2 - 1);
+  return { x: midX + perpX * magnitude, y: midY + perpY * magnitude };
+}
+
+// A single straight dirt-road band between two already-projected screen
+// points (see TownMap's roadEdges — either half of a bent two-segment
+// road). Positioned/sized so its own box's *center* sits at the segment's
+// midpoint, then rotated to the from->to angle — since RN's default
+// transform-origin is an element's own center, this is the standard
+// technique for drawing a line between two points without needing
+// `transformOrigin` support or SVG. pointerEvents="none": purely a ground
+// decoration, never a tap target.
 const ROAD_WIDTH = 14;
 
 function RoadSegment({ from, to }: { from: { x: number; y: number }; to: { x: number; y: number } }) {

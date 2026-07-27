@@ -512,11 +512,14 @@ export function TownScreen() {
         {/* Step C's iso-overlap bugfix: TownMap now has its own, bigger
             canvas (TOWN_ISO_CANVAS_WIDTH/HEIGHT) than DungeonMap's original
             WORLD_CANVAS_WIDTH/HEIGHT — see WorldMap.tsx's TOWN_ISO_TILE
-            comment for why. PannableMap re-fits/re-centers on its own
-            whenever contentWidth/contentHeight actually change (see its own
-            comment), so switching tabs always reframes correctly instead of
-            carrying over the other screen's scroll position/zoom. */}
+            comment for why. Bugfix (real-device report: map froze solid
+            after switching dungeon->town): `key={activeScreen}` forces a
+            fresh PannableMap/ScrollView mount on every tab switch instead
+            of trying to resize a live one — see PannableMap's own comment
+            for why reusing one across a canvas-size change broke native
+            zoom/gesture state. */}
         <PannableMap
+          key={activeScreen}
           contentWidth={activeScreen === 'town' ? TOWN_ISO_CANVAS_WIDTH : WORLD_CANVAS_WIDTH}
           contentHeight={activeScreen === 'town' ? TOWN_ISO_CANVAS_HEIGHT : WORLD_CANVAS_HEIGHT}
           initialFocus={{ x: TOWN_X, y: TOWN_Y }}
