@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { LayoutChangeEvent, ScrollView, StyleSheet, View } from 'react-native';
 
 import { theme } from '../theme';
@@ -12,110 +12,147 @@ interface Props {
   children: React.ReactNode;
 }
 
+const MAXIMUM_ZOOM_SCALE = 2.2;
+const MINIMUM_ZOOM_FLOOR = 0.15;
+// Small breathing room so "zoomed all the way out" doesn't crop flush with
+// the map's own edges.
+const FIT_MARGIN = 0.92;
+
 // Wraps the map in native iOS pinch-zoom-and-pan (UIScrollView's own
 // minimumZoomScale/maximumZoomScale/bouncesZoom), rather than a third-party
 // gesture library — the app is iOS-only already, and this needs zero new
-// native dependencies. minimumZoomScale is computed from the actual
-// viewport size so "zoomed all the way out" always shows the whole map;
-// the first layout pass scrolls to center initialFocus (the town hall)
-// without animating.
+// native dependencies.
 //
-// This was pulled out once already after a real-device report of every tap
-// and drag going dead from the first frame — but that turned out to be an
-// unrelated bug (TownScreen was replaying a backlog of already-seen
-// "town leveled up!" popups on every launch, which blocked the map
-// underneath; see TownScreen.tsx's shownLevelUpCount). With that fixed and
-// confirmed on-device, zoom is back.
+// This component has gone through several rewrites chasing real-device
+// display bugs, each one narrowing in on the actual root cause:
 //
-// Real-device report #2: TownMap and DungeonMap now use differently-sized
-// canvases (see WorldMap.tsx's TOWN_ISO_CANVAS_WIDTH/HEIGHT bug-fix
-// comment), and an earlier fix here tried to let ONE long-lived PannableMap
-// instance re-fit/re-center itself imperatively (setMinZoom + scrollTo)
-// whenever contentWidth/contentHeight changed underneath it on a tab
-// switch. That froze the map solid after switching dungeon->town: changing
-// `minimumZoomScale` on a UIScrollView that's already sitting at some other
-// native zoomScale (left over from whichever screen was showing a moment
-// ago) makes iOS's own zoom-clamping kick in on the native side, at the
-// same moment our own imperative `scrollTo` call was trying to move the
-// content — two different things fighting over the same native scroll/zoom
-// transform in the same frame, and the view lands in a state that no
-// longer forwards further gestures at all. The fix is to not persist the
-// underlying ScrollView across a canvas-size change in the first place —
-// see TownScreen.tsx's own `key={activeScreen}` on this component. A fresh
-// mount gets a fresh native UIScrollView (zoomScale starts valid for
-// whatever minimumZoomScale this mount declares) and hits the exact same
-// "first layout" framing code path below that already worked correctly.
-// The only UX cost is that pan/zoom position no longer survives a tab
-// switch — but since a "spot" in the old shared canvas doesn't correspond
-// to the same spot in either screen's own new canvas anymore anyway, there
-// was no meaningful position to preserve, so resetting to a clean centered
-// view on every switch is strictly better than the alternative (frozen).
+// Round 1 (freeze on dungeon<->town switch): an earlier version let ONE
+// long-lived PannableMap/ScrollView instance re-fit itself imperatively
+// (setMinZoom + scrollTo) whenever contentWidth/contentHeight changed
+// underneath it on a tab switch (TownMap and DungeonMap use different-sized
+// canvases — see WorldMap.tsx's TOWN_ISO_CANVAS_WIDTH/HEIGHT comment).
+// Changing `minimumZoomScale` on a UIScrollView already sitting at some
+// other native zoomScale made iOS's own zoom-clamping race against our
+// imperative `scrollTo` call in the same frame, leaving the view unable to
+// forward further gestures at all. Fixed in TownScreen.tsx by giving
+// `<PannableMap key={activeScreen} .../>` a key, forcing a full unmount and
+// fresh native ScrollView on every tab switch instead of resizing a live one.
+//
+// Round 2 (stuck top-left / pinch makes content disappear): the one-shot
+// centering logic was gated by a plain boolean ref, but RN's onLayout can
+// fire more than once while a fresh mount's layout settles (SafeAreaView's
+// inset adjustment is a common cause on iOS) — the FIRST firing isn't
+// always the real final size. That first (possibly transient/undersized)
+// firing consumed the one-shot scrollTo with the wrong numbers, and nothing
+// ever re-ran it. Attempted fix: track the last *measured* size and re-run
+// whenever a new onLayout reported a different one.
+//
+// Round 3 (this version — still misaligned after round 2, and a new "goes
+// completely blank" symptom after dungeon->town, worse on TownMap's much
+// bigger canvas): round 2's fix addressed *when* the centering math ran,
+// but not whether the math itself was correct. It called
+// `scrollRef.current?.scrollTo({x, y})` using x/y computed directly from
+// raw contentWidth/contentHeight (i.e. contentWidth * initialFocus.x, as if
+// the view were already shrunk to the fit zoom level) — but on iOS, setting
+// `minimumZoomScale` alone does NOT make a UIScrollView start out actually
+// zoomed to that level; the real initial zoomScale is 1.0 regardless.
+// `contentOffset`/`scrollTo` coordinates are interpreted in the *currently
+// zoomed* coordinate space (the standard "center a zoomed UIScrollView"
+// recipe multiplies the target content point by the current zoomScale), so
+// at the real initial zoomScale of 1.0 our old numbers pointed at
+// completely the wrong spot — the bigger the canvas relative to the target
+// zoom level, the further off, up to landing somewhere with nothing drawn
+// at all (a plain background — the reported "white screen" on TownMap's
+// 3200x2400 canvas, where DungeonMap's much smaller 900x1400 canvas only
+// showed a smaller, still-wrong offset).
+//
+// The fix, and the reason this version looks structurally different:
+//  1. Never call scrollTo/setNativeProps imperatively at all. The inner
+//     ScrollView isn't created until the viewport size is known (see
+//     `viewport` state below), so its correct initial zoom/scroll position
+//     can be baked in as genuine mount-time props (`contentOffset`,
+//     `minimumZoomScale`) instead of being patched in after the fact.
+//  2. To actually START zoomed out to fitScale (not 1.0), temporarily pin
+//     `maximumZoomScale` to the same value as `minimumZoomScale` for the
+//     very first render. Since the default zoomScale (1.0) is now *outside*
+//     that single-point [fitScale, fitScale] range, iOS clamps the initial
+//     zoomScale down to fitScale before the first frame is ever shown.
+//     `zoomCeilingReleased` widens `maximumZoomScale` back out to the real
+//     maximum one tick later so pinch-in still works — raising a ceiling
+//     never forces a jump, only lowering one would, so this is safe.
+//  3. `contentOffset` is computed by multiplying the target content point
+//     by fitScale (matching what zoomScale will actually be at mount), not
+//     by the raw content size.
+//  4. A short (50ms) settle delay after the first onLayout, re-armed on
+//     every subsequent call, before committing to a `viewport` size at all
+//     — so a transient first firing (round 2's failure mode) gets
+//     overwritten by the real one instead of being permanently baked in.
 export function PannableMap({ contentWidth, contentHeight, initialFocus, children }: Props) {
-  const scrollRef = useRef<ScrollView>(null);
-  const [minZoom, setMinZoom] = useState(0.4);
-  // The last *measured viewport* size (not contentWidth/contentHeight —
-  // this is onLayout's own width/height, i.e. how big this component
-  // actually is on screen) we ran the fit/centering calculation for.
-  //
-  // Real-device report: switching to DungeonMap left it stuck in the
-  // top-left corner with most of the screen blank, and pinch-zooming made
-  // its content disappear entirely. Root cause: the previous version only
-  // ever ran the one-shot centering scrollTo the *first* time onLayout
-  // fired at all (gated by a plain boolean ref) — but RN's layout pass can
-  // legitimately fire onLayout more than once while it settles, and the
-  // very first call can report a transient, too-small size (mid-reflow)
-  // rather than the real final viewport. That first (wrong) call still
-  // passed the `width/height > 0` guard, so it both (a) computed a bogus
-  // minZoom from the tiny size and (b) consumed the one-shot centering
-  // scrollTo using that same bogus size — landing the scroll position near
-  // (0,0) permanently, since the boolean gate meant the *next*, correctly-
-  // sized onLayout call never got to re-run the recenter. This was a
-  // latent risk even before Step C, but `key={activeScreen}` (see
-  // TownScreen.tsx) makes PannableMap remount on every tab switch instead
-  // of just once at app launch, giving this transient-first-layout race
-  // far more chances to actually fire. The fix: track the last *measured*
-  // size and only skip re-running the fit/centering calculation when a new
-  // onLayout call reports the exact same size as before — a genuinely
-  // different size (whether the true settle after a bogus first call, or
-  // an actual rotation) always gets a fresh, correct recenter.
-  const lastMeasuredSizeRef = useRef<{ width: number; height: number } | null>(null);
+  // The measured size of this component's own on-screen box, committed once
+  // per mount. The inner ScrollView doesn't render at all until this is
+  // known — see the comment block above for why that matters.
+  const [viewport, setViewport] = useState<{ width: number; height: number } | null>(null);
+  const pendingSizeRef = useRef<{ width: number; height: number } | null>(null);
+  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleLayout = useCallback(
     (e: LayoutChangeEvent) => {
+      if (viewport) return; // already committed for this mount
       const { width, height } = e.nativeEvent.layout;
       if (width <= 0 || height <= 0) return;
-      const last = lastMeasuredSizeRef.current;
-      if (last && last.width === width && last.height === height) return; // no real change — don't fight the user's own pan/zoom
-      lastMeasuredSizeRef.current = { width, height };
-
-      // A little slack so "zoomed all the way out" still leaves a sliver of
-      // breathing room at the map's own edges instead of cropping flush.
-      const fitScale = Math.min(width / contentWidth, height / contentHeight) * 0.92;
-      setMinZoom(Math.min(1, Math.max(0.15, fitScale)));
-
-      const x = Math.max(0, initialFocus.x * contentWidth - width / 2);
-      const y = Math.max(0, initialFocus.y * contentHeight - height / 2);
-      // No animation — this is the initial framing, not a user-triggered jump.
-      requestAnimationFrame(() => scrollRef.current?.scrollTo({ x, y, animated: false }));
+      pendingSizeRef.current = { width, height };
+      if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+      settleTimerRef.current = setTimeout(() => setViewport(pendingSizeRef.current), 50);
     },
-    [contentWidth, contentHeight, initialFocus.x, initialFocus.y]
+    [viewport]
   );
+
+  useEffect(() => {
+    return () => {
+      if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+    };
+  }, []);
+
+  const fitScale = viewport
+    ? Math.min(
+        1,
+        Math.max(MINIMUM_ZOOM_FLOOR, Math.min(viewport.width / contentWidth, viewport.height / contentHeight) * FIT_MARGIN)
+      )
+    : MINIMUM_ZOOM_FLOOR;
+
+  const [zoomCeilingReleased, setZoomCeilingReleased] = useState(false);
+  useEffect(() => {
+    if (!viewport || zoomCeilingReleased) return;
+    const id = requestAnimationFrame(() => setZoomCeilingReleased(true));
+    return () => cancelAnimationFrame(id);
+  }, [viewport, zoomCeilingReleased]);
 
   return (
     <View style={styles.viewport} onLayout={handleLayout}>
-      <ScrollView
-        ref={scrollRef}
-        style={styles.scroll}
-        contentContainerStyle={{ width: contentWidth, height: contentHeight }}
-        minimumZoomScale={minZoom}
-        maximumZoomScale={2.2}
-        bouncesZoom
-        centerContent
-        showsHorizontalScrollIndicator={false}
-        showsVerticalScrollIndicator={false}
-      >
-        {children}
-      </ScrollView>
+      {viewport &&
+        (() => {
+          const scaledWidth = contentWidth * fitScale;
+          const scaledHeight = contentHeight * fitScale;
+          const maxOffsetX = Math.max(0, scaledWidth - viewport.width);
+          const maxOffsetY = Math.max(0, scaledHeight - viewport.height);
+          const offsetX = Math.min(maxOffsetX, Math.max(0, initialFocus.x * scaledWidth - viewport.width / 2));
+          const offsetY = Math.min(maxOffsetY, Math.max(0, initialFocus.y * scaledHeight - viewport.height / 2));
+          return (
+            <ScrollView
+              style={styles.scroll}
+              contentContainerStyle={{ width: contentWidth, height: contentHeight }}
+              contentOffset={{ x: offsetX, y: offsetY }}
+              minimumZoomScale={fitScale}
+              maximumZoomScale={zoomCeilingReleased ? MAXIMUM_ZOOM_SCALE : fitScale}
+              bouncesZoom
+              centerContent
+              showsHorizontalScrollIndicator={false}
+              showsVerticalScrollIndicator={false}
+            >
+              {children}
+            </ScrollView>
+          );
+        })()}
     </View>
   );
 }
