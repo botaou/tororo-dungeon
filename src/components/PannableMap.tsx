@@ -53,24 +53,50 @@ interface Props {
 export function PannableMap({ contentWidth, contentHeight, initialFocus, children }: Props) {
   const scrollRef = useRef<ScrollView>(null);
   const [minZoom, setMinZoom] = useState(0.4);
-  const hasCenteredRef = useRef(false);
+  // The last *measured viewport* size (not contentWidth/contentHeight —
+  // this is onLayout's own width/height, i.e. how big this component
+  // actually is on screen) we ran the fit/centering calculation for.
+  //
+  // Real-device report: switching to DungeonMap left it stuck in the
+  // top-left corner with most of the screen blank, and pinch-zooming made
+  // its content disappear entirely. Root cause: the previous version only
+  // ever ran the one-shot centering scrollTo the *first* time onLayout
+  // fired at all (gated by a plain boolean ref) — but RN's layout pass can
+  // legitimately fire onLayout more than once while it settles, and the
+  // very first call can report a transient, too-small size (mid-reflow)
+  // rather than the real final viewport. That first (wrong) call still
+  // passed the `width/height > 0` guard, so it both (a) computed a bogus
+  // minZoom from the tiny size and (b) consumed the one-shot centering
+  // scrollTo using that same bogus size — landing the scroll position near
+  // (0,0) permanently, since the boolean gate meant the *next*, correctly-
+  // sized onLayout call never got to re-run the recenter. This was a
+  // latent risk even before Step C, but `key={activeScreen}` (see
+  // TownScreen.tsx) makes PannableMap remount on every tab switch instead
+  // of just once at app launch, giving this transient-first-layout race
+  // far more chances to actually fire. The fix: track the last *measured*
+  // size and only skip re-running the fit/centering calculation when a new
+  // onLayout call reports the exact same size as before — a genuinely
+  // different size (whether the true settle after a bogus first call, or
+  // an actual rotation) always gets a fresh, correct recenter.
+  const lastMeasuredSizeRef = useRef<{ width: number; height: number } | null>(null);
 
   const handleLayout = useCallback(
     (e: LayoutChangeEvent) => {
       const { width, height } = e.nativeEvent.layout;
       if (width <= 0 || height <= 0) return;
+      const last = lastMeasuredSizeRef.current;
+      if (last && last.width === width && last.height === height) return; // no real change — don't fight the user's own pan/zoom
+      lastMeasuredSizeRef.current = { width, height };
+
       // A little slack so "zoomed all the way out" still leaves a sliver of
       // breathing room at the map's own edges instead of cropping flush.
       const fitScale = Math.min(width / contentWidth, height / contentHeight) * 0.92;
       setMinZoom(Math.min(1, Math.max(0.15, fitScale)));
 
-      if (!hasCenteredRef.current) {
-        hasCenteredRef.current = true;
-        const x = Math.max(0, initialFocus.x * contentWidth - width / 2);
-        const y = Math.max(0, initialFocus.y * contentHeight - height / 2);
-        // No animation — this is the initial framing, not a user-triggered jump.
-        requestAnimationFrame(() => scrollRef.current?.scrollTo({ x, y, animated: false }));
-      }
+      const x = Math.max(0, initialFocus.x * contentWidth - width / 2);
+      const y = Math.max(0, initialFocus.y * contentHeight - height / 2);
+      // No animation — this is the initial framing, not a user-triggered jump.
+      requestAnimationFrame(() => scrollRef.current?.scrollTo({ x, y, animated: false }));
     },
     [contentWidth, contentHeight, initialFocus.x, initialFocus.y]
   );
