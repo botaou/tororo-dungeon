@@ -48,6 +48,13 @@ import { JobPreset } from '../data/jobPresets';
 import { HouseState, ItemId, ShopKind } from '../types';
 import { cuteShadow, theme } from '../theme';
 
+// Stable module-level reference (not `{ x: TOWN_X, y: TOWN_Y }` written
+// inline at the call site) — TownScreen re-renders on every game tick, and
+// a fresh object literal there would still be a new reference each time.
+// PannableMap's own memoization keys off the primitive x/y instead of this
+// object's identity, but keeping this stable too removes any doubt.
+const TOWN_FOCUS = { x: TOWN_X, y: TOWN_Y };
+
 export function TownScreen() {
   const gold = usePlayerStore((s) => s.gold);
   const materials = usePlayerStore((s) => s.materials);
@@ -522,7 +529,7 @@ export function TownScreen() {
           key={activeScreen}
           contentWidth={activeScreen === 'town' ? TOWN_ISO_CANVAS_WIDTH : WORLD_CANVAS_WIDTH}
           contentHeight={activeScreen === 'town' ? TOWN_ISO_CANVAS_HEIGHT : WORLD_CANVAS_HEIGHT}
-          initialFocus={{ x: TOWN_X, y: TOWN_Y }}
+          initialFocus={TOWN_FOCUS}
         >
           {activeScreen === 'town' ? (
             <TownMap
