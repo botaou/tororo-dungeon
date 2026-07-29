@@ -168,6 +168,26 @@ export function TownScreen() {
   // gets rendered, and which birds each one is handed (filtered by
   // bird.location below).
   const [activeScreen, setActiveScreen] = useState<'town' | 'dungeon'>('town');
+  // Real-device report: after item 69's key={activeScreen} fix made
+  // switching screens unmount the outgoing PannableMap/ScrollView and mount
+  // a fresh one in the very same commit, a screen reached right after
+  // actively pinching on the *other* one came back frozen (stuck offset,
+  // dead gestures) — and once frozen, switching back and forth no longer
+  // recovered it, even though each switch is a genuine fresh mount. That
+  // points at the *native* gesture recognizer/touch-responder layer still
+  // being mid-teardown from the just-used ScrollView at the exact moment
+  // the new one claims the same screen space, not at anything in this
+  // component's own JS state. `mapTransitioning` inserts a couple of empty
+  // frames — nothing mounted in mapWrap at all — between the old
+  // PannableMap unmounting and the new one mounting, giving iOS a clear
+  // window to fully release the outgoing gesture recognizer first.
+  const [mapTransitioning, setMapTransitioning] = useState(false);
+  const switchScreen = (target: 'town' | 'dungeon') => {
+    if (target === activeScreen) return;
+    setMapTransitioning(true);
+    setActiveScreen(target);
+    requestAnimationFrame(() => requestAnimationFrame(() => setMapTransitioning(false)));
+  };
 
   useEffect(() => {
     if (world.birds.length === 0) initWorld();
@@ -503,13 +523,13 @@ export function TownScreen() {
       <View style={styles.screenTabRow}>
         <AnimatedPressable
           style={[styles.screenTab, activeScreen === 'town' && styles.screenTabActive]}
-          onPress={() => setActiveScreen('town')}
+          onPress={() => switchScreen('town')}
         >
           <Text style={[styles.screenTabText, activeScreen === 'town' && styles.screenTabTextActive]}>🏡 街</Text>
         </AnimatedPressable>
         <AnimatedPressable
           style={[styles.screenTab, activeScreen === 'dungeon' && styles.screenTabActive]}
-          onPress={() => setActiveScreen('dungeon')}
+          onPress={() => switchScreen('dungeon')}
         >
           <Text style={[styles.screenTabText, activeScreen === 'dungeon' && styles.screenTabTextActive]}>🌲 ダンジョン</Text>
         </AnimatedPressable>
@@ -524,55 +544,61 @@ export function TownScreen() {
             fresh PannableMap/ScrollView mount on every tab switch instead
             of trying to resize a live one — see PannableMap's own comment
             for why reusing one across a canvas-size change broke native
-            zoom/gesture state. */}
-        <PannableMap
-          key={activeScreen}
-          contentWidth={activeScreen === 'town' ? TOWN_ISO_CANVAS_WIDTH : WORLD_CANVAS_WIDTH}
-          contentHeight={activeScreen === 'town' ? TOWN_ISO_CANVAS_HEIGHT : WORLD_CANVAS_HEIGHT}
-          initialFocus={TOWN_FOCUS}
-        >
-          {activeScreen === 'town' ? (
-            <TownMap
-              birds={townBirds}
-              buildings={visibleBuildings}
-              houses={houses}
-              townLevel={townLevel}
-              merchant={world.merchant}
-              onBirdPress={() => setRosterVisible(true)}
-              onBuildingPress={handleBuildingPress}
-              onMerchantPress={() => setMerchantVisible(true)}
-              onTownHallPress={() => setTownStatusVisible(true)}
-              onHousePress={handleHousePress}
-              placementMode={placingHouse || placingBuildingOptionId !== null || movingBuildingId !== null}
-              onMapTap={handleMapTap}
-              previewBuilding={(() => {
-                if (!previewPosition) return null;
-                const optionId = movingBuildingId
-                  ? buildings[movingBuildingId]?.constructedBuildingId ?? null
-                  : placingBuildingOptionId;
-                if (!optionId) return null;
-                return {
-                  x: previewPosition.x,
-                  y: previewPosition.y,
-                  optionId,
-                  blocked: isBuildingPlacementBlocked(previewPosition.x, previewPosition.y, movingBuildingId ?? undefined),
-                };
-              })()}
-              onDungeonGatePress={() => setActiveScreen('dungeon')}
-            />
-          ) : (
-            <DungeonMap
-              enemies={world.enemies}
-              miningNodes={world.miningNodes}
-              treasures={world.treasures}
-              leisureSpots={world.leisureSpots}
-              birds={dungeonBirds}
-              dormantDefIds={dormantDefIds}
-              onBirdPress={() => setRosterVisible(true)}
-              onTownGatePress={() => setActiveScreen('town')}
-            />
-          )}
-        </PannableMap>
+            zoom/gesture state. Further bugfix (see mapTransitioning's own
+            comment above): nothing is mounted here at all for a couple of
+            frames right after a switch, so a just-active gesture
+            recognizer on the outgoing ScrollView has time to fully tear
+            down before the new one appears. */}
+        {!mapTransitioning && (
+          <PannableMap
+            key={activeScreen}
+            contentWidth={activeScreen === 'town' ? TOWN_ISO_CANVAS_WIDTH : WORLD_CANVAS_WIDTH}
+            contentHeight={activeScreen === 'town' ? TOWN_ISO_CANVAS_HEIGHT : WORLD_CANVAS_HEIGHT}
+            initialFocus={TOWN_FOCUS}
+          >
+            {activeScreen === 'town' ? (
+              <TownMap
+                birds={townBirds}
+                buildings={visibleBuildings}
+                houses={houses}
+                townLevel={townLevel}
+                merchant={world.merchant}
+                onBirdPress={() => setRosterVisible(true)}
+                onBuildingPress={handleBuildingPress}
+                onMerchantPress={() => setMerchantVisible(true)}
+                onTownHallPress={() => setTownStatusVisible(true)}
+                onHousePress={handleHousePress}
+                placementMode={placingHouse || placingBuildingOptionId !== null || movingBuildingId !== null}
+                onMapTap={handleMapTap}
+                previewBuilding={(() => {
+                  if (!previewPosition) return null;
+                  const optionId = movingBuildingId
+                    ? buildings[movingBuildingId]?.constructedBuildingId ?? null
+                    : placingBuildingOptionId;
+                  if (!optionId) return null;
+                  return {
+                    x: previewPosition.x,
+                    y: previewPosition.y,
+                    optionId,
+                    blocked: isBuildingPlacementBlocked(previewPosition.x, previewPosition.y, movingBuildingId ?? undefined),
+                  };
+                })()}
+                onDungeonGatePress={() => switchScreen('dungeon')}
+              />
+            ) : (
+              <DungeonMap
+                enemies={world.enemies}
+                miningNodes={world.miningNodes}
+                treasures={world.treasures}
+                leisureSpots={world.leisureSpots}
+                birds={dungeonBirds}
+                dormantDefIds={dormantDefIds}
+                onBirdPress={() => setRosterVisible(true)}
+                onTownGatePress={() => switchScreen('town')}
+              />
+            )}
+          </PannableMap>
+        )}
       </View>
 
       <View style={styles.bottomBar}>
