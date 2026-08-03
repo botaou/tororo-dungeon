@@ -95,10 +95,50 @@ const ESTIMATED_CHROME_HEIGHT = 230;
 // (ESTIMATED_CHROME_WIDTH/HEIGHT) — not pixel-perfect, but the same,
 // correct-enough number on literally every run, with zero timing
 // dependency. The existing FIT_MARGIN slack and `centerContent` already
-// tolerate the resulting small imprecision gracefully. The inner
-// ScrollView now mounts on the very first render with its final
-// `contentOffset`/`minimumZoomScale` already known — no more waiting for a
-// measurement to "settle" before it can exist at all.
+// tolerate the resulting small imprecision gracefully.
+//
+// Round 8 (real-device screenshots: DungeonMap rendered as a small patch of
+// field stuck flush in the viewport's top-left corner, with the rest blank
+// — occasionally scrolled almost entirely off-screen on touch — while
+// TownMap kept looking fine): Round 7's `contentOffset` was computed
+// assuming the ScrollView's real initial zoomScale is 1.0 ("the one thing
+// iOS unambiguously guarantees" — Round 4's words). The screenshots
+// contradict that assumption: DungeonMap's canvas (900x1400 — much closer
+// in scale to a phone screen than TownMap's 3200x2400) rendered as a patch
+// far smaller than 900x1400-at-zoomScale-1 would ever look, sitting at
+// (0,0) rather than centered — consistent with the *real* initial zoomScale
+// actually being `minimumZoomScale` (i.e. `fitAndOffset.fitScale`, well
+// below 1.0), which made the zoomScale-1-shaped `contentOffset` request
+// invalid at the view's actual scale and get clamped down to (0,0) instead.
+// TownMap's fitScale sits at MINIMUM_ZOOM_FLOOR regardless of this bug (its
+// canvas is so much larger that the fit ratio was already below the floor
+// before this round), and even scaled down that far its content is still
+// wider than the viewport on at least one axis, so the "content ends up
+// entirely smaller than the viewport" failure mode this bug depends on
+// never actually triggered for it — a coincidence of scale, not evidence
+// the zoomScale-1 assumption was ever correct. The fix has two parts:
+//  1. `contentOffset` is now computed against `contentWidth * fitScale` /
+//     `contentHeight * fitScale` (the coordinate space the view's *actual*
+//     starting zoomScale implies) rather than the raw, unscaled content
+//     size.
+//  2. Even so, the screenshots showed the clamped-to-(0,0) content sitting
+//     flush in the corner rather than centered by `centerContent` — which
+//     should have centered it, since content-smaller-than-viewport is
+//     exactly the case that prop exists for. The likely explanation:
+//     explicitly declaring `contentOffset` (even as `{x:0, y:0}`) marks the
+//     offset as caller-provided, and iOS's automatic "center content
+//     smaller than the viewport" adjustment (implemented as an automatic
+//     `contentInset`, a *different* mechanism than `contentOffset`) doesn't
+//     get to run — or gets fought — as a result. So `contentOffset` is now
+//     entirely omitted (left `undefined`) whenever the scaled content fits
+//     within the viewport on *both* axes, deferring completely to
+//     `centerContent`'s own native centering in that case; it's only
+//     supplied when there's real, meaningful scrolling to position (content
+//     bigger than the viewport on at least one axis), where `centerContent`
+//     doesn't engage anyway.
+// The inner ScrollView still mounts on the very first render with its
+// final `contentOffset`/`minimumZoomScale` already known — no waiting for
+// a measurement to "settle" before it can exist at all.
 export function PannableMap({ contentWidth, contentHeight, initialFocus, children }: Props) {
   const window = useWindowDimensions();
   const insets = useSafeAreaInsets();
@@ -123,14 +163,22 @@ export function PannableMap({ contentWidth, contentHeight, initialFocus, childre
       1,
       Math.max(MINIMUM_ZOOM_FLOOR, Math.min(viewportWidth / contentWidth, viewportHeight / contentHeight) * FIT_MARGIN)
     );
-    // contentOffset is computed for the ScrollView's real, guaranteed
-    // initial zoomScale (1.0) — plain content-space coordinates, no scale
-    // multiplication needed since zoomScale is documented to always start
-    // at exactly 1.
-    const maxOffsetX = Math.max(0, contentWidth - viewportWidth);
-    const maxOffsetY = Math.max(0, contentHeight - viewportHeight);
-    const offsetX = Math.min(maxOffsetX, Math.max(0, focusX * contentWidth - viewportWidth / 2));
-    const offsetY = Math.min(maxOffsetY, Math.max(0, focusY * contentHeight - viewportHeight / 2));
+    // contentOffset is computed against the coordinate space the view's
+    // *actual* starting zoomScale implies (see the Round 8 comment above —
+    // that's `fitScale`/`minimumZoomScale`, not the unscaled content size).
+    const scaledWidth = contentWidth * fitScale;
+    const scaledHeight = contentHeight * fitScale;
+    const maxOffsetX = Math.max(0, scaledWidth - viewportWidth);
+    const maxOffsetY = Math.max(0, scaledHeight - viewportHeight);
+    if (maxOffsetX === 0 && maxOffsetY === 0) {
+      // Scaled content fits entirely within the viewport on both axes —
+      // omit contentOffset and let `centerContent` center it natively (see
+      // the Round 8 comment above for why supplying an explicit offset here,
+      // even (0,0), was observed to suppress that centering on-device).
+      return { fitScale, contentOffset: undefined as { x: number; y: number } | undefined };
+    }
+    const offsetX = Math.min(maxOffsetX, Math.max(0, focusX * scaledWidth - viewportWidth / 2));
+    const offsetY = Math.min(maxOffsetY, Math.max(0, focusY * scaledHeight - viewportHeight / 2));
     return { fitScale, contentOffset: { x: offsetX, y: offsetY } };
   }, [viewportWidth, viewportHeight, contentWidth, contentHeight, focusX, focusY]);
 
