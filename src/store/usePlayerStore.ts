@@ -3,7 +3,13 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { ItemId, MaterialId, PlayerState, ShopKind } from '../types';
-import { MERCHANT_RARE_CHANCE, MYSTERY_GACHA_COST, STARTING_GOLD, STARTING_MATERIALS } from '../game/config';
+import {
+  MERCHANT_RARE_CHANCE,
+  MYSTERY_GACHA_COST,
+  MYSTERY_STOCKED_DRAW_CHANCE,
+  STARTING_GOLD,
+  STARTING_MATERIALS,
+} from '../game/config';
 import { CRAFTING_RECIPES } from '../data/recipes';
 import { COSTUME_RECIPES } from '../data/costumeRecipes';
 import { MATERIAL_SELL_PRICE } from '../data/marketPrices';
@@ -70,8 +76,12 @@ interface PlayerActions {
   // exact same rare/common pool split the visiting merchant's own lineup
   // draws from (see rollMerchantLineup in useWorldStore) rather than a new
   // pool, per the request's own "既存の商人レアアイテムプールの仕組みを流用
-  // してよい". Returns the drawn item's id, or null if the player can't
-  // afford it.
+  // してよい". 経営要素①(続き): if the player has stocked shopStock.mystery
+  // (via the same StockingPanel every other shop uses), each draw has a
+  // MYSTERY_STOCKED_DRAW_CHANCE chance of pulling from that shelf instead
+  // (consuming 1 unit), otherwise it falls back to the original baseline
+  // pool unchanged — an empty shelf reproduces the exact old behavior.
+  // Returns the drawn item's id, or null if the player can't afford it.
   drawMysteryItem: () => ItemId | null;
 }
 
@@ -223,11 +233,28 @@ export const usePlayerStore = create<PlayerStore>()(
       },
 
       drawMysteryItem: () => {
-        const { gold, items } = get();
+        const { gold, items, shopStock } = get();
         if (gold < MYSTERY_GACHA_COST) return null;
-        const pool = Math.random() < MERCHANT_RARE_CHANCE ? MERCHANT_RARE_ITEM_IDS : MERCHANT_COMMON_ITEM_IDS;
-        const itemId = pool[Math.floor(Math.random() * pool.length)];
-        set({ gold: gold - MYSTERY_GACHA_COST, items: { ...items, [itemId]: (items[itemId] ?? 0) + 1 } });
+
+        const shelf = shopStock.mystery;
+        const stockedIds = (Object.keys(shelf) as ItemId[]).filter((id) => (shelf[id] ?? 0) > 0);
+        const drawFromShelf = stockedIds.length > 0 && Math.random() < MYSTERY_STOCKED_DRAW_CHANCE;
+
+        let itemId: ItemId;
+        if (drawFromShelf) {
+          itemId = stockedIds[Math.floor(Math.random() * stockedIds.length)];
+        } else {
+          const pool = Math.random() < MERCHANT_RARE_CHANCE ? MERCHANT_RARE_ITEM_IDS : MERCHANT_COMMON_ITEM_IDS;
+          itemId = pool[Math.floor(Math.random() * pool.length)];
+        }
+
+        set({
+          gold: gold - MYSTERY_GACHA_COST,
+          items: { ...items, [itemId]: (items[itemId] ?? 0) + 1 },
+          ...(drawFromShelf
+            ? { shopStock: { ...shopStock, mystery: { ...shelf, [itemId]: (shelf[itemId] ?? 0) - 1 } } }
+            : {}),
+        });
         return itemId;
       },
     }),

@@ -530,6 +530,18 @@ export const FURNITURE_GIFT_LOG_MAX = 20;
 // "既存の商人レアアイテムプールの仕組みを流用してよい" — just a flat gold
 // price instead of a shop-shelf purchase.
 export const MYSTERY_GACHA_COST = 150;
+// 経営要素①(続き) — player-stocked mystery-shop draws. usePlayerStore's
+// shopStock is already generically typed over every ShopKind including
+// 'mystery', so stockItem('mystery', ...) works with zero new store
+// scaffolding; only drawMysteryItem's own draw logic needed to change. When
+// the player has put at least one item on the mystery shelf (via the same
+// StockingPanel every other shop uses), each draw has this chance of
+// pulling uniformly from that stocked pool (consuming 1 unit) instead of
+// rolling the baseline MERCHANT_RARE_ITEM_IDS/MERCHANT_COMMON_ITEM_IDS pool
+// — giving "provide material toward the lineup" (the request's own example)
+// real effect without making the draw fully deterministic or requiring the
+// shelf to be stocked at all (an empty shelf behaves exactly as before).
+export const MYSTERY_STOCKED_DRAW_CHANCE = 0.5;
 
 export const STARTING_GOLD = 300;
 export const STARTING_MATERIALS = {
