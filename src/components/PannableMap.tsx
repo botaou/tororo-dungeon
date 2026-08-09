@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef } from 'react';
+import React, { useMemo } from 'react';
 import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -13,11 +13,6 @@ interface Props {
   children: React.ReactNode;
 }
 
-const MAXIMUM_ZOOM_SCALE = 2.2;
-const MINIMUM_ZOOM_FLOOR = 0.15;
-// Small breathing room so "zoomed all the way out" doesn't crop flush with
-// the map's own edges.
-const FIT_MARGIN = 0.92;
 // mapWrap's own horizontal padding (TownScreen.tsx: paddingHorizontal: 12
 // on both sides).
 const ESTIMATED_CHROME_WIDTH = 24;
@@ -26,100 +21,67 @@ const ESTIMATED_CHROME_WIDTH = 24;
 // the bottom bar (activity log + request button).
 const ESTIMATED_CHROME_HEIGHT = 230;
 
-// Wraps the map in native iOS pinch-zoom-and-pan (UIScrollView's own
-// minimumZoomScale/maximumZoomScale/bouncesZoom), rather than a third-party
-// gesture library — the app is iOS-only already, and this needs zero new
-// native dependencies.
+// STABILITY-FIRST ROLLBACK (explicit product decision): this component
+// went through nine rounds chasing real-device freezes/blank-screens/
+// non-determinism, every single one of them rooted in UIScrollView's pinch-
+// zoom machinery (minimumZoomScale/maximumZoomScale clamping, contentOffset
+// coordinate-space ambiguity once zoom is involved, gesture-recognizer
+// corruption when that machinery interacts with screen switches or
+// re-renders) — see this file's git history for the full account. Rather
+// than attempt a tenth fix, zoom is removed entirely, reverting to the
+// same "fixed real size + pan-only" approach this project used
+// successfully before isometric TownMap existed (see README's own history
+// around the original PannableMap: "ピンチズームは実機でタップ・ドラッグが
+// 起動直後から無反応になる不具合の原因になったため撤去済み"). No
+// minimumZoomScale/maximumZoomScale, `pinchGestureEnabled={false}` — the
+// zoom-clamp machinery that was the common thread across every failure in
+// this saga is removed altogether, not merely reconfigured differently.
 //
-// This component has gone through many rewrites chasing real-device
-// display bugs. Rounds 1-6 (freeze on screen switch, stuck-top-left,
-// non-deterministic centering, gesture recognizer corruption from
-// mid-gesture prop churn) are covered in this file's git history and in the
-// README — each narrowed the problem down further, but rounds 4/7/8 in
-// particular kept getting stuck on the same fundamental question: *what
-// coordinate space is `contentOffset` actually interpreted in* (raw content
-// size, or content size scaled by whatever the view's real starting
-// zoomScale turns out to be)? Round 7 assumed zoomScale=1 (documented as
-// the default). Round 8's real-device screenshots contradicted that for
-// DungeonMap specifically, so it switched to assuming zoomScale=fitScale
-// instead, plus omitting `contentOffset` entirely when centerContent alone
-// should suffice. Real-device testing after that round showed the result
-// was still inconsistent — sometimes correctly centered, sometimes a small
-// stuck-in-a-corner patch, sometimes fully blank — across nominally
-// identical dungeon<->town switches. Four different theories about
-// `contentOffset`'s coordinate space, three different partial fixes, and
-// still no reliably correct behavior is a sign the problem was the
-// approach, not the theory.
+// Content renders at its native (unscaled) size; the user pans by
+// dragging. The initial `contentOffset` here is safe and unambiguous in a
+// way none of the zoom-enabled versions ever managed to be: with zoom
+// disabled, the ScrollView's zoomScale can never be anything other than 1,
+// so there is no "which coordinate space does this apply in" question left
+// to get wrong.
 //
-// Round 9 (this version): stop trying to guess `contentOffset` at all.
-// `ScrollView.scrollResponderZoomTo(rect)` is a real, public, iOS-only
-// method on RN's ScrollView (documented in ScrollView.d.ts) whose entire
-// purpose is "make this rect — in the content's own, unscaled coordinate
-// space, no ambiguity — fully visible," computing the correct zoomScale
-// *and* offset together, atomically, natively. Passing the full content
-// rect (0, 0, contentWidth, contentHeight) is exactly "zoom out to fit the
-// whole map, centered" — our actual goal all along — without this
-// component ever having to know or guess what zoomScale ends up in effect.
-// It's called exactly once per mount, the moment the content is confirmed
-// ready: `onContentSizeChange` fires when the ScrollView's native content
-// view has actually settled at its declared size, a genuine readiness
-// signal rather than a guessed delay or an assumption about initial state.
-// This is different from Round 1's freeze (an imperative call racing a
-// `minimumZoomScale` *prop change* on a ScrollView the user had already
-// zoomed/panned) — this fires once, on a brand-new, never-yet-touched
-// ScrollView (key={activeScreen} in TownScreen.tsx still guarantees a
-// fresh native view per screen, and `mapTransitioning` there still gives
-// the previous screen's gesture recognizer time to fully tear down first).
-// `initialFocus` is currently unused: `scrollResponderZoomTo` always
-// targets the full content rect, which is already centered on both
-// screens' actual focus point (TOWN_X/TOWN_Y = 0.5, 0.5 by construction —
-// see WorldMap.tsx's TOWN_ISO_ORIGIN comment) since "fit the whole canvas"
-// and "center on the focus point" are the same operation here. Kept in the
-// props contract in case a future caller ever needs an off-center initial
-// view.
-export function PannableMap({ contentWidth, contentHeight, children }: Props) {
+// Pinch-to-zoom is intentionally NOT reimplemented as a "safer" custom
+// gesture in this pass — see README's 拡張候補 (今後の拡張候補) for the
+// planned real fix (a react-native-gesture-handler/react-native-reanimated
+// driven transform, avoiding UIScrollView's zoom machinery altogether),
+// which is deliberately deferred to when the rest of the game is closer to
+// feature-complete rather than attempted under time pressure here.
+export function PannableMap({ contentWidth, contentHeight, initialFocus, children }: Props) {
   const window = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const scrollRef = useRef<ScrollView>(null);
-  const hasZoomedRef = useRef(false);
+
+  const focusX = initialFocus.x;
+  const focusY = initialFocus.y;
 
   const viewportWidth = Math.max(200, window.width - insets.left - insets.right - ESTIMATED_CHROME_WIDTH);
   const viewportHeight = Math.max(200, window.height - insets.top - insets.bottom - ESTIMATED_CHROME_HEIGHT);
 
-  // The floor a pinch-out can reach (and the ceiling a pinch-in can't pass
-  // going the other way isn't affected) — computed so the *entire* canvas
-  // could become visible at that scale, regardless of aspect ratio, with a
-  // little breathing room (FIT_MARGIN) at the edges. `scrollResponderZoomTo`
-  // below picks the actual starting zoom itself; this is only the pinch
-  // bound.
-  const fitScale = Math.min(
-    1,
-    Math.max(MINIMUM_ZOOM_FLOOR, Math.min(viewportWidth / contentWidth, viewportHeight / contentHeight) * FIT_MARGIN)
-  );
-
   // Same object every render as long as the underlying numbers haven't
   // actually changed — TownScreen re-renders every game tick, and a fresh
-  // object here every time would silently reapply the content size
-  // mid-gesture (see this file's git history, Round 5).
+  // object here every time would silently reapply the content size mid-pan
+  // (see this file's git history, Round 5, for why that matters even
+  // without zoom in the picture).
   const contentContainerStyle = useMemo(() => ({ width: contentWidth, height: contentHeight }), [contentWidth, contentHeight]);
 
-  const handleContentSizeChange = useCallback(() => {
-    if (hasZoomedRef.current) return;
-    hasZoomedRef.current = true;
-    scrollRef.current?.scrollResponderZoomTo({ x: 0, y: 0, width: contentWidth, height: contentHeight, animated: false });
-  }, [contentWidth, contentHeight]);
+  const contentOffset = useMemo(() => {
+    const maxOffsetX = Math.max(0, contentWidth - viewportWidth);
+    const maxOffsetY = Math.max(0, contentHeight - viewportHeight);
+    const offsetX = Math.min(maxOffsetX, Math.max(0, focusX * contentWidth - viewportWidth / 2));
+    const offsetY = Math.min(maxOffsetY, Math.max(0, focusY * contentHeight - viewportHeight / 2));
+    return { x: offsetX, y: offsetY };
+  }, [viewportWidth, viewportHeight, contentWidth, contentHeight, focusX, focusY]);
 
   return (
     <View style={styles.viewport}>
       <ScrollView
-        ref={scrollRef}
         style={styles.scroll}
         contentContainerStyle={contentContainerStyle}
-        onContentSizeChange={handleContentSizeChange}
-        minimumZoomScale={fitScale}
-        maximumZoomScale={MAXIMUM_ZOOM_SCALE}
-        bouncesZoom
-        centerContent
+        contentOffset={contentOffset}
+        pinchGestureEnabled={false}
         showsHorizontalScrollIndicator={false}
         showsVerticalScrollIndicator={false}
       >
