@@ -46,6 +46,7 @@ import {
 } from '../game/recruitment';
 import { getEffectiveStats, maybeAutoEquip } from '../game/birdStats';
 import { useCosmeticStore } from './useCosmeticStore';
+import { COSMETIC_ITEM_MAP } from '../data/cosmetics';
 import { MATERIAL_LABEL } from '../data/materials';
 import { describeJobTarget, JOB_KIND_UNIT_LABEL, JobPreset } from '../data/jobPresets';
 import {
@@ -881,6 +882,7 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         (id) => (usePlayerStore.getState().items[id] ?? 0) > 0
       ),
       unlockedCosmeticIds: useCosmeticStore.getState().unlockedCosmeticIds,
+      cosmeticShelf: useCosmeticStore.getState().shelfCounts,
     };
 
     const allAssignments: AttackAssignment[] = [];
@@ -1092,6 +1094,25 @@ export const useWorldStore = create<WorldStore & WorldActions>()((set, get) => (
         newLog.push(
           makeLogEntry(bird.name, 'buyShop', `${bird.name}が${ITEM_DEF_MAP[itemId].name}を買った(街に+${totalCost}G)`)
         );
+      }
+      if (outcome.cosmeticPurchase) {
+        const { cosmeticId, totalCost } = outcome.cosmeticPurchase;
+        // A costume can only ever be unlocked once — if another bird (or the
+        // player, via CostumeCollectionModal's own "贈る") got there first
+        // within this same tick, this just quietly no-ops: the bird's gold
+        // was already spent in ai.ts's executeCosmeticShopTrip regardless,
+        // same "trip concluded, nothing bought" shape as a stale gear offer.
+        if (useCosmeticStore.getState().fulfillCosmeticShelfPurchase(cosmeticId)) {
+          usePlayerStore.getState().creditShopToll(totalCost);
+          // Unlike gear (which goes into the bird's own inventory), a
+          // costume isn't "carried" — dressing the purchasing bird in it
+          // immediately gives the purchase a visible payoff, the same idea
+          // as the mayor's room's flavor "re-dress" roll.
+          bird.cosmeticId = cosmeticId;
+          newLog.push(
+            makeLogEntry(bird.name, 'buyShop', `${bird.name}が服屋で${COSMETIC_ITEM_MAP[cosmeticId].name}を買った(街に+${totalCost}G)`)
+          );
+        }
       }
       if (outcome.bonusItemFound) {
         newLog.push(

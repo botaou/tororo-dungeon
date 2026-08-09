@@ -16,6 +16,8 @@ import {
 import {
   ARRIVAL_THRESHOLD,
   BIRD_INVENTORY_CAP,
+  COSTUME_SHOP_CHECK_CHANCE,
+  COSTUME_SHOP_PRICE,
   DETOUR_CHANCE_BASE,
   DETOUR_CHANCE_LOW_MOOD,
   DETOUR_DWELL_TICKS,
@@ -54,6 +56,7 @@ import {
 } from './config';
 import { DUNGEON_GATE_SPOT, FIELD_TOWN_GATE_SPOT, TOWN_X, TOWN_Y } from '../data/world';
 import { BASIC_TRADE_SPOT, MERCHANT_SPOT } from '../data/townGrid';
+import { COSMETIC_ITEMS } from '../data/cosmetics';
 import { MATERIAL_SELL_PRICE } from '../data/marketPrices';
 import { SHOP_DEFS } from '../data/shops';
 import { CONVERTIBLE_ITEM_IDS, ITEM_DEF_MAP, ITEM_DEFS } from '../data/items';
@@ -325,6 +328,10 @@ export interface AiWorld {
   // visitRedressCosmeticId).
   availableGiftItemIds: ItemId[];
   unlockedCosmeticIds: string[];
+  // 経営要素①: what's currently on 服屋's costume shelf — read-only from the
+  // AI's perspective, same as shopStock; the store applies the actual
+  // decrement + unlock (see AiStepOutcome.cosmeticPurchase).
+  cosmeticShelf: Partial<Record<string, number>>;
 }
 
 // A bird's own house position, or the town hall as a stand-in for a
@@ -405,6 +412,10 @@ export interface AiStepOutcome {
   // Set once per visit if the bird's flavor "re-dress" roll hits — the store
   // sets bird.cosmeticId to this (already-unlocked) id.
   visitRedressCosmeticId: string | null;
+  // 経営要素①: set when a bird finishes buying a costume off 服屋's shelf —
+  // the store unlocks it globally (useCosmeticStore.fulfillCosmeticShelfPurchase),
+  // credits the shop toll, and dresses the purchasing bird in it.
+  cosmeticPurchase: { cosmeticId: string; totalCost: number } | null;
 }
 
 function emptyOutcome(): AiStepOutcome {
@@ -429,6 +440,7 @@ function emptyOutcome(): AiStepOutcome {
     startedVisiting: false,
     visitGiftItemId: null,
     visitRedressCosmeticId: null,
+    cosmeticPurchase: null,
   };
 }
 
@@ -606,6 +618,19 @@ export function stepBird(bird: BirdState, def: CharacterDef, world: AiWorld): Ai
     bird.activity = 'buyingGear';
     bird.workProgress = 0;
     return executeGearShopTrip(bird, world);
+  }
+
+  // 経営要素①: same shape as the gear-shopping block just above, but for
+  // 服屋's costume shelf — see pickCosmeticOffer's own comment for why this
+  // has no need-driven gate the way gear-shopping does.
+  if (bird.targetKind === 'shop' && bird.activity === 'buyingCostume') {
+    return executeCosmeticShopTrip(bird, world);
+  }
+  if (Math.random() < COSTUME_SHOP_CHECK_CHANCE && pickCosmeticOffer(bird, world)) {
+    bird.targetKind = 'shop';
+    bird.activity = 'buyingCostume';
+    bird.workProgress = 0;
+    return executeCosmeticShopTrip(bird, world);
   }
 
   // The merchant's stall only exists to interact with while it's actually
@@ -946,6 +971,52 @@ function executeGearShopTrip(bird: BirdState, world: AiWorld): AiStepOutcome {
     if (bird.workProgress >= SELL_DWELL_TICKS) {
       bird.gold -= offer.price;
       outcome.shopPurchase = { shopKind: offer.shopKind, itemId: offer.itemId, amount: 1, totalCost: offer.price };
+      bird.targetKind = null;
+      bird.workProgress = 0;
+    }
+  }
+  return outcome;
+}
+
+// 経営要素①: picks a random costume off 服屋's shelf the bird can afford
+// and hasn't already been unlocked (a costume is global-once-unlocked, not
+// per-bird-owned like gear, so "the bird already has one" isn't a
+// meaningful check here — only "does this exist to buy at all" is). No
+// need-driven trigger like pickGearOffer's missing-slot check — this is
+// purely discretionary, gated by COSTUME_SHOP_CHECK_CHANCE in stepBird.
+function pickCosmeticOffer(bird: BirdState, world: AiWorld): { cosmeticId: string } | null {
+  if (!world.shopPositions.clothing) return null;
+  if (COSTUME_SHOP_PRICE > bird.gold) return null;
+  const candidates = COSMETIC_ITEMS.filter(
+    (c) => (world.cosmeticShelf[c.id] ?? 0) > 0 && !world.unlockedCosmeticIds.includes(c.id)
+  );
+  if (candidates.length === 0) return null;
+  const pick = candidates[Math.floor(Math.random() * candidates.length)];
+  return { cosmeticId: pick.id };
+}
+
+// Walks to 服屋 and, once there, buys whatever pickCosmeticOffer settled on.
+// Same shape as executeGearShopTrip — if the shelf/affordability changed
+// since the trip was committed to, the trip just concludes with nothing
+// bought.
+function executeCosmeticShopTrip(bird: BirdState, world: AiWorld): AiStepOutcome {
+  const outcome = emptyOutcome();
+  const offer = pickCosmeticOffer(bird, world);
+  if (!offer) {
+    bird.targetKind = null;
+    bird.activity = 'idle';
+    bird.workProgress = 0;
+    return outcome;
+  }
+  bird.activity = 'buyingCostume';
+  if (!crossGate(bird, 'town')) return outcome;
+  const shop = world.shopPositions.clothing!;
+  const arrived = moveToward(bird, shop.x, shop.y);
+  if (arrived) {
+    bird.workProgress += 1;
+    if (bird.workProgress >= SELL_DWELL_TICKS) {
+      bird.gold -= COSTUME_SHOP_PRICE;
+      outcome.cosmeticPurchase = { cosmeticId: offer.cosmeticId, totalCost: COSTUME_SHOP_PRICE };
       bird.targetKind = null;
       bird.workProgress = 0;
     }

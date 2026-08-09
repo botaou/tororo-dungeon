@@ -28,6 +28,8 @@ export function CostumeCollectionModal({ visible, onClose }: Props) {
   const unlockedCosmeticIds = useCosmeticStore((s) => s.unlockedCosmeticIds);
   const ticketCounts = useCosmeticStore((s) => s.ticketCounts);
   const giftCosmetic = useCosmeticStore((s) => s.giftCosmetic);
+  const shelfCounts = useCosmeticStore((s) => s.shelfCounts);
+  const stockCosmetic = useCosmeticStore((s) => s.stockCosmetic);
   const unlockedRecipeIds = useRecipeStore((s) => s.unlockedRecipeIds);
   const materials = usePlayerStore((s) => s.materials);
   const craftCosmetic = usePlayerStore((s) => s.craftCosmetic);
@@ -35,10 +37,26 @@ export function CostumeCollectionModal({ visible, onClose }: Props) {
   // Which ticket's "贈る" row is currently showing its 4-bird picker.
   const [pickingFor, setPickingFor] = useState<string | null>(null);
   const [justGiftedTo, setJustGiftedTo] = useState<{ cosmeticId: string; birdName: string } | null>(null);
+  // 経営要素①: player-chosen shelf quantity per costume, same -/+/全部
+  // stepper pattern as StockingPanel's quantityOverrides — see that
+  // component's own comment for why this is a local override map rather
+  // than always defaulting to "all of it".
+  const [shelfQtyOverrides, setShelfQtyOverrides] = useState<Partial<Record<string, number>>>({});
 
-  const ticketedIds = COSMETIC_ITEMS.filter((c) => (ticketCounts[c.id] ?? 0) > 0);
+  // Already-unlocked costumes are excluded even if a ticket count lingers
+  // for one (possible after fulfillCosmeticShelfPurchase refunds unsold
+  // shelf stock back to tickets) — nothing left to gift or stock toward.
+  const ticketedIds = COSMETIC_ITEMS.filter((c) => (ticketCounts[c.id] ?? 0) > 0 && !unlockedCosmeticIds.includes(c.id));
   const lockedUnticketedCount = COSMETIC_ITEMS.length - unlockedCosmeticIds.length - ticketedIds.length;
   const craftableRecipes = COSTUME_RECIPES.filter((r) => unlockedRecipeIds.includes(r.id));
+
+  const adjustShelfQty = (cosmeticId: string, ticketQty: number, delta: number) => {
+    setShelfQtyOverrides((prev) => {
+      const current = Math.min(prev[cosmeticId] ?? ticketQty, ticketQty);
+      const next = Math.max(1, Math.min(ticketQty, current + delta));
+      return { ...prev, [cosmeticId]: next };
+    });
+  };
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -87,6 +105,52 @@ export function CostumeCollectionModal({ visible, onClose }: Props) {
                   {justGiftedTo?.cosmeticId === cosmetic.id && (
                     <Text style={styles.giftedText}>{justGiftedTo.birdName}に贈った!これで皆が着られます。</Text>
                   )}
+                  {(() => {
+                    const ticketQty = ticketCounts[cosmetic.id] ?? 0;
+                    const shelfQty = shelfCounts[cosmetic.id] ?? 0;
+                    const selectedQty = Math.min(shelfQtyOverrides[cosmetic.id] ?? ticketQty, ticketQty);
+                    return (
+                      <View style={styles.shelfSection}>
+                        <Text style={styles.shelfSub}>店頭に{shelfQty}個(並べると鳥が自動で購入・着用します)</Text>
+                        <View style={styles.qtyRow}>
+                          <AnimatedPressable
+                            style={[styles.qtyButton, selectedQty <= 1 && styles.qtyButtonDisabled]}
+                            disabled={selectedQty <= 1}
+                            onPress={() => adjustShelfQty(cosmetic.id, ticketQty, -1)}
+                          >
+                            <Text style={styles.qtyButtonText}>−</Text>
+                          </AnimatedPressable>
+                          <Text style={styles.qtyValue}>{selectedQty}</Text>
+                          <AnimatedPressable
+                            style={[styles.qtyButton, selectedQty >= ticketQty && styles.qtyButtonDisabled]}
+                            disabled={selectedQty >= ticketQty}
+                            onPress={() => adjustShelfQty(cosmetic.id, ticketQty, 1)}
+                          >
+                            <Text style={styles.qtyButtonText}>+</Text>
+                          </AnimatedPressable>
+                          <AnimatedPressable
+                            style={styles.qtyAllButton}
+                            onPress={() => setShelfQtyOverrides((prev) => ({ ...prev, [cosmetic.id]: ticketQty }))}
+                          >
+                            <Text style={styles.qtyAllButtonText}>全部</Text>
+                          </AnimatedPressable>
+                        </View>
+                        <AnimatedPressable
+                          style={styles.stockButton}
+                          onPress={() => {
+                            if (stockCosmetic(cosmetic.id, selectedQty)) {
+                              setShelfQtyOverrides((prev) => {
+                                const { [cosmetic.id]: _removed, ...rest } = prev;
+                                return rest;
+                              });
+                            }
+                          }}
+                        >
+                          <Text style={styles.stockButtonText}>店に並べる({selectedQty}個)</Text>
+                        </AnimatedPressable>
+                      </View>
+                    );
+                  })()}
                 </View>
               ))
             )}
@@ -189,4 +253,37 @@ const styles = StyleSheet.create({
   birdPickRow: { flexDirection: 'row', gap: 8, marginTop: 8 },
   birdPickChip: { flex: 1, alignItems: 'center', backgroundColor: theme.card, borderRadius: 10, paddingVertical: 6 },
   birdPickLabel: { fontSize: 10, color: theme.textMuted, marginTop: 2 },
+  shelfSection: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: theme.cardBorder },
+  shelfSub: { fontSize: 11, color: theme.textMuted, marginBottom: 6 },
+  qtyRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
+  qtyButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: theme.card,
+    borderWidth: 1.5,
+    borderColor: theme.cardBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  qtyButtonDisabled: { opacity: 0.4 },
+  qtyButtonText: { fontSize: 16, fontWeight: '800', color: theme.textPrimary },
+  qtyValue: { fontSize: 15, fontWeight: '800', color: theme.textPrimary, minWidth: 32, textAlign: 'center' },
+  qtyAllButton: {
+    marginLeft: 'auto',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: theme.card,
+    borderWidth: 1.5,
+    borderColor: theme.cardBorder,
+  },
+  qtyAllButtonText: { fontSize: 11, fontWeight: '700', color: theme.textSecondary },
+  stockButton: {
+    backgroundColor: theme.blue,
+    borderRadius: 999,
+    paddingVertical: 9,
+    alignItems: 'center',
+  },
+  stockButtonText: { color: '#fff', fontWeight: '700', fontSize: 13 },
 });

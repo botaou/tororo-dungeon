@@ -15,6 +15,11 @@ interface CosmeticState {
   // player-warehouse item, kept in its own store (rather than folded into
   // usePlayerStore.items) since it's keyed by cosmetic id, not ItemId.
   ticketCounts: Partial<Record<string, number>>;
+  // 経営要素①: tickets moved onto 服屋's shelf (see stockCosmetic below) —
+  // what a visiting bird actually checks/buys from (see ai.ts's
+  // pickCosmeticOffer), mirroring usePlayerStore.shopStock's "warehouse vs
+  // shelf" split for the regular ItemId-based shops.
+  shelfCounts: Partial<Record<string, number>>;
 }
 
 interface CosmeticActions {
@@ -27,6 +32,20 @@ interface CosmeticActions {
   // Spends one ticket to unlock the costume globally. Returns false if
   // there's no ticket to spend or it's already unlocked.
   giftCosmetic: (cosmeticId: string) => boolean;
+  // 経営要素①: move `amount` tickets onto 服屋's shelf, making the costume
+  // actually purchasable by a visiting bird (see fulfillCosmeticShelfPurchase
+  // below). Mirrors usePlayerStore.stockItem. Returns false if there aren't
+  // enough tickets, or the costume's already unlocked (nothing left to sell
+  // — same guard giftCosmetic already applies).
+  stockCosmetic: (cosmeticId: string, amount: number) => boolean;
+  // A bird buying one unit off 服屋's shelf — unlocks the costume globally
+  // (same effect as giftCosmetic) and decrements the shelf. Returns false if
+  // the shelf's empty or the costume's already unlocked. A costume can only
+  // ever be unlocked once, so any *further* shelf stock for the same
+  // costume beyond this first sale could never sell again — rather than
+  // strand it, this refunds the leftover back to ticketCounts in the same
+  // call.
+  fulfillCosmeticShelfPurchase: (cosmeticId: string) => boolean;
 }
 
 export const useCosmeticStore = create<CosmeticState & CosmeticActions>()(
@@ -34,6 +53,7 @@ export const useCosmeticStore = create<CosmeticState & CosmeticActions>()(
     (set, get) => ({
       unlockedCosmeticIds: COSMETIC_ITEMS.filter((c) => c.unlockedByDefault).map((c) => c.id),
       ticketCounts: {},
+      shelfCounts: {},
 
       isCosmeticUnlocked: (cosmeticId) => get().unlockedCosmeticIds.includes(cosmeticId),
 
@@ -52,6 +72,35 @@ export const useCosmeticStore = create<CosmeticState & CosmeticActions>()(
         set({
           unlockedCosmeticIds: [...unlockedCosmeticIds, cosmeticId],
           ticketCounts: { ...ticketCounts, [cosmeticId]: owned - 1 },
+        });
+        return true;
+      },
+
+      stockCosmetic: (cosmeticId, amount) => {
+        const { unlockedCosmeticIds, ticketCounts, shelfCounts } = get();
+        if (unlockedCosmeticIds.includes(cosmeticId)) return false;
+        const owned = ticketCounts[cosmeticId] ?? 0;
+        if (owned < amount) return false;
+        set({
+          ticketCounts: { ...ticketCounts, [cosmeticId]: owned - amount },
+          shelfCounts: { ...shelfCounts, [cosmeticId]: (shelfCounts[cosmeticId] ?? 0) + amount },
+        });
+        return true;
+      },
+
+      fulfillCosmeticShelfPurchase: (cosmeticId) => {
+        const { unlockedCosmeticIds, shelfCounts, ticketCounts } = get();
+        if (unlockedCosmeticIds.includes(cosmeticId)) return false;
+        const onShelf = shelfCounts[cosmeticId] ?? 0;
+        if (onShelf <= 0) return false;
+        const strandedRemainder = onShelf - 1;
+        set({
+          unlockedCosmeticIds: [...unlockedCosmeticIds, cosmeticId],
+          shelfCounts: { ...shelfCounts, [cosmeticId]: 0 },
+          ticketCounts:
+            strandedRemainder > 0
+              ? { ...ticketCounts, [cosmeticId]: (ticketCounts[cosmeticId] ?? 0) + strandedRemainder }
+              : ticketCounts,
         });
         return true;
       },

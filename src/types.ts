@@ -470,7 +470,12 @@ export type ActivityKind =
   // Phase 15①: visiting the mayor's room (see ai.ts's executeVisitMayorRoom)
   // — warp-like (the room has its own dedicated coordinate space, see
   // useMayorRoomStore), same "stop and do this" shape as playing/napping.
-  | 'visiting';
+  | 'visiting'
+  // 経営要素①: a free bird checking 服屋's costume shelf for something new
+  // to buy (see ai.ts's pickCosmeticOffer/executeCosmeticShopTrip) — same
+  // shape as 'buyingGear', just for a cosmetic-only purchase instead of a
+  // stat-bearing one.
+  | 'buyingCostume';
 
 // A pursuit goal a bird's AI is actively working toward. A job is just a
 // mining/treasure pursuit restricted to a specific request's material and

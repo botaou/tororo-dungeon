@@ -200,6 +200,23 @@ export const TRAVELER_MAX_PURCHASE = 6;
 // chance of checking the general shop's shelf for something it can afford.
 export const GEAR_SHOP_CHECK_CHANCE = 0.01;
 
+// Same idea as GEAR_SHOP_CHECK_CHANCE, but for 服屋's costume shelf (see
+// ai.ts's pickCosmeticOffer/executeCosmeticShopTrip) — no "missing slot"
+// need drives this one (a costume is cosmetic, not stat-bearing), so it's
+// purely a discretionary "something new in stock" check, same low rate.
+export const COSTUME_SHOP_CHECK_CHANCE = 0.01;
+// Flat price for any costume bought off 服屋's shelf — costumes don't carry
+// their own buyPrice (data/cosmetics.ts's CosmeticItemDef deliberately
+// wasn't extended with one, to avoid touching that heavily-tuned file for a
+// pricing concern that's explicitly out of scope for now — see the
+// 経営要素① request's own "価格をプレイヤーが自由に設定する機能は…スコープ
+// 外"). Set to the same value as MYSTERY_GACHA_COST (below) as a "this is a
+// special item" price reference point — kept as its own literal (not a
+// reference to MYSTERY_GACHA_COST, which is declared later in this file and
+// would be a temporal-dead-zone error to read from here) so it can be tuned
+// independently later.
+export const COSTUME_SHOP_PRICE = 150;
+
 // The feed shop's NPC supplier: each tick, per commodity item below its
 // target shelf quantity, this chance of topping it back up to the target
 // (at the item's restockCost per unit, straight out of the treasury).
