@@ -8,6 +8,7 @@ import {
   LeisureSpotInstance,
   MerchantState,
   MiningNodeInstance,
+  ShopKind,
   TownBuildingInstance,
   TreasureNodeInstance,
 } from '../types';
@@ -278,6 +279,13 @@ interface TownMapProps {
   // straight to the dungeon screen (same effect as TownScreen's own tab
   // switcher) — purely a convenience shortcut, not a new game mechanic.
   onDungeonGatePress: () => void;
+  // UX改善(③): per-shop-kind "does it currently have anything to offer"
+  // flag (see TownScreen's own comment on how each shop kind's notion of
+  // "has stock" differs) — BuildingSprite shows a small 営業中/品切れ中 badge
+  // off of this for any building whose BuildingOption has a shopKind.
+  // Optional/undefined entries (amenities, or if omitted entirely) simply
+  // render no badge at all rather than a false "empty" one.
+  shopHasStock?: Partial<Record<ShopKind, boolean>>;
 }
 
 // Grid-space nudges for two fixed presences that used to be positioned with
@@ -331,6 +339,7 @@ export function TownMap({
   onMapTap,
   previewBuilding,
   onDungeonGatePress,
+  shopHasStock,
 }: TownMapProps) {
   // Its own (bigger — see TOWN_ISO_TILE's bug-fix comment above) canvas,
   // not WORLD_CANVAS_WIDTH/HEIGHT — DungeonMap keeps using those.
@@ -359,7 +368,15 @@ export function TownMap({
       gx: b.x,
       gy: b.y,
       render: (pos, zIndex) => (
-        <BuildingSprite key={b.id} instance={b} x={pos.x} y={pos.y} zIndex={zIndex} onPress={() => onBuildingPress(b.id)} />
+        <BuildingSprite
+          key={b.id}
+          instance={b}
+          x={pos.x}
+          y={pos.y}
+          zIndex={zIndex}
+          onPress={() => onBuildingPress(b.id)}
+          shopHasStock={shopHasStock}
+        />
       ),
     });
   });
@@ -871,12 +888,14 @@ function BuildingSprite({
   y,
   zIndex,
   onPress,
+  shopHasStock,
 }: {
   instance: TownBuildingInstance;
   x: number;
   y: number;
   zIndex?: number;
   onPress: () => void;
+  shopHasStock?: Partial<Record<ShopKind, boolean>>;
 }) {
   const option = getBuildingOption(instance.constructedBuildingId);
   // 'park'/'bathhouse' (Phase 11) and every shop kind have real art (see
@@ -886,6 +905,22 @@ function BuildingSprite({
   const amenityImage = option ? AMENITY_IMAGES[option.id] : undefined;
   const buildingImage = shopImage ?? amenityImage;
   const label = option?.name;
+  // UX改善(③): only ever set for shop-kind buildings — undefined for
+  // amenities (garden/park/bathhouse), which renders no badge at all rather
+  // than a misleading "品切れ中" on something that was never a shop.
+  const hasStock = option?.shopKind ? shopHasStock?.[option.shopKind] : undefined;
+  const stockBadge = option?.shopKind !== undefined && hasStock !== undefined && (
+    <View
+      pointerEvents="none"
+      style={[
+        styles.stockBadge,
+        hasStock ? styles.stockBadgeOpen : styles.stockBadgeEmpty,
+        { left: x - 34, top: y - (buildingImage ? PLOT_BUILT_SIZE / 2 : 18) - 18, zIndex: (zIndex ?? 0) + 1 },
+      ]}
+    >
+      <Text style={styles.stockBadgeText}>{hasStock ? '🛍️ 営業中' : '😴 品切れ'}</Text>
+    </View>
+  );
 
   if (buildingImage) {
     // Real building art — a bigger, bottom-anchored (no card background)
@@ -910,6 +945,7 @@ function BuildingSprite({
             {label}
           </Text>
         )}
+        {stockBadge}
       </>
     );
   }
@@ -919,6 +955,7 @@ function BuildingSprite({
       <AnimatedPressable style={[styles.plot, styles.plotOpen, { left: x - 18, top: y - 18, zIndex }]} onPress={onPress}>
         <Text style={styles.plotBuildingIcon}>{option?.emoji ?? '·'}</Text>
       </AnimatedPressable>
+      {stockBadge}
       {/* The box itself clips at 36x36 (overflow: hidden), so the label is
           a separate sibling positioned just below it rather than a child —
           otherwise it'd get cut off before ever becoming visible. */}
@@ -1586,6 +1623,21 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     paddingHorizontal: 2,
   },
+  // UX改善(③): a small "営業中/品切れ中" sign floating above a shop
+  // building's roof — a quick, glanceable preview of whether it currently
+  // has anything to offer, without opening it (see BuildingSprite's own
+  // stockBadge/shopHasStock comment).
+  stockBadge: {
+    position: 'absolute',
+    width: 68,
+    paddingVertical: 2,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+  },
+  stockBadgeOpen: { backgroundColor: 'rgba(107,189,110,0.92)', borderColor: theme.green },
+  stockBadgeEmpty: { backgroundColor: 'rgba(176,160,140,0.85)', borderColor: theme.textMuted },
+  stockBadgeText: { fontSize: 8, fontWeight: '800', color: '#fff' },
   // zIndex: 1 keeps every sprite using this style (birds, the shopkeeper,
   // encounter markers, leisure spots) above ordinary field content but
   // below plots/the town hall (zIndex: 2 — see `town`'s comment) — birds no

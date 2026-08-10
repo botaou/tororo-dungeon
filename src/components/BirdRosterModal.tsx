@@ -37,28 +37,48 @@ interface Props {
   // Modals visible at once has been a real dead-taps bug in this app
   // before, see the README's own bugfix notes).
   onGiftBird: (defId: string) => void;
+  // UX改善: tapping a bird's own sprite (or the "ステータスを見る" shortcut
+  // from its house — see HouseInventoryModal) used to only ever open this
+  // same full roster, leaving the player to scroll/find that one bird among
+  // everyone else. When set, this reuses the exact same per-bird card
+  // (nothing duplicated) but shows only that one CHARACTERS entry — a
+  // "個別ステータス画面" without a second, near-identical component to
+  // maintain. null/undefined (the default) keeps the original full list.
+  focusDefId?: string | null;
+  // Lets the single-bird view link back to the full roster without closing
+  // and reopening the modal. Only rendered/needed while focusDefId is set.
+  onShowAll?: () => void;
 }
 
-export function BirdRosterModal({ visible, onClose, birds, onSetCosmetic, onGiftBird }: Props) {
+export function BirdRosterModal({ visible, onClose, birds, onSetCosmetic, onGiftBird, focusDefId, onShowAll }: Props) {
   const unlockedCosmeticIds = useCosmeticStore((s) => s.unlockedCosmeticIds);
   // Only ever offers already-unlocked costumes for wearing — the rest need
   // to be found/dropped/crafted then gifted first (see
   // CostumeCollectionModal, useCosmeticStore).
   const wearableCosmetics = COSMETIC_ITEMS.filter((c) => unlockedCosmeticIds.includes(c.id));
   const lockedCount = COSMETIC_ITEMS.length - wearableCosmetics.length;
+  const displayCharacters = focusDefId ? CHARACTERS.filter((c) => c.id === focusDefId) : CHARACTERS;
+  const focusedBird = focusDefId ? birds.find((b) => b.defId === focusDefId) : null;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.overlay}>
         <View style={styles.sheet}>
           <View style={styles.header}>
-            <Text style={styles.title}>🐦 鳥たちのようす</Text>
-            <AnimatedPressable onPress={onClose} style={styles.closeButton}>
-              <Text style={styles.closeButtonText}>閉じる</Text>
-            </AnimatedPressable>
+            <Text style={styles.title}>{focusedBird ? `🐦 ${focusedBird.name}のようす` : '🐦 鳥たちのようす'}</Text>
+            <View style={styles.headerButtons}>
+              {focusDefId && onShowAll && (
+                <AnimatedPressable onPress={onShowAll} style={styles.showAllButton}>
+                  <Text style={styles.showAllButtonText}>👀 みんなを見る</Text>
+                </AnimatedPressable>
+              )}
+              <AnimatedPressable onPress={onClose} style={styles.closeButton}>
+                <Text style={styles.closeButtonText}>閉じる</Text>
+              </AnimatedPressable>
+            </View>
           </View>
           <ScrollView style={styles.list}>
-            {CHARACTERS.map((c) => {
+            {displayCharacters.map((c) => {
               const bird = birds.find((b) => b.defId === c.id);
               if (!bird) return null;
               const owned = (Object.keys(bird.inventory) as MaterialId[]).filter((k) => bird.inventory[k] > 0);
@@ -243,7 +263,17 @@ const styles = StyleSheet.create({
     borderColor: theme.cardBorder,
   },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  title: { fontSize: 18, fontWeight: '800', color: theme.gold },
+  title: { fontSize: 18, fontWeight: '800', color: theme.gold, flexShrink: 1, marginRight: 8 },
+  headerButtons: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  showAllButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: theme.cardAlt,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    borderColor: theme.gold,
+  },
+  showAllButtonText: { color: theme.gold, fontWeight: '700', fontSize: 12 },
   closeButton: {
     paddingHorizontal: 12,
     paddingVertical: 6,

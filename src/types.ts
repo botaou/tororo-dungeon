@@ -348,6 +348,10 @@ export interface PlayerState {
   // feed shop's commodity staples from the NPC supplier. Only goes up,
   // tracked separately so a future ledger can show costs, not just income.
   expenseFeedRestock: number;
+  // 怪しいアイテム屋のガチャの「天井」カウンター — rarity !== 'rare' の抽選
+  // が連続した回数(see config.ts's MYSTERY_PITY_THRESHOLD)。rareが出るたび
+  // 0にリセットされる。
+  mysteryPityCount: number;
 }
 
 // ---- World entities (persistent, ephemeral session state) ----

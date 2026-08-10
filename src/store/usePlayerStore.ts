@@ -6,6 +6,7 @@ import { ItemId, MaterialId, PlayerState, ShopKind } from '../types';
 import {
   MERCHANT_RARE_CHANCE,
   MYSTERY_GACHA_COST,
+  MYSTERY_PITY_THRESHOLD,
   MYSTERY_STOCKED_DRAW_CHANCE,
   STARTING_GOLD,
   STARTING_MATERIALS,
@@ -13,7 +14,7 @@ import {
 import { CRAFTING_RECIPES } from '../data/recipes';
 import { COSTUME_RECIPES } from '../data/costumeRecipes';
 import { MATERIAL_SELL_PRICE } from '../data/marketPrices';
-import { MERCHANT_COMMON_ITEM_IDS, MERCHANT_RARE_ITEM_IDS } from '../data/items';
+import { ITEM_DEF_MAP, ITEM_DEFS, MERCHANT_COMMON_ITEM_IDS, MERCHANT_RARE_ITEM_IDS } from '../data/items';
 import { useRecipeStore } from './useRecipeStore';
 import { useCosmeticStore } from './useCosmeticStore';
 
@@ -80,12 +81,24 @@ interface PlayerActions {
   // (via the same StockingPanel every other shop uses), each draw has a
   // MYSTERY_STOCKED_DRAW_CHANCE chance of pulling from that shelf instead
   // (consuming 1 unit), otherwise it falls back to the original baseline
-  // pool unchanged — an empty shelf reproduces the exact old behavior.
+  // pool unchanged — an empty shelf reproduces the exact old behavior. On
+  // top of that, a pity counter (mysteryPityCount, see config.ts's
+  // MYSTERY_PITY_THRESHOLD) guarantees a rare-tier item once too many
+  // non-rare draws happen in a row — UX follow-up after real feedback that
+  // the shelf mechanic alone didn't make individual draws feel exciting.
   // Returns the drawn item's id, or null if the player can't afford it.
   drawMysteryItem: () => ItemId | null;
 }
 
 type PlayerStore = PlayerState & PlayerActions;
+
+// The pity mechanic's guaranteed-rare pool — narrower than
+// MERCHANT_RARE_ITEM_IDS (which also includes 'uncommon'): only items whose
+// own rarity is literally 'rare', so a pity-triggered draw always reads as
+// the same tier of "当たり" the UI celebrates most.
+const MYSTERY_RARE_TIER_ITEM_IDS: ItemId[] = ITEM_DEFS.filter(
+  (d) => d.itemType === 'craft' && d.category !== 'food' && d.rarity === 'rare'
+).map((d) => d.id);
 
 const initialState: PlayerState = {
   gold: STARTING_GOLD,
@@ -98,6 +111,7 @@ const initialState: PlayerState = {
   tollFromShop: 0,
   tollFromMerchant: 0,
   expenseFeedRestock: 0,
+  mysteryPityCount: 0,
 };
 
 export const usePlayerStore = create<PlayerStore>()(
@@ -233,7 +247,7 @@ export const usePlayerStore = create<PlayerStore>()(
       },
 
       drawMysteryItem: () => {
-        const { gold, items, shopStock } = get();
+        const { gold, items, shopStock, mysteryPityCount } = get();
         if (gold < MYSTERY_GACHA_COST) return null;
 
         const shelf = shopStock.mystery;
@@ -241,6 +255,7 @@ export const usePlayerStore = create<PlayerStore>()(
         const drawFromShelf = stockedIds.length > 0 && Math.random() < MYSTERY_STOCKED_DRAW_CHANCE;
 
         let itemId: ItemId;
+        let drewFromShelf = drawFromShelf;
         if (drawFromShelf) {
           itemId = stockedIds[Math.floor(Math.random() * stockedIds.length)];
         } else {
@@ -248,10 +263,29 @@ export const usePlayerStore = create<PlayerStore>()(
           itemId = pool[Math.floor(Math.random() * pool.length)];
         }
 
+        // Pity: this draw would be the (mysteryPityCount+1)-th consecutive
+        // non-'rare' pull — force-upgrade to a guaranteed rare-tier item
+        // instead, preferring one already on the mystery shelf so a
+        // player's own contribution still matters even on a pity trigger.
+        const wouldBeRare = ITEM_DEF_MAP[itemId].rarity === 'rare';
+        if (!wouldBeRare && mysteryPityCount + 1 >= MYSTERY_PITY_THRESHOLD) {
+          const stockedRareIds = stockedIds.filter((id) => ITEM_DEF_MAP[id].rarity === 'rare');
+          if (stockedRareIds.length > 0) {
+            itemId = stockedRareIds[Math.floor(Math.random() * stockedRareIds.length)];
+            drewFromShelf = true;
+          } else if (MYSTERY_RARE_TIER_ITEM_IDS.length > 0) {
+            itemId = MYSTERY_RARE_TIER_ITEM_IDS[Math.floor(Math.random() * MYSTERY_RARE_TIER_ITEM_IDS.length)];
+            drewFromShelf = false;
+          }
+        }
+
+        const isRare = ITEM_DEF_MAP[itemId].rarity === 'rare';
+
         set({
           gold: gold - MYSTERY_GACHA_COST,
           items: { ...items, [itemId]: (items[itemId] ?? 0) + 1 },
-          ...(drawFromShelf
+          mysteryPityCount: isRare ? 0 : mysteryPityCount + 1,
+          ...(drewFromShelf
             ? { shopStock: { ...shopStock, mystery: { ...shelf, [itemId]: (shelf[itemId] ?? 0) - 1 } } }
             : {}),
         });

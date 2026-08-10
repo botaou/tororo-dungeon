@@ -49,6 +49,13 @@ export function CostumeCollectionModal({ visible, onClose }: Props) {
   const ticketedIds = COSMETIC_ITEMS.filter((c) => (ticketCounts[c.id] ?? 0) > 0 && !unlockedCosmeticIds.includes(c.id));
   const lockedUnticketedCount = COSMETIC_ITEMS.length - unlockedCosmeticIds.length - ticketedIds.length;
   const craftableRecipes = COSTUME_RECIPES.filter((r) => unlockedRecipeIds.includes(r.id));
+  // UX改善: once every owned ticket for a costume has been moved to the
+  // shelf, ticketCounts[id] hits 0 and that costume's whole card disappears
+  // from ticketedIds above — the player loses any way to see "how many are
+  // currently on the shelf" for it. This list is independent of ticket
+  // count (keyed off shelfCounts directly) so a fully-shelved costume stays
+  // visible until a bird actually buys it.
+  const shelvedIds = COSMETIC_ITEMS.filter((c) => (shelfCounts[c.id] ?? 0) > 0);
 
   const adjustShelfQty = (cosmeticId: string, ticketQty: number, delta: number) => {
     setShelfQtyOverrides((prev) => {
@@ -69,6 +76,23 @@ export function CostumeCollectionModal({ visible, onClose }: Props) {
             </AnimatedPressable>
           </View>
           <ScrollView style={styles.list}>
+            <Text style={styles.sectionTitle}>🏬 店に並んでいる品({shelvedIds.length})</Text>
+            {shelvedIds.length === 0 ? (
+              <Text style={styles.emptyText}>まだ何も並べていません。下のチケットから「店に並べる」を押してみましょう。</Text>
+            ) : (
+              <View style={styles.grid}>
+                {shelvedIds.map((c) => (
+                  <View style={styles.shelfGridItem} key={c.id}>
+                    <Text style={styles.itemIcon}>👗</Text>
+                    <Text style={styles.itemLabel} numberOfLines={1}>
+                      {c.name}
+                    </Text>
+                    <Text style={styles.itemValue}>×{shelfCounts[c.id]}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
             <Text style={styles.sectionTitle}>所持中のチケット({ticketedIds.length})</Text>
             {ticketedIds.length === 0 ? (
               <Text style={styles.emptyText}>まだありません。採取・討伐・加工で見つけましょう。</Text>
@@ -225,6 +249,18 @@ const styles = StyleSheet.create({
   list: { maxHeight: 460 },
   sectionTitle: { fontSize: 13, fontWeight: '800', color: theme.textPrimary, marginTop: 14, marginBottom: 6 },
   emptyText: { fontSize: 12, color: theme.textMuted, paddingVertical: 4 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  shelfGridItem: {
+    width: '30%',
+    backgroundColor: theme.cardAlt,
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    gap: 2,
+  },
+  itemIcon: { fontSize: 20 },
+  itemLabel: { fontSize: 10, color: theme.textSecondary },
+  itemValue: { fontSize: 14, fontWeight: '800', color: theme.textPrimary },
   footerHint: { fontSize: 11, color: theme.textMuted, marginTop: 10, marginBottom: 4 },
   ticketCard: {
     backgroundColor: theme.cardAlt,

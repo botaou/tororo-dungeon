@@ -19,6 +19,13 @@ interface Props {
   onWithdrawFood: (defId: string, itemId: ItemId, amount: number) => boolean;
   onFavoriteTreasure: (defId: string, itemId: ItemId) => boolean;
   onUnfavoriteTreasure: (defId: string, itemId: ItemId) => boolean;
+  // UX改善: this house's own bird only ever had food/treasure/spare-gear
+  // management here — no path to its full stats (HP/atk/mood/EXP/skills,
+  // see BirdRosterModal). Rather than duplicate that card's rendering here
+  // too, this just hands off to it (closing this modal first, same pattern
+  // as TownScreen's onGiftBird — two native Modals open at once is a known
+  // dead-taps bug in this app).
+  onViewStatus: (defId: string) => void;
 }
 
 const EQUIP_SLOTS: EquipSlot[] = ['weapon', 'head', 'body', 'hand', 'foot'];
@@ -38,6 +45,7 @@ export function HouseInventoryModal({
   onWithdrawFood,
   onFavoriteTreasure,
   onUnfavoriteTreasure,
+  onViewStatus,
 }: Props) {
   if (!bird) return null;
   const def = getCharacterDef(bird.defId);
@@ -72,9 +80,14 @@ export function HouseInventoryModal({
             <Text style={styles.title}>
               {def.emoji} {bird.name}の家
             </Text>
-            <AnimatedPressable onPress={onClose} style={styles.closeButton}>
-              <Text style={styles.closeButtonText}>閉じる</Text>
-            </AnimatedPressable>
+            <View style={styles.headerButtons}>
+              <AnimatedPressable onPress={() => onViewStatus(bird.defId)} style={styles.statusButton}>
+                <Text style={styles.statusButtonText}>📊 ステータス</Text>
+              </AnimatedPressable>
+              <AnimatedPressable onPress={onClose} style={styles.closeButton}>
+                <Text style={styles.closeButtonText}>閉じる</Text>
+              </AnimatedPressable>
+            </View>
           </View>
 
           <ScrollView style={styles.scroll}>
@@ -214,7 +227,17 @@ const styles = StyleSheet.create({
     borderColor: theme.cardBorder,
   },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  title: { fontSize: 18, fontWeight: '800', color: theme.textPrimary },
+  title: { fontSize: 18, fontWeight: '800', color: theme.textPrimary, flexShrink: 1, marginRight: 8 },
+  headerButtons: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  statusButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: theme.cardAlt,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    borderColor: theme.gold,
+  },
+  statusButtonText: { color: theme.gold, fontWeight: '700', fontSize: 12 },
   closeButton: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: theme.cardAlt, borderRadius: 999 },
   closeButtonText: { color: theme.blue, fontWeight: '700', fontSize: 13 },
   scroll: { maxHeight: 460 },

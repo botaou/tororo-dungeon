@@ -542,6 +542,20 @@ export const MYSTERY_GACHA_COST = 150;
 // real effect without making the draw fully deterministic or requiring the
 // shelf to be stocked at all (an empty shelf behaves exactly as before).
 export const MYSTERY_STOCKED_DRAW_CHANCE = 0.5;
+// UX改善: real feedback was that the shelf-priority mechanic above didn't
+// actually make drawing feel more exciting — it just changed *which* item
+// came out, with no change to the moment-to-moment feel of pulling. Added a
+// classic gacha "pity" counter on top of it: usePlayerStore.mysteryPityCount
+// tracks consecutive draws that did NOT land an ItemDef.rarity === 'rare'
+// result (see data/items.ts's Rarity type); once it would reach this
+// threshold, that draw is force-upgraded to a guaranteed rare-tier item
+// (preferring a rare-tier item already on the mystery shelf if one's
+// stocked, otherwise MERCHANT_RARE_ITEM_IDS's own rare-tier subset) and the
+// counter resets to 0. A true rare landing "naturally" (bad luck protection
+// never even needed to kick in) also resets it. This guarantees the
+// occasional "当たった!" moment within a bounded number of draws while still
+// keeping every individual draw's outcome genuinely random.
+export const MYSTERY_PITY_THRESHOLD = 10;
 
 export const STARTING_GOLD = 300;
 export const STARTING_MATERIALS = {

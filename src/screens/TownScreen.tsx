@@ -7,6 +7,8 @@ import { IsometricPrototypeScreen } from '../prototypes/isometric/IsometricProto
 
 import { usePlayerStore } from '../store/usePlayerStore';
 import { useWorldStore } from '../store/useWorldStore';
+import { useCosmeticStore } from '../store/useCosmeticStore';
+import { useMayorRoomStore } from '../store/useMayorRoomStore';
 import { isBuildingPlacementBlocked, useTownStore } from '../store/useTownStore';
 import { getTownBuildingCap } from '../data/townGrid';
 import { getBuildingOption } from '../data/buildingOptions';
@@ -55,11 +57,22 @@ import { cuteShadow, theme } from '../theme';
 // object's identity, but keeping this stable too removes any doubt.
 const TOWN_FOCUS = { x: TOWN_X, y: TOWN_Y };
 
+// UX改善: building placement/relocation used to only support "tap
+// somewhere, that's the new spot" — no way to nudge a spot that's *almost*
+// right. A grid-space step of 0.01 (TOWN_BUILDING_CLEARANCE is 0.06, so this
+// is roughly 1/6 of the minimum gap between buildings) gives fine enough
+// control to slide a preview out from under a blocked overlap without
+// forcing a fresh, hard-to-land tap.
+const PLACEMENT_NUDGE_STEP = 0.01;
+
 export function TownScreen() {
   const gold = usePlayerStore((s) => s.gold);
   const materials = usePlayerStore((s) => s.materials);
   const items = usePlayerStore((s) => s.items);
+  const shopStock = usePlayerStore((s) => s.shopStock);
   const sellMaterialToMerchant = usePlayerStore((s) => s.sellMaterialToMerchant);
+  const cosmeticShelfCounts = useCosmeticStore((s) => s.shelfCounts);
+  const furnitureCraftedStock = useMayorRoomStore((s) => s.craftedStock);
   const world = useWorldStore((s) => s.world);
   const initWorld = useWorldStore((s) => s.initWorld);
   const postRequest = useWorldStore((s) => s.postRequest);
@@ -86,6 +99,11 @@ export function TownScreen() {
   const [openShop, setOpenShop] = useState<ShopKind | null>(null);
   const [inventoryVisible, setInventoryVisible] = useState(false);
   const [rosterVisible, setRosterVisible] = useState(false);
+  // UX改善: null shows the full roster (unchanged default); a defId shows
+  // just that one bird's card (see BirdRosterModal's own focusDefId prop) —
+  // set when a bird's own map sprite is tapped directly, or via
+  // HouseInventoryModal's "📊 ステータスを見る" shortcut.
+  const [rosterFocusDefId, setRosterFocusDefId] = useState<string | null>(null);
   const [craftingVisible, setCraftingVisible] = useState(false);
   const [costumeCollectionVisible, setCostumeCollectionVisible] = useState(false);
   const [merchantVisible, setMerchantVisible] = useState(false);
@@ -203,6 +221,26 @@ export function TownScreen() {
   // render-time filter.
   const townBirds = activeBirds.filter((b) => b.location === 'town');
   const dungeonBirds = activeBirds.filter((b) => b.location === 'dungeon');
+
+  // UX改善(③): a small "営業中/品切れ中" badge over each shop building — a
+  // quick, at-a-glance preview of whether it's currently worth a visit,
+  // without having to open it. Each shop kind's own notion of "has stock"
+  // differs (see the 3 separate systems documented in item 80/81/82's
+  // README entries), so this normalizes them all into one boolean map:
+  // the 6 category shops + clothing + mystery read their own shelf/
+  // shopStock, and furniture reads craftedStock (unplaced-but-ready
+  // pieces) as its closest equivalent, since it has no shelf of its own.
+  const shopHasStock: Partial<Record<ShopKind, boolean>> = {
+    general: Object.values(shopStock.general).some((n) => (n ?? 0) > 0),
+    feed: Object.values(shopStock.feed).some((n) => (n ?? 0) > 0),
+    weapon: Object.values(shopStock.weapon).some((n) => (n ?? 0) > 0),
+    armor: Object.values(shopStock.armor).some((n) => (n ?? 0) > 0),
+    restaurant: Object.values(shopStock.restaurant).some((n) => (n ?? 0) > 0),
+    toy: Object.values(shopStock.toy).some((n) => (n ?? 0) > 0),
+    clothing: Object.values(cosmeticShelfCounts).some((n) => (n ?? 0) > 0),
+    mystery: Object.values(shopStock.mystery).some((n) => (n ?? 0) > 0),
+    furniture: Object.values(furnitureCraftedStock).some((n) => (n ?? 0) > 0),
+  };
 
   // While relocating a building (see movingBuildingId), hide it from the
   // map entirely — the ghost preview (see previewBuilding below) already
@@ -323,6 +361,16 @@ export function TownScreen() {
     setPreviewPosition({ x, y });
   };
 
+  // Fine-adjust an already-dropped preview by a small fixed step, instead
+  // of needing to land a fresh tap exactly where the last one fell short.
+  // Clamped to the canvas's own 0..1 normalized range — isBuildingPlacementBlocked
+  // (already checked by the confirm button's own disabled state) is what
+  // actually decides whether a spot is usable, this just keeps the preview
+  // from drifting off the map entirely.
+  const handleNudgePreview = (dx: number, dy: number) => {
+    setPreviewPosition((prev) => (prev ? { x: Math.min(1, Math.max(0, prev.x + dx)), y: Math.min(1, Math.max(0, prev.y + dy)) } : prev));
+  };
+
   // The explicit "ここに建てる"/"ここに移動する" confirm — only this actually
   // spends gold/materials and creates the building (constructBuilding) or,
   // while relocating (movingBuildingId), moves the existing one instead
@@ -372,6 +420,15 @@ export function TownScreen() {
     } else if (placingBuildingOptionId || movingBuildingId) {
       handleBuildMapTap(x, y);
     }
+  };
+
+  // UX改善: tapping a bird's own sprite now jumps straight to that one
+  // bird's individual status card (see BirdRosterModal's focusDefId) rather
+  // than opening the same full roster every time — WorldMap's onBirdPress
+  // already passed the tapped bird's defId, it just wasn't being used.
+  const handleBirdPress = (defId: string) => {
+    setRosterFocusDefId(defId);
+    setRosterVisible(true);
   };
 
   const handleHousePress = (house: HouseState) => {
@@ -435,7 +492,13 @@ export function TownScreen() {
             <Text style={styles.goldIcon}>🪙</Text>
             <Text style={styles.goldValue}>{gold}</Text>
           </View>
-          <AnimatedPressable style={styles.inventoryButton} onPress={() => setRosterVisible(true)}>
+          <AnimatedPressable
+            style={styles.inventoryButton}
+            onPress={() => {
+              setRosterFocusDefId(null);
+              setRosterVisible(true);
+            }}
+          >
             <Text style={styles.inventoryButtonText}>🐦</Text>
           </AnimatedPressable>
           <AnimatedPressable style={styles.inventoryButton} onPress={() => setCraftingVisible(true)}>
@@ -488,33 +551,54 @@ export function TownScreen() {
           const buildingName = activeOptionId ? getBuildingOption(activeOptionId)?.name ?? '建物' : '建物';
           const verb = movingBuildingId ? '移動' : '建設';
           return (
-            <View style={styles.placementBanner}>
+            <View style={[styles.placementBanner, styles.placementBannerColumn]}>
               <Text style={styles.placementBannerText}>
                 {previewPosition
-                  ? `${buildingName}をここに${verb}しますか?タップし直すと場所を変更できます`
+                  ? `${buildingName}をここに${verb}しますか?タップし直すか、矢印で微調整できます`
                   : `${buildingName}の${verb}先をタップしてください`}
               </Text>
-              <View style={styles.placementButtonRow}>
-                {previewPosition &&
-                  (() => {
-                    const blocked = isBuildingPlacementBlocked(
-                      previewPosition.x,
-                      previewPosition.y,
-                      movingBuildingId ?? undefined
-                    );
-                    return (
-                      <AnimatedPressable
-                        style={[styles.placementConfirmButton, blocked && styles.placementConfirmButtonDisabled]}
-                        onPress={blocked ? undefined : handleConfirmBuild}
-                        disabled={blocked}
-                      >
-                        <Text style={styles.placementConfirmButtonText}>ここに{verb}する</Text>
+              <View style={styles.placementControlsRow}>
+                {previewPosition && (
+                  <View style={styles.nudgePad}>
+                    <AnimatedPressable style={styles.nudgeButton} onPress={() => handleNudgePreview(0, -PLACEMENT_NUDGE_STEP)}>
+                      <Text style={styles.nudgeButtonText}>↑</Text>
+                    </AnimatedPressable>
+                    <View style={styles.nudgePadMidRow}>
+                      <AnimatedPressable style={styles.nudgeButton} onPress={() => handleNudgePreview(-PLACEMENT_NUDGE_STEP, 0)}>
+                        <Text style={styles.nudgeButtonText}>←</Text>
                       </AnimatedPressable>
-                    );
-                  })()}
-                <AnimatedPressable style={styles.placementCancelButton} onPress={handleCancelBuildPlacement}>
-                  <Text style={styles.placementCancelButtonText}>✕ やめる</Text>
-                </AnimatedPressable>
+                      <View style={styles.nudgeButtonSpacer} />
+                      <AnimatedPressable style={styles.nudgeButton} onPress={() => handleNudgePreview(PLACEMENT_NUDGE_STEP, 0)}>
+                        <Text style={styles.nudgeButtonText}>→</Text>
+                      </AnimatedPressable>
+                    </View>
+                    <AnimatedPressable style={styles.nudgeButton} onPress={() => handleNudgePreview(0, PLACEMENT_NUDGE_STEP)}>
+                      <Text style={styles.nudgeButtonText}>↓</Text>
+                    </AnimatedPressable>
+                  </View>
+                )}
+                <View style={styles.placementButtonRow}>
+                  {previewPosition &&
+                    (() => {
+                      const blocked = isBuildingPlacementBlocked(
+                        previewPosition.x,
+                        previewPosition.y,
+                        movingBuildingId ?? undefined
+                      );
+                      return (
+                        <AnimatedPressable
+                          style={[styles.placementConfirmButton, blocked && styles.placementConfirmButtonDisabled]}
+                          onPress={blocked ? undefined : handleConfirmBuild}
+                          disabled={blocked}
+                        >
+                          <Text style={styles.placementConfirmButtonText}>ここに{verb}する</Text>
+                        </AnimatedPressable>
+                      );
+                    })()}
+                  <AnimatedPressable style={styles.placementCancelButton} onPress={handleCancelBuildPlacement}>
+                    <Text style={styles.placementCancelButtonText}>✕ やめる</Text>
+                  </AnimatedPressable>
+                </View>
               </View>
             </View>
           );
@@ -563,8 +647,9 @@ export function TownScreen() {
                 houses={houses}
                 townLevel={townLevel}
                 merchant={world.merchant}
-                onBirdPress={() => setRosterVisible(true)}
+                onBirdPress={handleBirdPress}
                 onBuildingPress={handleBuildingPress}
+                shopHasStock={shopHasStock}
                 onMerchantPress={() => setMerchantVisible(true)}
                 onTownHallPress={() => setTownStatusVisible(true)}
                 onHousePress={handleHousePress}
@@ -593,7 +678,7 @@ export function TownScreen() {
                 leisureSpots={world.leisureSpots}
                 birds={dungeonBirds}
                 dormantDefIds={dormantDefIds}
-                onBirdPress={() => setRosterVisible(true)}
+                onBirdPress={handleBirdPress}
                 onTownGatePress={() => switchScreen('town')}
               />
             )}
@@ -647,6 +732,8 @@ export function TownScreen() {
           setRosterVisible(false);
           setGiftTarget(defId);
         }}
+        focusDefId={rosterFocusDefId}
+        onShowAll={() => setRosterFocusDefId(null)}
       />
 
       <TownStatusModal
@@ -676,6 +763,13 @@ export function TownScreen() {
         onWithdrawFood={withdrawFoodFromHouse}
         onFavoriteTreasure={favoriteTreasure}
         onUnfavoriteTreasure={unfavoriteTreasure}
+        onViewStatus={(defId) => {
+          // Same close-before-open pattern as onGiftBird above — avoids
+          // stacking two native Modals at once.
+          setHouseTarget(null);
+          setRosterFocusDefId(defId);
+          setRosterVisible(true);
+        }}
       />
 
       <MerchantModal
@@ -796,6 +890,25 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   placementBannerText: { flex: 1, fontSize: 12, fontWeight: '700', color: theme.textPrimary, marginRight: 8 },
+  // The building-placement banner (unlike the plain house-placement one)
+  // needs a second row underneath its text for the nudge pad + confirm/
+  // cancel buttons — a column layout instead of placementBanner's own row.
+  placementBannerColumn: { flexDirection: 'column', alignItems: 'stretch' },
+  placementControlsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 },
+  nudgePad: { alignItems: 'center', gap: 4 },
+  nudgePadMidRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  nudgeButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    backgroundColor: theme.card,
+    borderWidth: 1.5,
+    borderColor: theme.cardBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  nudgeButtonText: { fontSize: 14, fontWeight: '800', color: theme.textPrimary },
+  nudgeButtonSpacer: { width: 30, height: 30 },
   placementButtonRow: { flexDirection: 'row', gap: 8 },
   placementConfirmButton: { backgroundColor: theme.gold, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 6 },
   placementConfirmButtonDisabled: { backgroundColor: theme.disabled },
