@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { TownScreen } from './src/screens/TownScreen';
 import { CharacterSelectScreen } from './src/screens/CharacterSelectScreen';
+import { TitleScreen } from './src/screens/TitleScreen';
 import { WelcomeBackModal } from './src/components/WelcomeBackModal';
 import { usePlayerStore } from './src/store/usePlayerStore';
 import { useBirdEconomyStore } from './src/store/useBirdEconomyStore';
@@ -61,6 +62,14 @@ export default function App() {
   const wallets = useBirdEconomyStore((s) => s.wallets);
   const hasStarter = Object.values(wallets).some((w) => w.isRecruited);
 
+  // TitleScreen (item 84) — shown once per cold start, ahead of TownScreen,
+  // but only for saves that already have a starter (a first-ever launch
+  // skips straight to CharacterSelectScreen instead, per the request's own
+  // "セーブデータが無い場合は…そのまま進む"). Plain useState rather than
+  // anything persisted — every fresh app launch should show it again, not
+  // just the very first one.
+  const [titleDismissed, setTitleDismissed] = useState(false);
+
   // Runs the offline-catchup calculation exactly once, after every
   // persisted store has hydrated, and before TownScreen/CharacterSelectScreen
   // ever mount — React fires child effects before parent effects, so this
@@ -88,8 +97,16 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      {hasStarter ? <TownScreen /> : <CharacterSelectScreen />}
-      <WelcomeBackModal report={offlineReport} onClose={() => setOfflineReport(null)} />
+      {!hasStarter ? (
+        <CharacterSelectScreen />
+      ) : !titleDismissed ? (
+        <TitleScreen onContinue={() => setTitleDismissed(true)} />
+      ) : (
+        <>
+          <TownScreen />
+          <WelcomeBackModal report={offlineReport} onClose={() => setOfflineReport(null)} />
+        </>
+      )}
       <StatusBar style="dark" />
     </SafeAreaProvider>
   );

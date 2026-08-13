@@ -35,6 +35,7 @@ import { ConstructionModal } from '../components/ConstructionModal';
 import { RecipeUnlockModal } from '../components/RecipeUnlockModal';
 import { SkillUnlockModal } from '../components/SkillUnlockModal';
 import { TownStatusModal } from '../components/TownStatusModal';
+import { NewsModal } from '../components/NewsModal';
 import { MayorRoomModal } from '../components/MayorRoomModal';
 import { FurnitureShopModal } from '../components/FurnitureShopModal';
 import { MysteryShopModal } from '../components/MysteryShopModal';
@@ -108,6 +109,7 @@ export function TownScreen() {
   const [costumeCollectionVisible, setCostumeCollectionVisible] = useState(false);
   const [merchantVisible, setMerchantVisible] = useState(false);
   const [townStatusVisible, setTownStatusVisible] = useState(false);
+  const [newsVisible, setNewsVisible] = useState(false);
   const [mayorRoomVisible, setMayorRoomVisible] = useState(false);
   const [furnitureShopVisible, setFurnitureShopVisible] = useState(false);
   const [mysteryShopVisible, setMysteryShopVisible] = useState(false);
@@ -278,6 +280,7 @@ export function TownScreen() {
     mayorRoomVisible ||
     furnitureShopVisible ||
     mysteryShopVisible ||
+    newsVisible ||
     houseTarget !== null ||
     buildMenuVisible ||
     assignHouseTarget !== null ||
@@ -746,7 +749,13 @@ export function TownScreen() {
           setTownStatusVisible(false);
           setMayorRoomVisible(true);
         }}
+        onOpenNews={() => {
+          setTownStatusVisible(false);
+          setNewsVisible(true);
+        }}
       />
+
+      <NewsModal visible={newsVisible} onClose={() => setNewsVisible(false)} />
 
       <MayorRoomModal visible={mayorRoomVisible} onClose={() => setMayorRoomVisible(false)} />
 

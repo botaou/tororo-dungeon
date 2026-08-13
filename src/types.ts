@@ -724,6 +724,18 @@ export interface ActivityLogEntry {
   detail: string; // the actual displayed sentence
 }
 
+// トロロタイムズ(item 84) — one day's worth of ActivityLogEntry distilled
+// into a handful of newspaper-voice headline lines (see game/newsGenerator.ts
+// and store/useNewsStore.ts). Persisted (unlike ActivityLogEntry/WorldState),
+// so the archive survives app restarts.
+export interface NewsArticle {
+  id: string;
+  dateKey: string; // local calendar date this article covers, 'YYYY-MM-DD'
+  generatedAt: number; // epoch ms
+  headline: string;
+  lines: string[];
+}
+
 // One slot on the visiting merchant's shelf this visit — a fixed random
 // quantity decided when the merchant arrives, decremented as birds buy it.
 export interface MerchantLineupEntry {

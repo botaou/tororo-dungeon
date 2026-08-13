@@ -16,6 +16,9 @@ interface Props {
   // still what tapping the town hall opens first (unchanged), with a button
   // through to the room itself, rather than replacing this screen outright.
   onOpenMayorRoom: () => void;
+  // トロロタイムズ(item 84) — same "button through to another screen"
+  // pattern as onOpenMayorRoom above.
+  onOpenNews: () => void;
 }
 
 // Tapping the town hall opens this — shows the current tier plus, Phase
@@ -24,7 +27,7 @@ interface Props {
 // developmentPoints at all (see useTownStore's townLevel/data/townQuests.ts)
 // — developmentPoints is shown purely as a flavor/reputation-adjacent
 // readout of "how much this town has done," same idea as reputation.
-export function TownStatusModal({ visible, townLevel, townQuestIndex, developmentPoints, onClose, onOpenMayorRoom }: Props) {
+export function TownStatusModal({ visible, townLevel, townQuestIndex, developmentPoints, onClose, onOpenMayorRoom, onOpenNews }: Props) {
   const def = getTownLevelDef(townLevel);
   const activeQuest = TOWN_QUESTS[townQuestIndex] ?? null;
 
@@ -55,6 +58,10 @@ export function TownStatusModal({ visible, townLevel, townQuestIndex, developmen
 
           <AnimatedPressable style={styles.mayorRoomButton} onPress={onOpenMayorRoom}>
             <Text style={styles.mayorRoomButtonText}>🛋️ 町長室を見る</Text>
+          </AnimatedPressable>
+
+          <AnimatedPressable style={styles.newsButton} onPress={onOpenNews}>
+            <Text style={styles.newsButtonText}>📰 トロロタイムズを読む</Text>
           </AnimatedPressable>
 
           <AnimatedPressable style={styles.closeButton} onPress={onClose}>
@@ -106,6 +113,18 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
   },
   mayorRoomButtonText: { color: '#fff', fontWeight: '800', fontSize: 13 },
+  newsButton: {
+    marginTop: 10,
+    borderRadius: 999,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    alignItems: 'center',
+    backgroundColor: theme.cardAlt,
+    borderWidth: 1.5,
+    borderColor: theme.gold,
+    alignSelf: 'stretch',
+  },
+  newsButtonText: { color: theme.gold, fontWeight: '800', fontSize: 13 },
   closeButton: {
     marginTop: 16,
     borderRadius: 999,

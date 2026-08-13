@@ -557,6 +557,21 @@ export const MYSTERY_STOCKED_DRAW_CHANCE = 0.5;
 // keeping every individual draw's outcome genuinely random.
 export const MYSTERY_PITY_THRESHOLD = 10;
 
+// トロロタイムズ(item 84) — the on-screen activity log (ACTIVITY_LOG_MAX
+// above) is capped at just 10 entries for display, far too small a window
+// to build a whole day's newspaper "記事" from — most of a busy day's
+// events would already be pushed out before the day even ends. useNewsStore
+// keeps its own, much larger, uncapped-until-archived buffer instead (see
+// its own comment for how it collects everything ACTIVITY_LOG_MAX would
+// otherwise drop). This just bounds how large that buffer and the resulting
+// archive are allowed to grow, for a save file that keeps accumulating
+// indefinitely across many play sessions.
+export const NEWS_COLLECTED_ENTRIES_MAX = 500;
+export const NEWS_ARTICLE_ARCHIVE_MAX = 60; // ~2 months of daily articles
+// How many headline lines a single generated article shows at most — a
+// "いくつかピックアップ" digest, not a full replay of the day.
+export const NEWS_MAX_LINES_PER_ARTICLE = 6;
+
 export const STARTING_GOLD = 300;
 export const STARTING_MATERIALS = {
   wood: 0,
