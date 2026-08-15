@@ -2,8 +2,8 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { FurnitureInstance, ItemId, MaterialId, MayorRoomGiftEntry } from '../types';
-import { FURNITURE_CLEARANCE, FURNITURE_GIFT_LOG_MAX } from '../game/config';
+import { DisplayedGiftInstance, FurnitureInstance, ItemId, MaterialId, MayorRoomGiftEntry } from '../types';
+import { FURNITURE_CLEARANCE, MAYOR_ROOM_GIFT_PILE_MAX } from '../game/config';
 import { FURNITURE_DEF_MAP } from '../data/furniture';
 import { FURNITURE_RECIPES } from '../data/furnitureRecipes';
 import { usePlayerStore } from './usePlayerStore';
@@ -22,10 +22,21 @@ interface MayorRoomState {
   // instead of paying a cost directly, same two-step "craft, then place" flow
   // as the costume-ticket system (craft → ticket → gift to unlock).
   craftedStock: Partial<Record<string, number>>;
-  // A small rolling log of gifts recruited birds have left behind while
-  // visiting (see ai.ts's executeVisitMayorRoom) — flavor-only, capped so it
-  // never grows unbounded across a long-running save.
+  // Item 85: gifts recruited birds leave behind while visiting (see ai.ts's
+  // executeVisitMayorRoom) now sit here as an actionable "pile" — unlike the
+  // pre-item-85 version, entries are NOT silently dropped once a small
+  // display cap is hit (see MAYOR_ROOM_GIFT_PILE_MAX's own comment); each
+  // stays until the player resolves it via placeGiftFromPile or
+  // storeGiftToWarehouse below.
   gifts: MayorRoomGiftEntry[];
+  // Item 85: gifts the player chose to "飾る" — placed in the room the same
+  // way as `placed` furniture, just sourced from the ItemId namespace.
+  // Deliberately a separate map from `placed` rather than folding gifts
+  // into FurnitureInstance itself — a gift has no FurnitureDef/recipe/
+  // craftedStock entry backing it, it's just whatever ItemId a bird happened
+  // to be carrying, so giving it its own instance type keeps `placed`
+  // strictly "real furniture, always resolvable via FURNITURE_DEF_MAP".
+  displayedGifts: Record<string, DisplayedGiftInstance>;
 }
 
 interface MayorRoomActions {
@@ -38,16 +49,39 @@ interface MayorRoomActions {
   // request, this room is its own closed space, not part of the outdoor
   // town area at all. Consumes 1 unit from craftedStock rather than paying a
   // cost directly. Returns false if there's no crafted unit to place, or the
-  // spot is too close to another piece already placed here.
+  // spot is too close to another piece already placed here (furniture OR a
+  // displayed gift, see isRoomSpotBlocked).
   placeFurniture: (defId: string, x: number, y: number) => boolean;
   addGift: (itemId: ItemId, birdName: string) => void;
+  // Item 85: resolves one pile entry by "飾る" — moves it out of `gifts` and
+  // into `displayedGifts` at the given room position. Returns false (no
+  // state change) if the gift id isn't in the pile, or the spot is blocked.
+  placeGiftFromPile: (giftId: string, x: number, y: number) => boolean;
+  // Item 85: resolves one pile entry by "収納する" — removes it from `gifts`
+  // and adds 1 unit of its itemId to the town warehouse (usePlayerStore.items,
+  // via the existing addItems action — the same warehouse every shop's
+  // StockingPanel already draws from). Returns false if the gift id isn't
+  // in the pile.
+  storeGiftToWarehouse: (giftId: string) => boolean;
 }
 
 let furnitureIdCounter = 0;
+let giftInstanceIdCounter = 0;
 
-function isFurnitureSpotBlocked(x: number, y: number, placed: Record<string, FurnitureInstance>): boolean {
+// Item 85: shared by both placeFurniture and placeGiftFromPile — the room
+// is one shared canvas, so a new furniture piece shouldn't land on top of
+// an already-displayed gift and vice versa, not just avoid other furniture.
+function isRoomSpotBlocked(
+  x: number,
+  y: number,
+  placed: Record<string, FurnitureInstance>,
+  displayedGifts: Record<string, DisplayedGiftInstance>
+): boolean {
   for (const f of Object.values(placed)) {
     if (Math.hypot(x - f.x, y - f.y) < FURNITURE_CLEARANCE) return true;
+  }
+  for (const g of Object.values(displayedGifts)) {
+    if (Math.hypot(x - g.x, y - g.y) < FURNITURE_CLEARANCE) return true;
   }
   return false;
 }
@@ -58,6 +92,7 @@ export const useMayorRoomStore = create<MayorRoomState & MayorRoomActions>()(
       placed: {},
       craftedStock: {},
       gifts: [],
+      displayedGifts: {},
 
       craftFurniture: (recipeId) => {
         const recipe = FURNITURE_RECIPES.find((r) => r.id === recipeId);
@@ -83,7 +118,7 @@ export const useMayorRoomStore = create<MayorRoomState & MayorRoomActions>()(
         if (!def) return false;
         const s = get();
         if ((s.craftedStock[defId] ?? 0) <= 0) return false;
-        if (isFurnitureSpotBlocked(x, y, s.placed)) return false;
+        if (isRoomSpotBlocked(x, y, s.placed, s.displayedGifts)) return false;
 
         furnitureIdCounter += 1;
         const id = `furniture_${furnitureIdCounter}_${Date.now()}`;
@@ -97,7 +132,31 @@ export const useMayorRoomStore = create<MayorRoomState & MayorRoomActions>()(
       addGift: (itemId, birdName) => {
         const s = get();
         const entry: MayorRoomGiftEntry = { id: `gift_${Date.now()}_${Math.random()}`, itemId, birdName, at: Date.now() };
-        set({ gifts: [...s.gifts, entry].slice(-FURNITURE_GIFT_LOG_MAX) });
+        set({ gifts: [...s.gifts, entry].slice(-MAYOR_ROOM_GIFT_PILE_MAX) });
+      },
+
+      placeGiftFromPile: (giftId, x, y) => {
+        const s = get();
+        const gift = s.gifts.find((g) => g.id === giftId);
+        if (!gift) return false;
+        if (isRoomSpotBlocked(x, y, s.placed, s.displayedGifts)) return false;
+
+        giftInstanceIdCounter += 1;
+        const instanceId = `displayedGift_${giftInstanceIdCounter}_${Date.now()}`;
+        set({
+          gifts: s.gifts.filter((g) => g.id !== giftId),
+          displayedGifts: { ...s.displayedGifts, [instanceId]: { id: instanceId, itemId: gift.itemId, x, y } },
+        });
+        return true;
+      },
+
+      storeGiftToWarehouse: (giftId) => {
+        const s = get();
+        const gift = s.gifts.find((g) => g.id === giftId);
+        if (!gift) return false;
+        set({ gifts: s.gifts.filter((g) => g.id !== giftId) });
+        usePlayerStore.getState().addItems(gift.itemId, 1);
+        return true;
       },
     }),
     {

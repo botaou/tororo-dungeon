@@ -841,13 +841,29 @@ export interface FurnitureInstance {
 }
 
 // A gift a visiting bird left behind in the mayor's room (see ai.ts's
-// executeVisitMayorRoom, useMayorRoomStore) — flavor-only, just a small log
-// the player can look back through in MayorRoomModal.
+// executeVisitMayorRoom, useMayorRoomStore). Item 85: no longer just a
+// flavor log — each entry sits in the room's "pile" (see
+// useMayorRoomStore.gifts) until the player resolves it via
+// placeGiftFromPile (→ DisplayedGiftInstance below) or
+// storeGiftToWarehouse (→ usePlayerStore.items).
 export interface MayorRoomGiftEntry {
   id: string;
   itemId: ItemId;
   birdName: string;
   at: number; // epoch ms
+}
+
+// Item 85: a gift the player chose to "飾る" (decorate) rather than store —
+// placed in the room's own 0..1 coordinate space exactly like
+// FurnitureInstance above, just sourced from data/items.ts's ItemId
+// namespace instead of data/furniture.ts's furniture defId namespace (a
+// gift is whatever random ItemId a bird happened to leave behind, not a
+// crafted furniture piece).
+export interface DisplayedGiftInstance {
+  id: string;
+  itemId: ItemId;
+  x: number;
+  y: number;
 }
 
 // Which of the 4 routes (see game/recipeUnlocks.ts) taught the player a

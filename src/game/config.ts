@@ -519,9 +519,22 @@ export const VISIT_DWELL_TICKS = 3;
 // tied to any real reward.
 export const MAYOR_ROOM_GIFT_CHANCE = 0.2;
 export const MAYOR_ROOM_REDRESS_CHANCE = 0.15;
-// Same rolling-cap idea as ACTIVITY_LOG_MAX — keeps useMayorRoomStore.gifts
-// from growing unbounded across a long-running save.
-export const FURNITURE_GIFT_LOG_MAX = 20;
+// Item 85: useMayorRoomStore.gifts is no longer just a flavor log capped
+// tightly for display (the old FURNITURE_GIFT_LOG_MAX=20, silently dropping
+// the oldest once full) — it's now the actual "pile" of unresolved gifts
+// sitting in the room, and the whole point of the feature is that it keeps
+// growing the longer the player ignores it. Silently deleting entries past
+// a small cap would mean gifts the player never got to choose 飾る/収納 for
+// just vanish — a real loss, not a harmless log trim. This is only a very
+// generous safety valve against unbounded storage growth on a save that's
+// never had its mayor's room visited in a very long time, not a "recent N"
+// display window.
+export const MAYOR_ROOM_GIFT_PILE_MAX = 300;
+// How many individual gift emoji the pile visual actually renders — the
+// real count (shown as a "+N" badge past this) keeps growing without bound,
+// but rendering hundreds of overlapping <Text> sprites would be both
+// pointless (they'd be indistinguishable clutter) and a real perf cost.
+export const MAYOR_ROOM_GIFT_PILE_VISUAL_CAP = 15;
 
 // 怪しいアイテム屋(mystery shop) — Phase 15③'s gacha-style draw. Reuses the
 // exact same rare/common pool split + odds as the visiting merchant's own
